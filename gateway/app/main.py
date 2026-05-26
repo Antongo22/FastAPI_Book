@@ -22,7 +22,7 @@ CHAPTERS = [
     {"number": 7, "port": 8007, "title": "JWT Authorization", "text": "Регистрация, вход, bearer token и protected endpoint."},
     {"number": 8, "port": 8008, "title": "Refresh Tokens", "text": "Обновление access token, revoke и logout."},
     {"number": 9, "port": 8009, "title": "WebSockets", "text": "Низкоуровневый чат и broadcast сообщений."},
-    {"number": 10, "port": 8010, "title": "SignalR-подобный чат", "text": "Connection manager, direct send и groups."},
+    {"number": 10, "port": 8010, "title": "Socket.IO чат", "text": "Events, rooms, broadcast и прямые сообщения."},
     {"number": 11, "port": 8011, "title": "Auth WebSockets", "text": "Проверка JWT перед WebSocket-соединением."},
     {"number": 12, "port": 8012, "title": "Тестирование", "text": "API, сервисный слой, WebSocket и in-memory БД."},
 ]

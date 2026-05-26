@@ -14,7 +14,7 @@
 - **Chapter 07** (порт 8007) - Authentication vs Authorization, JWT
 - **Chapter 08** (порт 8008) - Refresh Tokens
 - **Chapter 09** (порт 8009) - WebSockets
-- **Chapter 10** (порт 8010) - Высокоуровневый WebSocket-чат вместо SignalR
+- **Chapter 10** (порт 8010) - Socket.IO чат: events, rooms, broadcast и direct messages
 - **Chapter 11** (порт 8011) - Авторизация WebSocket-соединений
 - **Chapter 12** (порт 8012) - Тестирование API, сервисов и БД
 

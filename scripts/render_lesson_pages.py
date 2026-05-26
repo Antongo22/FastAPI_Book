@@ -594,52 +594,69 @@ else:
     "chapter10": {
         "number": 10,
         "port": 8010,
-        "title": "Глава 10: SignalR-подобный WebSocket manager",
-        "subtitle": "Connection id, direct send, broadcast, groups и JSON-команды поверх WebSocket.",
-        "outcome": "После главы вы понимаете, как построить более удобный слой real-time общения без SignalR.",
+        "title": "Глава 10: Socket.IO чат",
+        "subtitle": "Socket.IO events, sid, rooms, broadcast и direct messages.",
+        "outcome": "После главы вы понимаете, как подключить Socket.IO к FastAPI и обмениваться real-time событиями.",
         "concepts": [
-            "<strong>Connection id</strong> - серверный идентификатор конкретного WebSocket-клиента.",
-            "<strong>Direct send</strong> - отправка одному подключению.",
-            "<strong>Broadcast</strong> - отправка всем подключениям.",
-            "<strong>Group</strong> - набор connection id, например комната чата.",
-            "<strong>Action protocol</strong> - JSON-команды вроде <code>send_to_group</code> и <code>join</code>.",
+            "<strong>Socket.IO</strong> - real-time библиотека с событиями, комнатами и автоматическим протоколом поверх HTTP/WebSocket transport.",
+            "<strong>sid</strong> - server-side id конкретного Socket.IO-подключения.",
+            "<strong>event</strong> - именованное сообщение, например <code>chat_message</code> или <code>join_room</code>.",
+            "<strong>room</strong> - комната, куда можно добавить несколько подключений и отправлять события группе.",
+            "<strong>emit</strong> - отправка события одному клиенту, комнате или всем подключённым клиентам.",
         ],
         "flow": [
-            "Клиент подключается к <code>/ws/chat?group=general</code>.",
-            "Manager создаёт connection id и добавляет его в группу.",
-            "Клиент отправляет JSON с action и message.",
-            "Action определяет маршрут сообщения: всем, группе или конкретному connection id.",
-            "Manager выбирает получателей и отправляет JSON-событие.",
-            "При отключении клиент удаляется из всех групп.",
+            "Клиент подключается через Socket.IO к <code>http://localhost:8010</code> с path <code>/socket.io</code>.",
+            "Сервер получает событие <code>connect</code>, запоминает <code>sid</code> и отправляет клиенту событие <code>connected</code>.",
+            "Клиент отправляет событие <code>set_name</code>, чтобы сервер связал <code>sid</code> с именем пользователя.",
+            "Клиент отправляет <code>join_room</code>, и сервер добавляет подключение в комнату.",
+            "Клиент отправляет <code>chat_message</code>, а сервер делает <code>emit</code> всем или выбранной комнате.",
+            "При <code>disconnect</code> сервер очищает локальные словари подключений и комнат.",
         ],
         "endpoints": [
             ("GET /api/chat/info", "Состояние подключений и групп."),
-            ("WS /ws/chat", "JSON real-time чат с группами и direct send."),
+            ("Socket.IO /socket.io", "Основной real-time endpoint для событий чата."),
+            ("WS /ws/chat", "Низкоуровневый WebSocket endpoint для ручного JSON-протокола."),
         ],
         "code": '''
-elif action == "send_to_group":
-    await manager.send_to_group(data.get("group", group), payload)
-elif action == "join":
-    manager.groups[data.get("group", group)].add(connection_id)
-    await manager.send_to_connection(connection_id, {"event": "joined", "group": data.get("group", group)})
-else:
-    await manager.broadcast(payload)
+@sio.event
+async def join_room(sid, data):
+    room = data.get("room", "general")
+    await sio.enter_room(sid, room)
+    socketio_rooms[room].add(sid)
+    await sio.emit("joined_room", {"room": room}, to=sid)
+
+
+@sio.event
+async def chat_message(sid, data):
+    room = data.get("room")
+    payload = {
+        "event": "chat_message",
+        "from": socketio_clients.get(sid, "anonymous"),
+        "message": data.get("message", ""),
+        "room": room,
+    }
+    if room:
+        await sio.emit("chat_message", payload, room=room)
+    else:
+        await sio.emit("chat_message", payload)
         ''',
         "code_notes": [
-            "Это не полный аналог SignalR: нет автогенерации клиента, backplane и typed hubs.",
-            "Но учебно видно, какие задачи решает SignalR: хранение клиентов, группы, direct send и события.",
-            "JSON-протокол проще расширять, чем plain text сообщения из предыдущей главы.",
+            "Socket.IO работает событиями: клиент и сервер договариваются об именах событий и структуре payload.",
+            "Комнаты удобнее ручного хранения списков получателей: сервер вызывает <code>enter_room</code> и отправляет событие в room.",
+            "В этой главе также оставлен raw WebSocket endpoint, чтобы было видно, чем ручной протокол отличается от событий Socket.IO.",
         ],
-        "task": "Добавьте action <code>leave</code>, который удаляет подключение из указанной группы и отправляет событие <code>left</code>.",
+        "task": "Добавьте Socket.IO событие <code>leave_room</code>, которое удаляет подключение из комнаты и отправляет клиенту событие <code>left_room</code>.",
         "answer": '''
-elif action == "leave":
-    target_group = data.get("group", group)
-    manager.groups[target_group].discard(connection_id)
-    await manager.send_to_connection(connection_id, {"event": "left", "group": target_group})
+@sio.event
+async def leave_room(sid, data):
+    room = data.get("room", "general")
+    await sio.leave_room(sid, room)
+    socketio_rooms[room].discard(sid)
+    await sio.emit("left_room", {"room": room}, to=sid)
         ''',
         "answer_notes": [
-            "Используйте <code>discard</code>, а не <code>remove</code>, чтобы отсутствие connection id не бросало исключение.",
-            "После выхода из группы broadcast всем всё ещё может доставлять сообщения этому клиенту.",
+            "Метод <code>leave_room</code> убирает sid из внутренней комнаты Socket.IO.",
+            "Локальный словарь <code>socketio_rooms</code> нужен только для учебного endpoint-а <code>/api/chat/info</code>.",
         ],
     },
     "chapter11": {
@@ -1260,38 +1277,53 @@ async def websocket_endpoint(websocket: WebSocket):
     "chapter10": [
         {
             "title": "Что меняем",
-            "body": "Добавляем новую команду протокола. Она меняет состояние manager-а и возвращает подтверждение только текущему клиенту.",
+            "body": "Добавляем новое Socket.IO событие. Оно удаляет текущее подключение из комнаты и возвращает подтверждение только этому клиенту.",
             "items": [
-                "В обработчик action добавить ветку <code>leave</code>.",
-                "Взять имя группы из JSON или использовать текущую группу.",
-                "Удалить connection id из set участников.",
-                "Отправить событие <code>left</code> текущему клиенту.",
+                "В файл <code>chapter10/app/main.py</code> добавить обработчик <code>@sio.event</code>.",
+                "Назвать функцию <code>leave_room</code>, чтобы имя функции совпало с именем события.",
+                "Взять имя комнаты из payload или использовать <code>general</code>.",
+                "Вызвать <code>sio.leave_room</code> и отправить событие <code>left_room</code> текущему клиенту.",
             ],
         },
         {
-            "title": "Полный блок обработки action",
+            "title": "Полный блок Socket.IO событий для комнат",
             "code": '''
-if action == "send_to_connection":
-    await manager.send_to_connection(data["connection_id"], payload)
-elif action == "send_to_group":
-    await manager.send_to_group(data.get("group", group), payload)
-elif action == "join":
-    target_group = data.get("group", group)
-    manager.groups[target_group].add(connection_id)
-    await manager.send_to_connection(connection_id, {"event": "joined", "group": target_group})
-elif action == "leave":
-    target_group = data.get("group", group)
-    manager.groups[target_group].discard(connection_id)
-    await manager.send_to_connection(connection_id, {"event": "left", "group": target_group})
-else:
-    await manager.broadcast(payload)
+@sio.event
+async def join_room(sid, data):
+    room = data.get("room", "general")
+    await sio.enter_room(sid, room)
+    socketio_rooms[room].add(sid)
+    await sio.emit("joined_room", {"room": room}, to=sid)
+
+
+@sio.event
+async def leave_room(sid, data):
+    room = data.get("room", "general")
+    await sio.leave_room(sid, room)
+    socketio_rooms[room].discard(sid)
+    await sio.emit("left_room", {"room": room}, to=sid)
+
+
+@sio.event
+async def chat_message(sid, data):
+    room = data.get("room")
+    payload = {
+        "event": "chat_message",
+        "from": socketio_clients.get(sid, "anonymous"),
+        "message": data.get("message", ""),
+        "room": room,
+    }
+    if room:
+        await sio.emit("chat_message", payload, room=room)
+    else:
+        await sio.emit("chat_message", payload)
             ''',
         },
         {
             "title": "Как проверить",
             "checks": [
-                ("WS /ws/chat", 'Отправьте <code>{"action": "join", "group": "python"}</code>.'),
-                ("WS /ws/chat", 'Отправьте <code>{"action": "leave", "group": "python"}</code> и получите событие <code>left</code>.'),
+                ("Socket.IO join_room", 'Отправьте <code>{ room: "python" }</code> и получите событие <code>joined_room</code>.'),
+                ("Socket.IO leave_room", 'Отправьте <code>{ room: "python" }</code> и получите событие <code>left_room</code>.'),
             ],
         },
     ],
@@ -1622,24 +1654,24 @@ BEGINNER_GUIDES = {
     },
     "chapter10": {
         "plain": [
-            "Глава показывает, как поверх WebSocket сделать более удобный протокол: команды, группы и отправку одному клиенту.",
-            "Это учебная замена SignalR: мы вручную делаем часть того, что SignalR обычно берёт на себя.",
-            "Главная мысль: WebSocket - транспорт, а правила сообщений вы проектируете сами.",
+            "Socket.IO - это отдельная real-time технология, где общение строится вокруг событий: клиент отправляет событие, сервер обрабатывает его по имени.",
+            "Вместо ручного поля <code>action</code> у каждого действия есть своё имя: <code>join_room</code>, <code>chat_message</code>, <code>direct_message</code>.",
+            "Главная мысль: WebSocket может быть транспортом, а Socket.IO добавляет поверх него удобные события, комнаты и клиентскую библиотеку.",
         ],
         "line_by_line": [
-            ("<code>elif action == \"send_to_group\"</code>", "Проверяем, какую команду прислал клиент в JSON."),
-            ("<code>data.get(\"group\", group)</code>", "Берём группу из сообщения. Если её нет, используем текущую группу подключения."),
-            ("<code>await manager.send_to_group(...)</code>", "Отправляем payload только участникам выбранной группы."),
-            ("<code>elif action == \"join\"</code>", "Команда подключения к группе."),
-            ("<code>manager.groups[...].add(connection_id)</code>", "Добавляем текущего клиента в set участников группы."),
-            ("<code>send_to_connection(...)</code>", "Отправляем подтверждение только этому клиенту."),
-            ("<code>else:</code>", "Если action не распознан или равен broadcast, используем поведение по умолчанию."),
-            ("<code>await manager.broadcast(payload)</code>", "Рассылаем сообщение всем активным подключениям."),
+            ("<code>sio = socketio.AsyncServer(...)</code>", "Создаём Socket.IO server, который умеет принимать асинхронные события."),
+            ("<code>@sio.event</code>", "Декоратор регистрирует функцию как обработчик события. Имя функции становится именем события."),
+            ("<code>async def join_room(sid, data)</code>", "Когда клиент отправляет событие <code>join_room</code>, Socket.IO вызывает эту функцию."),
+            ("<code>sid</code>", "Уникальный id подключения. Его выдаёт Socket.IO server."),
+            ("<code>data</code>", "Payload события. Обычно это обычный словарь с данными от клиента."),
+            ("<code>await sio.enter_room(sid, room)</code>", "Добавляем текущее подключение в комнату."),
+            ("<code>await sio.emit(..., to=sid)</code>", "Отправляем событие только одному клиенту."),
+            ("<code>await sio.emit(..., room=room)</code>", "Отправляем событие всем клиентам выбранной комнаты."),
         ],
         "mistakes": [
-            "Не договориться о формате JSON-команд между клиентом и сервером.",
-            "Хранить группы списком и получать дубликаты connection id.",
-            "Не удалять connection id из групп при отключении.",
+            "Подключать Socket.IO клиент к raw WebSocket endpoint-у <code>/ws/chat</code>. Socket.IO использует свой протокол и path <code>/socket.io</code>.",
+            "Путать имя события и поле внутри JSON. В Socket.IO событие называется отдельно, например <code>chat_message</code>.",
+            "Забыть удалить sid из учебных словарей при <code>disconnect</code>.",
         ],
     },
     "chapter11": {
@@ -1737,9 +1769,9 @@ CHAPTER_STUDY_NOTES = {
         "Не проверяйте эту главу как обычный REST endpoint. Здесь нужен WebSocket-клиент: браузерный JS, тестовый клиент или отдельный инструмент.",
     ],
     "chapter10": [
-        "Здесь простой WebSocket превращается в более удобный протокол с действиями, группами и адресной отправкой.",
-        "SignalR в ASP.NET даёт много удобств из коробки. В FastAPI мы показываем идею вручную, чтобы было понятно, что происходит под капотом.",
-        "Обратите внимание на формат сообщений: клиент и сервер должны договориться, какие JSON-поля означают broadcast, join, group send и direct send.",
+        "Здесь используется Socket.IO: отдельная real-time технология с событиями, комнатами и готовой клиентской библиотекой.",
+        "Raw WebSocket endpoint в главе оставлен как низкоуровневый пример, а основной учебный сценарий показывает Socket.IO события.",
+        "Обратите внимание на договорённость между клиентом и сервером: какие события существуют, какие поля есть в payload и куда сервер делает emit.",
     ],
     "chapter11": [
         "WebSocket-соединения тоже нужно защищать. Иначе любой клиент сможет подключиться напрямую, минуя обычные HTTP-страницы.",
@@ -1792,8 +1824,8 @@ REQUEST_EXAMPLES = {
         ("Что должно произойти", "Откройте две вкладки с кодом выше. Сообщение из одной вкладки должно прийти в обе."),
     ],
     "chapter10": [
-        ("Вступить в группу", 'const ws = new WebSocket("ws://localhost:8010/ws/chat?client_id=anna");\nws.onmessage = event => console.log(JSON.parse(event.data));\nws.onopen = () => ws.send(JSON.stringify({ action: "join", group: "python" }));'),
-        ("Отправить в группу", 'ws.send(JSON.stringify({ action: "send_to_group", group: "python", message: "Привет группе" }));'),
+        ("Подключить Socket.IO клиент", 'const script = document.createElement("script");\nscript.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";\nscript.onload = () => {\n  const socket = io("http://localhost:8010", { path: "/socket.io" });\n  socket.on("connected", data => console.log("connected", data));\n  socket.on("chat_message", data => console.log("message", data));\n  window.socket = socket;\n};\ndocument.head.append(script);'),
+        ("Вступить в комнату и отправить сообщение", 'socket.emit("set_name", { username: "anna" });\nsocket.emit("join_room", { room: "python" });\nsocket.emit("chat_message", { room: "python", message: "Привет комнате" });'),
     ],
     "chapter11": [
         ("Получить access token", 'curl -X POST http://localhost:8011/api/auth/login \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"demo","password":"password"}\''),
@@ -1862,10 +1894,10 @@ CONTROL_QUESTIONS = {
         "Почему broadcast должен быть асинхронным?",
     ],
     "chapter10": [
-        "Что является транспортом, а что является протоколом сообщений?",
-        "Почему группы удобно хранить как set connection id?",
-        "Что должно произойти при отключении клиента?",
-        "Чем broadcast отличается от direct send?",
+        "Чем Socket.IO событие отличается от обычного JSON-поля <code>action</code>?",
+        "Что такое <code>sid</code> и почему его удобно использовать для прямой отправки?",
+        "Зачем нужны комнаты Socket.IO?",
+        "Чем <code>emit(..., room=room)</code> отличается от <code>emit(..., to=sid)</code>?",
     ],
     "chapter11": [
         "Почему token проверяется до <code>accept()</code>?",
@@ -1929,9 +1961,9 @@ PRACTICE_LEVELS = {
         ("Сложный уровень", "Добавьте ограничение длины сообщения и отправку ошибки только отправителю."),
     ],
     "chapter10": [
-        ("Лёгкий уровень", "Добавьте action <code>leave</code> для выхода из группы."),
-        ("Средний уровень", "Добавьте список групп, в которых состоит текущий клиент."),
-        ("Сложный уровень", "Сделайте direct send по username, а не по техническому connection id."),
+        ("Лёгкий уровень", "Добавьте событие <code>leave_room</code> для выхода из комнаты."),
+        ("Средний уровень", "Добавьте событие <code>my_rooms</code>, которое возвращает комнаты текущего <code>sid</code>."),
+        ("Сложный уровень", "Сделайте <code>direct_message</code> по username, а не по техническому <code>sid</code>."),
     ],
     "chapter11": [
         ("Лёгкий уровень", "Добавьте сообщение приветствия с username после успешного подключения."),

@@ -64,3 +64,16 @@ def test_chapter_form_render():
     assert response.status_code == 200
     assert "Форма контакта" in response.text
     assert "← На главную" in response.text
+
+
+def test_chapter10_uses_socketio_wording_without_old_comparison():
+    chapter_response = TestClient(chapter10_app).get("/")
+    gateway_response = TestClient(gateway_app).get("/")
+    old_comparison_term = "Signal" + "R"
+
+    assert chapter_response.status_code == 200
+    assert gateway_response.status_code == 200
+    assert "Socket.IO" in chapter_response.text
+    assert "Socket.IO чат" in gateway_response.text
+    assert old_comparison_term not in chapter_response.text
+    assert old_comparison_term not in gateway_response.text
