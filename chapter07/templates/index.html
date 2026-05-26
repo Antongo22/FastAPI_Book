@@ -29,13 +29,76 @@
         </section>
 
         <nav class="lesson-tabs" aria-label="Разделы главы">
-            <button class="active" data-tab-target="#theory">Теория</button>
+            <button class="active" data-tab-target="#course">Учебник</button>
+            <button data-tab-target="#theory">Теория</button>
             <button data-tab-target="#code">Разбор кода</button>
-            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#task">Практика</button>
             <button data-tab-target="#answers">Ответы</button>
         </nav>
 
-        <section id="theory" class="tab-panel active">
+        <section id="course" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Как пользоваться этой главой</h2>
+                    <p>Эта глава отвечает на вопрос: как сервер понимает, кто делает запрос. Логин выдаёт token, защищённый endpoint доверяет только проверенному token-у.</p>
+<p>Не путайте authentication и authorization. Сначала пользователь доказывает личность, потом приложение решает, что ему разрешено.</p>
+<p>JWT кажется магией только до тех пор, пока вы не увидите payload, secret key, подпись и dependency, которая достаёт пользователя из token-а.</p>
+                    <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Учебный план</h2>
+                    <ol class="flow-list">
+                        <li>Откройте главный файл приложения и найдите код из вкладки <strong>Разбор кода</strong>. Не переписывайте его вслепую: сопоставьте каждую строку с объяснением.</li>
+<li>Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.</li>
+<li>Вернитесь на вкладку <strong>Практика</strong>, выполните лёгкое задание, затем среднее. Сложное задание можно оставить как самостоятельную мини-работу.</li>
+<li>Запустите тесты, связанные с главой: <code>tests/test_chapter07_auth.py</code>. Если теста нет для конкретной главы, запустите общий <code>pytest</code>.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Структура файлов главы</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>chapter07/app/main.py</code></dt><dd>Главный учебный файл главы: FastAPI app, routes, модели, зависимости и сервисы.</dd>
+<dt><code>chapter07/templates/index.html</code></dt><dd>HTML-страница урока с теорией, разбором, практикой и ответами.</dd>
+<dt><code>chapter07/static/site.css</code></dt><dd>Общие стили страницы урока.</dd>
+<dt><code>chapter07/static/site.js</code></dt><dd>Переключение вкладок на странице урока.</dd>
+<dt><code>chapter07/Dockerfile</code></dt><dd>Инструкция сборки контейнера для этой главы.</dd>
+<dt><code>tests/test_chapter07_auth.py</code></dt><dd>Автоматические проверки поведения главы. Их полезно читать как примеры использования API.</dd>
+<dt><code>requirements.txt</code></dt><dd>Один общий набор Python-зависимостей для всего учебника.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Команды запуска</h2>
+                    <p>Эти команды выполняются из корня проекта <code>FastAPI_Book</code>. Если виртуальное окружение уже создано, повторно создавать его не нужно.</p>
+                </article>
+
+                <div class="section-grid">
+                    <article class="info-box command-box"><h2>Создать окружение и поставить зависимости</h2><pre><code>{% raw %}python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить только эту главу</h2><pre><code>{% raw %}uvicorn chapter07.app.main:app --reload --port 8007{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Открыть страницу и Swagger</h2><pre><code>{% raw %}open http://localhost:8007
+open http://localhost:8007/docs{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить тесты этой темы</h2><pre><code>{% raw %}pytest tests/test_chapter07_auth.py{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить все проверки проекта</h2><pre><code>{% raw %}./scripts/validate.sh{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить все главы через Docker Compose</h2><pre><code>{% raw %}docker compose up --build{% endraw %}</code></pre></article>
+                </div>
+
+                <article class="info-box">
+                    <h2>Что открыть в браузере</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>http://localhost:8007</code></strong><span>Страница урока: теория, разбор кода, практика и ответы.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8007/docs</code></strong><span>Swagger UI: интерактивная документация, где удобно нажимать Try it out.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8007/redoc</code></strong><span>ReDoc: статичная документация для спокойного чтения схемы API.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8000</code></strong><span>Gateway: общая главная страница со всеми главами.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="theory" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
@@ -68,6 +131,20 @@
 <article class="endpoint-card"><strong><code>GET /api/protected</code></strong><span>Endpoint, доступный только с валидным Bearer token.</span></article>
                     </div>
                 </article>
+
+                <article class="info-box">
+                    <h2>Примеры запросов</h2>
+                    <p>Сначала выполните эти примеры как есть, затем поменяйте входные значения и посмотрите, где именно код меняет ответ.</p>
+                </article>
+
+                <div class="section-grid">
+                    <article class="info-box command-box"><h2>Регистрация</h2><pre><code>{% raw %}curl -X POST http://localhost:8007/api/auth/register \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;username&quot;:&quot;anna&quot;,&quot;email&quot;:&quot;anna@example.com&quot;,&quot;password&quot;:&quot;secret123&quot;}&#x27;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Вход и token</h2><pre><code>{% raw %}curl -X POST http://localhost:8007/api/auth/login \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;username&quot;:&quot;anna&quot;,&quot;password&quot;:&quot;secret123&quot;}&#x27;{% endraw %}</code></pre></article>
+                </div>
             </div>
         </section>
 
@@ -132,11 +209,32 @@
         </section>
 
         <section id="task" class="tab-panel">
-            <article class="info-box">
-                <h2>Практическая задача</h2>
-                <p>Добавьте endpoint <code>GET /api/admin</code>, доступный только пользователю с ролью <code>admin</code>.</p>
-                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
-            </article>
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Главная практическая задача</h2>
+                    <p>Добавьте endpoint <code>GET /api/admin</code>, доступный только пользователю с ролью <code>admin</code>.</p>
+                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Практика по уровням</h2>
+                    <dl class="line-breakdown">
+                        <dt>Лёгкий уровень</dt><dd>Добавьте endpoint <code>/api/protected/profile</code>, который возвращает текущего пользователя.</dd>
+<dt>Средний уровень</dt><dd>Добавьте роль <code>admin</code> и protected endpoint только для admin.</dd>
+<dt>Сложный уровень</dt><dd>Сделайте смену пароля с проверкой старого пароля и перевыпуском token-а.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Контрольные вопросы</h2>
+                    <ol class="flow-list">
+                        <li>Что означает поле <code>sub</code> внутри JWT payload?</li>
+<li>Почему пароль хранится как hash, а не обычная строка?</li>
+<li>Что делает dependency <code>get_current_user</code>?</li>
+<li>Чем 401 отличается от 403 в задачах безопасности?</li>
+                    </ol>
+                </article>
+            </div>
         </section>
 
         <section id="answers" class="tab-panel">

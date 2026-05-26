@@ -29,13 +29,75 @@
         </section>
 
         <nav class="lesson-tabs" aria-label="Разделы главы">
-            <button class="active" data-tab-target="#theory">Теория</button>
+            <button class="active" data-tab-target="#course">Учебник</button>
+            <button data-tab-target="#theory">Теория</button>
             <button data-tab-target="#code">Разбор кода</button>
-            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#task">Практика</button>
             <button data-tab-target="#answers">Ответы</button>
         </nav>
 
-        <section id="theory" class="tab-panel active">
+        <section id="course" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Как пользоваться этой главой</h2>
+                    <p>Здесь FastAPI используется не только как JSON API, но и как сервер HTML-страниц. Это мост между backend-логикой и обычной формой в браузере.</p>
+<p>Jinja2 не заменяет Python. Python готовит данные, шаблон только показывает их в HTML и аккуратно выводит ошибки рядом с полями.</p>
+<p>Новичкам важно увидеть разницу между JSON body и HTML form-data: для формы нужны <code>Form</code> и пакет <code>python-multipart</code>.</p>
+                    <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Учебный план</h2>
+                    <ol class="flow-list">
+                        <li>Откройте главный файл приложения и найдите код из вкладки <strong>Разбор кода</strong>. Не переписывайте его вслепую: сопоставьте каждую строку с объяснением.</li>
+<li>Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.</li>
+<li>Вернитесь на вкладку <strong>Практика</strong>, выполните лёгкое задание, затем среднее. Сложное задание можно оставить как самостоятельную мини-работу.</li>
+<li>Запустите тесты, связанные с главой: <code>pytest</code>. Если теста нет для конкретной главы, запустите общий <code>pytest</code>.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Структура файлов главы</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>chapter05/app/main.py</code></dt><dd>Главный учебный файл главы: FastAPI app, routes, модели, зависимости и сервисы.</dd>
+<dt><code>chapter05/templates/index.html</code></dt><dd>HTML-страница урока с теорией, разбором, практикой и ответами.</dd>
+<dt><code>chapter05/templates/contact.html</code></dt><dd>Отдельная HTML-форма, которая показывает binding и ошибки валидации.</dd>
+<dt><code>chapter05/static/site.css</code></dt><dd>Общие стили страницы урока.</dd>
+<dt><code>chapter05/static/site.js</code></dt><dd>Переключение вкладок на странице урока.</dd>
+<dt><code>chapter05/Dockerfile</code></dt><dd>Инструкция сборки контейнера для этой главы.</dd>
+<dt><code>requirements.txt</code></dt><dd>Один общий набор Python-зависимостей для всего учебника.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Команды запуска</h2>
+                    <p>Эти команды выполняются из корня проекта <code>FastAPI_Book</code>. Если виртуальное окружение уже создано, повторно создавать его не нужно.</p>
+                </article>
+
+                <div class="section-grid">
+                    <article class="info-box command-box"><h2>Создать окружение и поставить зависимости</h2><pre><code>{% raw %}python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить только эту главу</h2><pre><code>{% raw %}uvicorn chapter05.app.main:app --reload --port 8005{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Открыть страницу и Swagger</h2><pre><code>{% raw %}open http://localhost:8005
+open http://localhost:8005/docs{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить все проверки проекта</h2><pre><code>{% raw %}./scripts/validate.sh{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить все главы через Docker Compose</h2><pre><code>{% raw %}docker compose up --build{% endraw %}</code></pre></article>
+                </div>
+
+                <article class="info-box">
+                    <h2>Что открыть в браузере</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>http://localhost:8005</code></strong><span>Страница урока: теория, разбор кода, практика и ответы.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8005/docs</code></strong><span>Swagger UI: интерактивная документация, где удобно нажимать Try it out.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8005/redoc</code></strong><span>ReDoc: статичная документация для спокойного чтения схемы API.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8000</code></strong><span>Gateway: общая главная страница со всеми главами.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="theory" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
@@ -69,6 +131,18 @@
 <article class="endpoint-card"><strong><code>POST /api/contact</code></strong><span>JSON API-версия той же проверки.</span></article>
                     </div>
                 </article>
+
+                <article class="info-box">
+                    <h2>Примеры запросов</h2>
+                    <p>Сначала выполните эти примеры как есть, затем поменяйте входные значения и посмотрите, где именно код меняет ответ.</p>
+                </article>
+
+                <div class="section-grid">
+                    <article class="info-box command-box"><h2>Отправить форму из terminal</h2><pre><code>{% raw %}curl -X POST http://localhost:8005/contact \
+  -H &quot;Content-Type: application/x-www-form-urlencoded&quot; \
+  -d &quot;name=Anna&amp;email=anna@example.com&amp;message=Hello&quot;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить HTML-страницу</h2><pre><code>{% raw %}open http://localhost:8005/contact{% endraw %}</code></pre></article>
+                </div>
             </div>
         </section>
 
@@ -135,11 +209,32 @@ async def submit_contact(
         </section>
 
         <section id="task" class="tab-panel">
-            <article class="info-box">
-                <h2>Практическая задача</h2>
-                <p>Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.</p>
-                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
-            </article>
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Главная практическая задача</h2>
+                    <p>Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.</p>
+                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Практика по уровням</h2>
+                    <dl class="line-breakdown">
+                        <dt>Лёгкий уровень</dt><dd>Добавьте поле <code>subject</code> в форму и отобразите его после отправки.</dd>
+<dt>Средний уровень</dt><dd>Покажите ошибки валидации рядом с каждым полем, не очищая форму.</dd>
+<dt>Сложный уровень</dt><dd>Добавьте список отправленных сообщений в памяти и страницу просмотра.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Контрольные вопросы</h2>
+                    <ol class="flow-list">
+                        <li>Почему для HTML-формы используется <code>Form</code>, а не Pydantic-модель тела JSON напрямую?</li>
+<li>Зачем шаблону нужен объект <code>request</code>?</li>
+<li>Как сохранить введённые значения после ошибки валидации?</li>
+<li>Почему endpoint формы можно скрыть из OpenAPI через <code>include_in_schema=False</code>?</li>
+                    </ol>
+                </article>
+            </div>
         </section>
 
         <section id="answers" class="tab-panel">

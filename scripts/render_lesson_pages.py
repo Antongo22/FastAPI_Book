@@ -54,6 +54,19 @@ def render_solution_sections(sections: list[dict[str, object]]) -> str:
     return "\n".join(rendered)
 
 
+def titled_code_blocks(items: list[tuple[str, str]]) -> str:
+    return "\n".join(
+        f'<article class="info-box command-box"><h2>{title}</h2>{code_block(code)}</article>'
+        for title, code in items
+    )
+
+
+def render_file_structure(items: list[tuple[str, str]]) -> str:
+    return definition_items(
+        [(f"<code>{escape(path)}</code>", description) for path, description in items]
+    )
+
+
 LESSONS = {
     "chapter01": {
         "number": 1,
@@ -1677,10 +1690,339 @@ BEGINNER_GUIDES = {
 }
 
 
+CHAPTER_STUDY_NOTES = {
+    "chapter01": [
+        "Эта глава показывает самый маленький полезный FastAPI-сервис: есть приложение, маршруты, входная модель, ручная бизнес-проверка и JSON-ответ.",
+        "Не пытайтесь сразу запомнить все декораторы. Сначала поймите цепочку: HTTP method плюс path выбирают функцию, Pydantic проверяет вход, функция возвращает словарь.",
+        "После этой главы вы должны спокойно открыть <code>chapter01/app/main.py</code>, найти endpoint и объяснить, какой JSON он ждёт и какой JSON возвращает.",
+    ],
+    "chapter02": [
+        "Эта глава нужна, чтобы endpoint-ы не превращались в склад создания объектов. Сервисы готовятся отдельно, а endpoint только просит их через <code>Depends</code>.",
+        "Главная сложность для новичка - понять время жизни объекта. Один объект может создаваться на каждый запрос, на каждый параметр или жить всё время работы приложения.",
+        "Читайте ответы этой главы особенно внимательно: там важно не просто получить JSON, а увидеть, какие id совпадают, а какие отличаются.",
+    ],
+    "chapter03": [
+        "Здесь ваше приложение впервые общается с чужим API. Это частая задача: забрать данные из внешнего сервиса, проверить ошибку и вернуть клиенту понятный результат.",
+        "Держите в голове два запроса: клиент вызывает ваш FastAPI endpoint, а внутри endpoint-а ваш код вызывает JSONPlaceholder через <code>httpx</code>.",
+        "Если внешний сервис недоступен, это не должно превращаться в непонятное падение. Поэтому в этой главе важны timeout, обработка HTTP-ошибок и сервисный слой.",
+    ],
+    "chapter04": [
+        "Эта глава учит делать ошибки частью API-контракта. Клиенту нужен понятный status code и стабильный JSON, а не случайный traceback.",
+        "Смотрите на обработчики исключений как на общий переводчик: внутри Python случилось исключение, наружу клиент получает аккуратный HTTP-ответ.",
+        "После главы вы должны уметь отличать ошибку валидации, ожидаемую бизнес-ошибку и настоящую серверную ошибку.",
+    ],
+    "chapter05": [
+        "Здесь FastAPI используется не только как JSON API, но и как сервер HTML-страниц. Это мост между backend-логикой и обычной формой в браузере.",
+        "Jinja2 не заменяет Python. Python готовит данные, шаблон только показывает их в HTML и аккуратно выводит ошибки рядом с полями.",
+        "Новичкам важно увидеть разницу между JSON body и HTML form-data: для формы нужны <code>Form</code> и пакет <code>python-multipart</code>.",
+    ],
+    "chapter06": [
+        "В этой главе данные начинают жить в базе. Endpoint больше не просто считает результат, а создаёт, читает, изменяет и удаляет строки таблицы.",
+        "Разделяйте три слоя в голове: ORM-модель описывает таблицу, Pydantic DTO описывает внешний JSON, Session выполняет операции с базой.",
+        "Alembic показан как следующий шаг: в демо таблицы создаются автоматически, но в реальных проектах структуру БД меняют миграциями.",
+    ],
+    "chapter07": [
+        "Эта глава отвечает на вопрос: как сервер понимает, кто делает запрос. Логин выдаёт token, защищённый endpoint доверяет только проверенному token-у.",
+        "Не путайте authentication и authorization. Сначала пользователь доказывает личность, потом приложение решает, что ему разрешено.",
+        "JWT кажется магией только до тех пор, пока вы не увидите payload, secret key, подпись и dependency, которая достаёт пользователя из token-а.",
+    ],
+    "chapter08": [
+        "Access token живёт недолго, refresh token помогает получить новый access token без повторного ввода пароля.",
+        "Главная идея главы - rotation: старый refresh token после обновления становится недействительным, а клиент получает новый.",
+        "Сервер хранит refresh token в SQLite, поэтому может отозвать его при logout или при подозрительной активности.",
+    ],
+    "chapter09": [
+        "WebSocket отличается от HTTP тем, что соединение остаётся открытым. Это подходит для чата, уведомлений и живых обновлений.",
+        "Самое важное в первой WebSocket-главе - manager подключений: сервер должен помнить активные соединения и уметь рассылать сообщения.",
+        "Не проверяйте эту главу как обычный REST endpoint. Здесь нужен WebSocket-клиент: браузерный JS, тестовый клиент или отдельный инструмент.",
+    ],
+    "chapter10": [
+        "Здесь простой WebSocket превращается в более удобный протокол с действиями, группами и адресной отправкой.",
+        "SignalR в ASP.NET даёт много удобств из коробки. В FastAPI мы показываем идею вручную, чтобы было понятно, что происходит под капотом.",
+        "Обратите внимание на формат сообщений: клиент и сервер должны договориться, какие JSON-поля означают broadcast, join, group send и direct send.",
+    ],
+    "chapter11": [
+        "WebSocket-соединения тоже нужно защищать. Иначе любой клиент сможет подключиться напрямую, минуя обычные HTTP-страницы.",
+        "Порядок важен: сначала проверить token, потом принять соединение. Если token плохой, соединение закрывается до нормальной работы чата.",
+        "Username берётся из JWT, а не из сообщения клиента. Это защищает от ситуации, где клиент просто пишет чужое имя.",
+    ],
+    "chapter12": [
+        "Финальная глава собирает API, базу, сервисный слой и тесты в один учебный пример.",
+        "Главная мысль: тест должен быть независимым. Поэтому настоящая база подменяется тестовой через dependency override.",
+        "После этой главы вы должны уметь проверить endpoint, сервисную логику и сценарий с несколькими запросами без ручного кликанья в браузере.",
+    ],
+}
+
+
+REQUEST_EXAMPLES = {
+    "chapter01": [
+        ("Сложение через REST", 'curl -X POST http://localhost:8001/api/calculator/add \\\n  -H "Content-Type: application/json" \\\n  -d \'{"a": 10, "b": 5}\''),
+        ("Ошибка деления на ноль", 'curl -X POST http://localhost:8001/api/calculator/divide \\\n  -H "Content-Type: application/json" \\\n  -d \'{"a": 10, "b": 0}\''),
+    ],
+    "chapter02": [
+        ("Проверка lifetime-ов", "curl http://localhost:8002/api/dependency-injection/lifetimes"),
+        ("Логирование через dependency", "curl http://localhost:8002/api/dependency-injection/logging-demo"),
+    ],
+    "chapter03": [
+        ("Получить внешний post", "curl http://localhost:8003/api/http-client/posts/1"),
+        ("Получить комментарии post-а", "curl http://localhost:8003/api/http-client/posts/1/comments"),
+    ],
+    "chapter04": [
+        ("Ожидаемая demo-ошибка", "curl -i http://localhost:8004/api/error-demo/custom"),
+        ("Ошибка валидации", 'curl -i "http://localhost:8004/api/error-demo/validation?age=-1"'),
+    ],
+    "chapter05": [
+        ("Отправить форму из terminal", 'curl -X POST http://localhost:8005/contact \\\n  -H "Content-Type: application/x-www-form-urlencoded" \\\n  -d "name=Anna&email=anna@example.com&message=Hello"'),
+        ("Проверить HTML-страницу", "open http://localhost:8005/contact"),
+    ],
+    "chapter06": [
+        ("Создать товар", 'curl -X POST http://localhost:8006/api/products \\\n  -H "Content-Type: application/json" \\\n  -d \'{"name":"Keyboard","description":"USB","price":"49.90","stock":10}\''),
+        ("Получить список товаров", "curl http://localhost:8006/api/products"),
+    ],
+    "chapter07": [
+        ("Регистрация", 'curl -X POST http://localhost:8007/api/auth/register \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"anna","email":"anna@example.com","password":"secret123"}\''),
+        ("Вход и token", 'curl -X POST http://localhost:8007/api/auth/login \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"anna","password":"secret123"}\''),
+    ],
+    "chapter08": [
+        ("Login с refresh token", 'curl -X POST http://localhost:8008/api/auth/login \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"demo","password":"password"}\''),
+        ("Обновление пары token-ов", 'curl -X POST http://localhost:8008/api/auth/refresh \\\n  -H "Content-Type: application/json" \\\n  -d \'{"refresh_token":"PASTE_REFRESH_TOKEN"}\''),
+    ],
+    "chapter09": [
+        ("Быстрая проверка в консоли браузера", 'const ws = new WebSocket("ws://localhost:8009/ws");\nws.onmessage = event => console.log(event.data);\nws.onopen = () => ws.send("hello");'),
+        ("Что должно произойти", "Откройте две вкладки с кодом выше. Сообщение из одной вкладки должно прийти в обе."),
+    ],
+    "chapter10": [
+        ("Вступить в группу", 'const ws = new WebSocket("ws://localhost:8010/ws/chat?client_id=anna");\nws.onmessage = event => console.log(JSON.parse(event.data));\nws.onopen = () => ws.send(JSON.stringify({ action: "join", group: "python" }));'),
+        ("Отправить в группу", 'ws.send(JSON.stringify({ action: "send_to_group", group: "python", message: "Привет группе" }));'),
+    ],
+    "chapter11": [
+        ("Получить access token", 'curl -X POST http://localhost:8011/api/auth/login \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"demo","password":"password"}\''),
+        ("Подключиться с token-ом", 'const token = "PASTE_ACCESS_TOKEN";\nconst ws = new WebSocket(`ws://localhost:8011/ws/authorized?access_token=${token}`);\nws.onmessage = event => console.log(event.data);'),
+    ],
+    "chapter12": [
+        ("Создать группу", 'curl -X POST http://localhost:8012/api/chat/groups \\\n  -H "Content-Type: application/json" \\\n  -d \'{"name":"general"}\''),
+        ("Отправить сообщение", 'curl -X POST http://localhost:8012/api/chat/messages \\\n  -H "Content-Type: application/json" \\\n  -d \'{"text":"hello","sender":"anna","group_id":1}\''),
+    ],
+}
+
+
+CONTROL_QUESTIONS = {
+    "chapter01": [
+        "Какая строка связывает URL <code>/api/calculator/divide</code> с Python-функцией?",
+        "Почему при неправильном JSON FastAPI не заходит внутрь endpoint-а?",
+        "Чем <code>HTTPException(status_code=400)</code> лучше обычного падения Python?",
+        "Где в браузере можно увидеть автоматически созданную схему запроса?",
+    ],
+    "chapter02": [
+        "Что делает <code>Depends</code> и почему dependency передаётся без скобок?",
+        "Почему два request-scoped параметра могут получить один и тот же объект?",
+        "Когда опасно хранить состояние в singleton-style сервисе?",
+        "Как по JSON-ответу понять, что transient dependency создалась заново?",
+    ],
+    "chapter03": [
+        "Как отличить входящий запрос к вашему API от исходящего запроса через <code>httpx</code>?",
+        "Зачем нужен timeout при вызове внешнего сервиса?",
+        "Что делает <code>raise_for_status()</code>?",
+        "Почему внешний API лучше спрятать в отдельный service class?",
+    ],
+    "chapter04": [
+        "Чем validation error отличается от вашей custom error?",
+        "Почему клиенту важно получать стабильную JSON-форму ошибки?",
+        "Где лучше логировать путь запроса и время выполнения?",
+        "Когда стоит вернуть 400, 404, 422 и 500?",
+    ],
+    "chapter05": [
+        "Почему для HTML-формы используется <code>Form</code>, а не Pydantic-модель тела JSON напрямую?",
+        "Зачем шаблону нужен объект <code>request</code>?",
+        "Как сохранить введённые значения после ошибки валидации?",
+        "Почему endpoint формы можно скрыть из OpenAPI через <code>include_in_schema=False</code>?",
+    ],
+    "chapter06": [
+        "Какая разница между ORM-моделью <code>Product</code> и DTO <code>ProductDto</code>?",
+        "Почему Session открывается и закрывается через dependency?",
+        "Что произойдёт, если забыть <code>db.commit()</code>?",
+        "Зачем нужен Alembic, если демо создаёт таблицы автоматически?",
+    ],
+    "chapter07": [
+        "Что означает поле <code>sub</code> внутри JWT payload?",
+        "Почему пароль хранится как hash, а не обычная строка?",
+        "Что делает dependency <code>get_current_user</code>?",
+        "Чем 401 отличается от 403 в задачах безопасности?",
+    ],
+    "chapter08": [
+        "Почему access token делают короткоживущим?",
+        "Зачем хранить refresh token на сервере?",
+        "Что такое rotation refresh token-а?",
+        "Почему logout должен отзывать refresh token?",
+    ],
+    "chapter09": [
+        "Почему WebSocket endpoint начинается с <code>@app.websocket</code>, а не с <code>@app.get</code>?",
+        "Зачем manager хранит список активных соединений?",
+        "Что делает <code>WebSocketDisconnect</code>?",
+        "Почему broadcast должен быть асинхронным?",
+    ],
+    "chapter10": [
+        "Что является транспортом, а что является протоколом сообщений?",
+        "Почему группы удобно хранить как set connection id?",
+        "Что должно произойти при отключении клиента?",
+        "Чем broadcast отличается от direct send?",
+    ],
+    "chapter11": [
+        "Почему token проверяется до <code>accept()</code>?",
+        "Почему username нельзя брать из первого сообщения клиента?",
+        "Что означает закрытие WebSocket с code 1008?",
+        "Как HTTP login связан с WebSocket-подключением?",
+    ],
+    "chapter12": [
+        "Что именно подменяет <code>app.dependency_overrides</code>?",
+        "Почему тестовая БД должна быть отдельной от demo-БД?",
+        "Зачем очищать overrides в <code>finally</code>?",
+        "Почему хороший тест проверяет не только status code?",
+    ],
+}
+
+
+PRACTICE_LEVELS = {
+    "chapter01": [
+        ("Лёгкий уровень", "Добавьте endpoint <code>/api/calculator/modulo</code> и проверьте остаток от деления."),
+        ("Средний уровень", "Сделайте проверку деления на ноль общей для <code>divide</code> и <code>modulo</code>."),
+        ("Сложный уровень", "Добавьте историю последних операций в памяти приложения и endpoint для её просмотра."),
+    ],
+    "chapter02": [
+        ("Лёгкий уровень", "Добавьте dependency, которая возвращает текущий timestamp запроса."),
+        ("Средний уровень", "Добавьте сервис счётчика запросов и покажите разницу между scoped и singleton поведением."),
+        ("Сложный уровень", "Сделайте dependency, которая читает request header и передаёт correlation id в логирующий сервис."),
+    ],
+    "chapter03": [
+        ("Лёгкий уровень", "Добавьте endpoint для получения пользователя JSONPlaceholder по id."),
+        ("Средний уровень", "Соберите post и комментарии в один общий JSON-ответ."),
+        ("Сложный уровень", "Обработайте недоступность внешнего API и верните понятный ответ 503."),
+    ],
+    "chapter04": [
+        ("Лёгкий уровень", "Добавьте новый custom exception для ситуации <code>Item not found</code>."),
+        ("Средний уровень", "Сделайте единый формат ошибки с полями <code>error</code>, <code>path</code>, <code>status_code</code>."),
+        ("Сложный уровень", "Добавьте request id в middleware и возвращайте его в каждом ошибочном ответе."),
+    ],
+    "chapter05": [
+        ("Лёгкий уровень", "Добавьте поле <code>subject</code> в форму и отобразите его после отправки."),
+        ("Средний уровень", "Покажите ошибки валидации рядом с каждым полем, не очищая форму."),
+        ("Сложный уровень", "Добавьте список отправленных сообщений в памяти и страницу просмотра."),
+    ],
+    "chapter06": [
+        ("Лёгкий уровень", "Добавьте поле <code>category</code> в DTO и ORM-модель."),
+        ("Средний уровень", "Добавьте фильтрацию товаров по минимальной цене и наличию на складе."),
+        ("Сложный уровень", "Создайте новую Alembic migration для добавленного поля и опишите команды запуска."),
+    ],
+    "chapter07": [
+        ("Лёгкий уровень", "Добавьте endpoint <code>/api/protected/profile</code>, который возвращает текущего пользователя."),
+        ("Средний уровень", "Добавьте роль <code>admin</code> и protected endpoint только для admin."),
+        ("Сложный уровень", "Сделайте смену пароля с проверкой старого пароля и перевыпуском token-а."),
+    ],
+    "chapter08": [
+        ("Лёгкий уровень", "Добавьте endpoint проверки активных refresh token-ов пользователя."),
+        ("Средний уровень", "Сделайте logout со всеми refresh token-ами текущего пользователя."),
+        ("Сложный уровень", "Добавьте хранение user agent или device name для каждого refresh token-а."),
+    ],
+    "chapter09": [
+        ("Лёгкий уровень", "Добавьте системное сообщение при подключении нового клиента."),
+        ("Средний уровень", "Добавьте имя пользователя в query string и включайте его в broadcast."),
+        ("Сложный уровень", "Добавьте ограничение длины сообщения и отправку ошибки только отправителю."),
+    ],
+    "chapter10": [
+        ("Лёгкий уровень", "Добавьте action <code>leave</code> для выхода из группы."),
+        ("Средний уровень", "Добавьте список групп, в которых состоит текущий клиент."),
+        ("Сложный уровень", "Сделайте direct send по username, а не по техническому connection id."),
+    ],
+    "chapter11": [
+        ("Лёгкий уровень", "Добавьте сообщение приветствия с username после успешного подключения."),
+        ("Средний уровень", "Запретите отправку пустых сообщений через защищённый WebSocket."),
+        ("Сложный уровень", "Добавьте роли в JWT и отдельную группу только для admin-подключений."),
+    ],
+    "chapter12": [
+        ("Лёгкий уровень", "Добавьте тест, который проверяет создание группы."),
+        ("Средний уровень", "Добавьте удаление группы вместе с сообщениями и покройте это тестом."),
+        ("Сложный уровень", "Разделите тесты сервиса и API так, чтобы бизнес-логика проверялась без HTTP-клиента."),
+    ],
+}
+
+
+TEST_FILES = {
+    "chapter01": "tests/test_chapter01_calculator.py",
+    "chapter02": "tests/test_chapter02_di.py",
+    "chapter04": "tests/test_chapter04_errors.py",
+    "chapter06": "tests/test_chapter06_products.py",
+    "chapter07": "tests/test_chapter07_auth.py",
+    "chapter08": "tests/test_chapter08_refresh.py",
+    "chapter09": "tests/test_chapter09_websocket.py",
+    "chapter11": "tests/test_chapter11_authorized_websocket.py",
+    "chapter12": "tests/test_chapter12_chat.py",
+}
+
+
+def lesson_plan(service: str, data: dict) -> list[str]:
+    return [
+        "Откройте главный файл приложения и найдите код из вкладки <strong>Разбор кода</strong>. Не переписывайте его вслепую: сопоставьте каждую строку с объяснением.",
+        "Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.",
+        "Вернитесь на вкладку <strong>Практика</strong>, выполните лёгкое задание, затем среднее. Сложное задание можно оставить как самостоятельную мини-работу.",
+        f"Запустите тесты, связанные с главой: <code>{TEST_FILES.get(service, 'pytest')}</code>. Если теста нет для конкретной главы, запустите общий <code>pytest</code>.",
+    ]
+
+
+def chapter_files(service: str, data: dict) -> list[tuple[str, str]]:
+    files = [
+        (f"{service}/app/main.py", "Главный учебный файл главы: FastAPI app, routes, модели, зависимости и сервисы."),
+        (f"{service}/templates/index.html", "HTML-страница урока с теорией, разбором, практикой и ответами."),
+        (f"{service}/static/site.css", "Общие стили страницы урока."),
+        (f"{service}/static/site.js", "Переключение вкладок на странице урока."),
+        (f"{service}/Dockerfile", "Инструкция сборки контейнера для этой главы."),
+    ]
+    if service == "chapter05":
+        files.insert(2, ("chapter05/templates/contact.html", "Отдельная HTML-форма, которая показывает binding и ошибки валидации."))
+    if service == "chapter06":
+        files.extend([
+            ("chapter06/alembic.ini", "Настройки Alembic для миграций базы данных."),
+            ("chapter06/alembic/env.py", "Код, который подключает Alembic к SQLAlchemy metadata."),
+            ("chapter06/alembic/versions/0001_create_products.py", "Пример первой миграции таблицы products."),
+        ])
+    test_file = TEST_FILES.get(service)
+    if test_file:
+        files.append((test_file, "Автоматические проверки поведения главы. Их полезно читать как примеры использования API."))
+    files.append(("requirements.txt", "Один общий набор Python-зависимостей для всего учебника."))
+    return files
+
+
+def run_commands(service: str, data: dict) -> list[tuple[str, str]]:
+    commands = [
+        ("Создать окружение и поставить зависимости", "python3 -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt"),
+        ("Запустить только эту главу", f"uvicorn {service}.app.main:app --reload --port {data['port']}"),
+        ("Открыть страницу и Swagger", f"open http://localhost:{data['port']}\nopen http://localhost:{data['port']}/docs"),
+        ("Запустить все проверки проекта", "./scripts/validate.sh"),
+    ]
+    test_file = TEST_FILES.get(service)
+    if test_file:
+        commands.insert(3, ("Запустить тесты этой темы", f"pytest {test_file}"))
+    if service == "chapter06":
+        commands.append(("Пример Alembic-команды", "cd chapter06\nalembic upgrade head"))
+    if service.startswith("chapter0") or service in {"chapter10", "chapter11", "chapter12"}:
+        commands.append(("Запустить все главы через Docker Compose", "docker compose up --build"))
+    return commands
+
+
+def browser_targets(data: dict) -> list[tuple[str, str]]:
+    port = data["port"]
+    return [
+        (f"http://localhost:{port}", "Страница урока: теория, разбор кода, практика и ответы."),
+        (f"http://localhost:{port}/docs", "Swagger UI: интерактивная документация, где удобно нажимать Try it out."),
+        (f"http://localhost:{port}/redoc", "ReDoc: статичная документация для спокойного чтения схемы API."),
+        ("http://localhost:8000", "Gateway: общая главная страница со всеми главами."),
+    ]
+
+
 def render_lesson(service: str, data: dict) -> str:
     number = data["number"]
     port = data["port"]
     guide = BEGINNER_GUIDES[service]
+    study_notes = CHAPTER_STUDY_NOTES[service]
     prev_link = f'http://localhost:{port - 1}' if number > 1 else "http://localhost:8000"
     next_link = f'http://localhost:{port + 1}' if number < 12 else "http://localhost:8000"
     prev_label = "Предыдущая глава" if number > 1 else "Главная"
@@ -1717,13 +2059,54 @@ def render_lesson(service: str, data: dict) -> str:
         </section>
 
         <nav class="lesson-tabs" aria-label="Разделы главы">
-            <button class="active" data-tab-target="#theory">Теория</button>
+            <button class="active" data-tab-target="#course">Учебник</button>
+            <button data-tab-target="#theory">Теория</button>
             <button data-tab-target="#code">Разбор кода</button>
-            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#task">Практика</button>
             <button data-tab-target="#answers">Ответы</button>
         </nav>
 
-        <section id="theory" class="tab-panel active">
+        <section id="course" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Как пользоваться этой главой</h2>
+                    {paragraphs(study_notes)}
+                    <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Учебный план</h2>
+                    <ol class="flow-list">
+                        {list_items(lesson_plan(service, data))}
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Структура файлов главы</h2>
+                    <dl class="line-breakdown">
+                        {render_file_structure(chapter_files(service, data))}
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Команды запуска</h2>
+                    <p>Эти команды выполняются из корня проекта <code>FastAPI_Book</code>. Если виртуальное окружение уже создано, повторно создавать его не нужно.</p>
+                </article>
+
+                <div class="section-grid">
+                    {titled_code_blocks(run_commands(service, data))}
+                </div>
+
+                <article class="info-box">
+                    <h2>Что открыть в браузере</h2>
+                    <div class="endpoint-grid">
+                        {endpoint_cards(browser_targets(data))}
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="theory" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
@@ -1745,6 +2128,15 @@ def render_lesson(service: str, data: dict) -> str:
                         {endpoint_cards(data["endpoints"])}
                     </div>
                 </article>
+
+                <article class="info-box">
+                    <h2>Примеры запросов</h2>
+                    <p>Сначала выполните эти примеры как есть, затем поменяйте входные значения и посмотрите, где именно код меняет ответ.</p>
+                </article>
+
+                <div class="section-grid">
+                    {titled_code_blocks(REQUEST_EXAMPLES[service])}
+                </div>
             </div>
         </section>
 
@@ -1789,11 +2181,27 @@ def render_lesson(service: str, data: dict) -> str:
         </section>
 
         <section id="task" class="tab-panel">
-            <article class="info-box">
-                <h2>Практическая задача</h2>
-                <p>{data["task"]}</p>
-                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
-            </article>
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Главная практическая задача</h2>
+                    <p>{data["task"]}</p>
+                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Практика по уровням</h2>
+                    <dl class="line-breakdown">
+                        {definition_items(PRACTICE_LEVELS[service])}
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Контрольные вопросы</h2>
+                    <ol class="flow-list">
+                        {list_items(CONTROL_QUESTIONS[service])}
+                    </ol>
+                </article>
+            </div>
         </section>
 
         <section id="answers" class="tab-panel">

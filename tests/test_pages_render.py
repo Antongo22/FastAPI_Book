@@ -43,12 +43,18 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         response = TestClient(app).get("/")
         assert response.status_code == 200
         assert "← На главную" in response.text
+        assert "Учебник" in response.text
+        assert "Учебный план" in response.text
+        assert "Структура файлов главы" in response.text
+        assert "Команды запуска" in response.text
         assert "Как проходит запрос" in response.text
         assert "Разбор кода" in response.text
         assert "Endpoint-ы для проверки" in response.text
         assert "Если совсем по-простому" in response.text
         assert "Построчный разбор" in response.text
         assert "Типичные ошибки новичков" in response.text
+        assert "Практика по уровням" in response.text
+        assert "Контрольные вопросы" in response.text
         assert "Полное решение задачи" in response.text
         assert "Короткая версия решения" in response.text
 

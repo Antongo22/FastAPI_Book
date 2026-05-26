@@ -29,13 +29,76 @@
         </section>
 
         <nav class="lesson-tabs" aria-label="Разделы главы">
-            <button class="active" data-tab-target="#theory">Теория</button>
+            <button class="active" data-tab-target="#course">Учебник</button>
+            <button data-tab-target="#theory">Теория</button>
             <button data-tab-target="#code">Разбор кода</button>
-            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#task">Практика</button>
             <button data-tab-target="#answers">Ответы</button>
         </nav>
 
-        <section id="theory" class="tab-panel active">
+        <section id="course" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Как пользоваться этой главой</h2>
+                    <p>Финальная глава собирает API, базу, сервисный слой и тесты в один учебный пример.</p>
+<p>Главная мысль: тест должен быть независимым. Поэтому настоящая база подменяется тестовой через dependency override.</p>
+<p>После этой главы вы должны уметь проверить endpoint, сервисную логику и сценарий с несколькими запросами без ручного кликанья в браузере.</p>
+                    <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Учебный план</h2>
+                    <ol class="flow-list">
+                        <li>Откройте главный файл приложения и найдите код из вкладки <strong>Разбор кода</strong>. Не переписывайте его вслепую: сопоставьте каждую строку с объяснением.</li>
+<li>Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.</li>
+<li>Вернитесь на вкладку <strong>Практика</strong>, выполните лёгкое задание, затем среднее. Сложное задание можно оставить как самостоятельную мини-работу.</li>
+<li>Запустите тесты, связанные с главой: <code>tests/test_chapter12_chat.py</code>. Если теста нет для конкретной главы, запустите общий <code>pytest</code>.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Структура файлов главы</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>chapter12/app/main.py</code></dt><dd>Главный учебный файл главы: FastAPI app, routes, модели, зависимости и сервисы.</dd>
+<dt><code>chapter12/templates/index.html</code></dt><dd>HTML-страница урока с теорией, разбором, практикой и ответами.</dd>
+<dt><code>chapter12/static/site.css</code></dt><dd>Общие стили страницы урока.</dd>
+<dt><code>chapter12/static/site.js</code></dt><dd>Переключение вкладок на странице урока.</dd>
+<dt><code>chapter12/Dockerfile</code></dt><dd>Инструкция сборки контейнера для этой главы.</dd>
+<dt><code>tests/test_chapter12_chat.py</code></dt><dd>Автоматические проверки поведения главы. Их полезно читать как примеры использования API.</dd>
+<dt><code>requirements.txt</code></dt><dd>Один общий набор Python-зависимостей для всего учебника.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Команды запуска</h2>
+                    <p>Эти команды выполняются из корня проекта <code>FastAPI_Book</code>. Если виртуальное окружение уже создано, повторно создавать его не нужно.</p>
+                </article>
+
+                <div class="section-grid">
+                    <article class="info-box command-box"><h2>Создать окружение и поставить зависимости</h2><pre><code>{% raw %}python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить только эту главу</h2><pre><code>{% raw %}uvicorn chapter12.app.main:app --reload --port 8012{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Открыть страницу и Swagger</h2><pre><code>{% raw %}open http://localhost:8012
+open http://localhost:8012/docs{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить тесты этой темы</h2><pre><code>{% raw %}pytest tests/test_chapter12_chat.py{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить все проверки проекта</h2><pre><code>{% raw %}./scripts/validate.sh{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить все главы через Docker Compose</h2><pre><code>{% raw %}docker compose up --build{% endraw %}</code></pre></article>
+                </div>
+
+                <article class="info-box">
+                    <h2>Что открыть в браузере</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>http://localhost:8012</code></strong><span>Страница урока: теория, разбор кода, практика и ответы.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8012/docs</code></strong><span>Swagger UI: интерактивная документация, где удобно нажимать Try it out.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8012/redoc</code></strong><span>ReDoc: статичная документация для спокойного чтения схемы API.</span></article>
+<article class="endpoint-card"><strong><code>http://localhost:8000</code></strong><span>Gateway: общая главная страница со всеми главами.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="theory" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
@@ -69,6 +132,20 @@
 <article class="endpoint-card"><strong><code>GET /api/chat/messages?group_id=...</code></strong><span>Получение сообщений, опционально по группе.</span></article>
                     </div>
                 </article>
+
+                <article class="info-box">
+                    <h2>Примеры запросов</h2>
+                    <p>Сначала выполните эти примеры как есть, затем поменяйте входные значения и посмотрите, где именно код меняет ответ.</p>
+                </article>
+
+                <div class="section-grid">
+                    <article class="info-box command-box"><h2>Создать группу</h2><pre><code>{% raw %}curl -X POST http://localhost:8012/api/chat/groups \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;name&quot;:&quot;general&quot;}&#x27;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Отправить сообщение</h2><pre><code>{% raw %}curl -X POST http://localhost:8012/api/chat/messages \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;text&quot;:&quot;hello&quot;,&quot;sender&quot;:&quot;anna&quot;,&quot;group_id&quot;:1}&#x27;{% endraw %}</code></pre></article>
+                </div>
             </div>
         </section>
 
@@ -136,11 +213,32 @@ finally:
         </section>
 
         <section id="task" class="tab-panel">
-            <article class="info-box">
-                <h2>Практическая задача</h2>
-                <p>Добавьте endpoint удаления группы и тест, что сообщение удалённой группы больше не возвращается.</p>
-                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
-            </article>
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Главная практическая задача</h2>
+                    <p>Добавьте endpoint удаления группы и тест, что сообщение удалённой группы больше не возвращается.</p>
+                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Практика по уровням</h2>
+                    <dl class="line-breakdown">
+                        <dt>Лёгкий уровень</dt><dd>Добавьте тест, который проверяет создание группы.</dd>
+<dt>Средний уровень</dt><dd>Добавьте удаление группы вместе с сообщениями и покройте это тестом.</dd>
+<dt>Сложный уровень</dt><dd>Разделите тесты сервиса и API так, чтобы бизнес-логика проверялась без HTTP-клиента.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Контрольные вопросы</h2>
+                    <ol class="flow-list">
+                        <li>Что именно подменяет <code>app.dependency_overrides</code>?</li>
+<li>Почему тестовая БД должна быть отдельной от demo-БД?</li>
+<li>Зачем очищать overrides в <code>finally</code>?</li>
+<li>Почему хороший тест проверяет не только status code?</li>
+                    </ol>
+                </article>
+            </div>
         </section>
 
         <section id="answers" class="tab-panel">
