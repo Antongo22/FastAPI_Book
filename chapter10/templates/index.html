@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 10: SignalR-подобный WebSocket manager</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8009">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8011">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 10: SignalR-подобный WebSocket manager</h1>
+            <p>Connection id, direct send, broadcast, groups и JSON-команды поверх WebSocket.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8010</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8010/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы понимаете, как построить более удобный слой real-time общения без SignalR.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>Connection id</strong> - серверный идентификатор конкретного WebSocket-клиента.</li>
+<li><strong>Direct send</strong> - отправка одному подключению.</li>
+<li><strong>Broadcast</strong> - отправка всем подключениям.</li>
+<li><strong>Group</strong> - набор connection id, например комната чата.</li>
+<li><strong>Action protocol</strong> - JSON-команды вроде <code>send_to_group</code> и <code>join</code>.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Клиент подключается к <code>/ws/chat?group=general</code>.</li>
+<li>Manager создаёт connection id и добавляет его в группу.</li>
+<li>Клиент отправляет JSON с action и message.</li>
+<li>Action определяет маршрут сообщения: всем, группе или конкретному connection id.</li>
+<li>Manager выбирает получателей и отправляет JSON-событие.</li>
+<li>При отключении клиент удаляется из всех групп.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/chat/info</code></strong><span>Состояние подключений и групп.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws/chat</code></strong><span>JSON real-time чат с группами и direct send.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}elif action == &quot;send_to_group&quot;:
+    await manager.send_to_group(data.get(&quot;group&quot;, group), payload)
+elif action == &quot;join&quot;:
+    manager.groups[data.get(&quot;group&quot;, group)].add(connection_id)
+    await manager.send_to_connection(connection_id, {&quot;event&quot;: &quot;joined&quot;, &quot;group&quot;: data.get(&quot;group&quot;, group)})
+else:
+    await manager.broadcast(payload){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Глава показывает, как поверх WebSocket сделать более удобный протокол: команды, группы и отправку одному клиенту.</p>
+<p>Это учебная замена SignalR: мы вручную делаем часть того, что SignalR обычно берёт на себя.</p>
+<p>Главная мысль: WebSocket - транспорт, а правила сообщений вы проектируете сами.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>elif action == "send_to_group"</code></dt><dd>Проверяем, какую команду прислал клиент в JSON.</dd>
+<dt><code>data.get("group", group)</code></dt><dd>Берём группу из сообщения. Если её нет, используем текущую группу подключения.</dd>
+<dt><code>await manager.send_to_group(...)</code></dt><dd>Отправляем payload только участникам выбранной группы.</dd>
+<dt><code>elif action == "join"</code></dt><dd>Команда подключения к группе.</dd>
+<dt><code>manager.groups[...].add(connection_id)</code></dt><dd>Добавляем текущего клиента в set участников группы.</dd>
+<dt><code>send_to_connection(...)</code></dt><dd>Отправляем подтверждение только этому клиенту.</dd>
+<dt><code>else:</code></dt><dd>Если action не распознан или равен broadcast, используем поведение по умолчанию.</dd>
+<dt><code>await manager.broadcast(payload)</code></dt><dd>Рассылаем сообщение всем активным подключениям.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Это не полный аналог SignalR: нет автогенерации клиента, backplane и typed hubs.</li>
+<li>Но учебно видно, какие задачи решает SignalR: хранение клиентов, группы, direct send и события.</li>
+<li>JSON-протокол проще расширять, чем plain text сообщения из предыдущей главы.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Не договориться о формате JSON-команд между клиентом и сервером.</li>
+<li>Хранить группы списком и получать дубликаты connection id.</li>
+<li>Не удалять connection id из групп при отключении.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте action <code>leave</code>, который удаляет подключение из указанной группы и отправляет событие <code>left</code>.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Добавляем новую команду протокола. Она меняет состояние manager-а и возвращает подтверждение только текущему клиенту.</p>
+<ul class="flow-list"><li>В обработчик action добавить ветку <code>leave</code>.</li>
+<li>Взять имя группы из JSON или использовать текущую группу.</li>
+<li>Удалить connection id из set участников.</li>
+<li>Отправить событие <code>left</code> текущему клиенту.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный блок обработки action</h2>
+<pre><code>{% raw %}if action == &quot;send_to_connection&quot;:
+    await manager.send_to_connection(data[&quot;connection_id&quot;], payload)
+elif action == &quot;send_to_group&quot;:
+    await manager.send_to_group(data.get(&quot;group&quot;, group), payload)
+elif action == &quot;join&quot;:
+    target_group = data.get(&quot;group&quot;, group)
+    manager.groups[target_group].add(connection_id)
+    await manager.send_to_connection(connection_id, {&quot;event&quot;: &quot;joined&quot;, &quot;group&quot;: target_group})
+elif action == &quot;leave&quot;:
+    target_group = data.get(&quot;group&quot;, group)
+    manager.groups[target_group].discard(connection_id)
+    await manager.send_to_connection(connection_id, {&quot;event&quot;: &quot;left&quot;, &quot;group&quot;: target_group})
+else:
+    await manager.broadcast(payload){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>WS /ws/chat</code></strong><span>Отправьте <code>{"action": "join", "group": "python"}</code>.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws/chat</code></strong><span>Отправьте <code>{"action": "leave", "group": "python"}</code> и получите событие <code>left</code>.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}elif action == &quot;leave&quot;:
+    target_group = data.get(&quot;group&quot;, group)
+    manager.groups[target_group].discard(connection_id)
+    await manager.send_to_connection(connection_id, {&quot;event&quot;: &quot;left&quot;, &quot;group&quot;: target_group}){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Используйте <code>discard</code>, а не <code>remove</code>, чтобы отсутствие connection id не бросало исключение.</li>
+<li>После выхода из группы broadcast всем всё ещё может доставлять сообщения этому клиенту.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

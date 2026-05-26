@@ -1,0 +1,147 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8000:8000"
+    networks:
+      - fastapi-book-network
+
+  chapter01:
+    build:
+      context: .
+      dockerfile: chapter01/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8001:8001"
+    networks:
+      - fastapi-book-network
+
+  chapter02:
+    build:
+      context: .
+      dockerfile: chapter02/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8002:8002"
+    networks:
+      - fastapi-book-network
+
+  chapter03:
+    build:
+      context: .
+      dockerfile: chapter03/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8003:8003"
+    networks:
+      - fastapi-book-network
+
+  chapter04:
+    build:
+      context: .
+      dockerfile: chapter04/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8004:8004"
+    networks:
+      - fastapi-book-network
+
+  chapter05:
+    build:
+      context: .
+      dockerfile: chapter05/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8005:8005"
+    networks:
+      - fastapi-book-network
+
+  chapter06:
+    build:
+      context: .
+      dockerfile: chapter06/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8006:8006"
+    networks:
+      - fastapi-book-network
+
+  chapter07:
+    build:
+      context: .
+      dockerfile: chapter07/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8007:8007"
+    networks:
+      - fastapi-book-network
+
+  chapter08:
+    build:
+      context: .
+      dockerfile: chapter08/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8008:8008"
+    networks:
+      - fastapi-book-network
+
+  chapter09:
+    build:
+      context: .
+      dockerfile: chapter09/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8009:8009"
+    networks:
+      - fastapi-book-network
+
+  chapter10:
+    build:
+      context: .
+      dockerfile: chapter10/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8010:8010"
+    networks:
+      - fastapi-book-network
+
+  chapter11:
+    build:
+      context: .
+      dockerfile: chapter11/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8011:8011"
+    networks:
+      - fastapi-book-network
+
+  chapter12:
+    build:
+      context: .
+      dockerfile: chapter12/Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8012:8012"
+    networks:
+      - fastapi-book-network
+
+networks:
+  fastapi-book-network:
+    driver: bridge

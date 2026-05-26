@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 6: SQLAlchemy, DTO и SQLite</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8005">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8007">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 6: SQLAlchemy, DTO и SQLite</h1>
+            <p>Engine, Session, ORM-модель, Pydantic DTO, CRUD endpoint-ы и минимальная Alembic-миграция.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8006</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8006/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы умеете связать FastAPI с SQLite и отделять публичные DTO от внутренних ORM-классов.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>Engine</strong> - подключение SQLAlchemy к базе данных.</li>
+<li><strong>Session</strong> - unit of work: через неё читаем, добавляем, изменяем и удаляем строки.</li>
+<li><strong>DeclarativeBase</strong> - база для ORM-классов.</li>
+<li><strong>Mapped / mapped_column</strong> - типизированное описание колонок SQLAlchemy 2.</li>
+<li><strong>DTO</strong> - Pydantic-модели для входного и выходного JSON.</li>
+<li><strong>Alembic</strong> - инструмент миграций схемы БД.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>При старте приложения создаётся engine и sessionmaker.</li>
+<li>Dependency <code>get_db</code> открывает Session на время запроса.</li>
+<li>Endpoint получает Session через <code>Depends</code>.</li>
+<li>ORM-модель <code>Product</code> описывает таблицу <code>products</code>.</li>
+<li>Pydantic DTO проверяет входные данные и форматирует выходной JSON.</li>
+<li>После commit SQLAlchemy записывает изменения в SQLite.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Список продуктов.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/products/{product_id}</code></strong><span>Один продукт или 404.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Создание продукта с DTO-валидацией.</span></article>
+<article class="endpoint-card"><strong><code>PUT /api/products/{product_id}</code></strong><span>Частичное обновление полей.</span></article>
+<article class="endpoint-card"><strong><code>DELETE /api/products/{product_id}</code></strong><span>Удаление продукта.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.post(&quot;/api/products&quot;, response_model=ProductDto, status_code=201)
+async def create_product(request: CreateProductDto, db: Session = Depends(get_db)):
+    product = Product(**request.model_dump())
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return product{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>База данных хранит данные дольше, чем живёт один запрос. SQLAlchemy помогает работать с таблицами как с Python-объектами.</p>
+<p>Session - это рабочая область для операций с БД. Через неё мы добавляем, читаем, сохраняем и удаляем данные.</p>
+<p>DTO нужны, чтобы внешний JSON API не зависел напрямую от внутренней ORM-модели.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>def get_db()</code></dt><dd>Dependency-функция, которая выдаёт подключение к БД на время запроса.</dd>
+<dt><code>db = SessionLocal()</code></dt><dd>Создаём новую Session. Через неё endpoint будет работать с БД.</dd>
+<dt><code>try:</code></dt><dd>Начинаем блок, где Session отдаётся endpoint-у.</dd>
+<dt><code>yield db</code></dt><dd>Отдаём Session наружу. После завершения запроса выполнение вернётся сюда.</dd>
+<dt><code>finally:</code></dt><dd>Этот блок выполнится даже если в endpoint-е случилась ошибка.</dd>
+<dt><code>db.close()</code></dt><dd>Закрываем Session, чтобы не держать ресурсы.</dd>
+<dt><code>response_model=ProductDto</code></dt><dd>FastAPI отдаст наружу только поля, описанные в DTO.</dd>
+<dt><code>Product(**request.model_dump())</code></dt><dd>Берём проверенные поля из DTO и создаём ORM-объект.</dd>
+<dt><code>db.add(product)</code></dt><dd>Говорим Session: этот объект нужно вставить в таблицу.</dd>
+<dt><code>db.commit()</code></dt><dd>Фактически сохраняем изменения в базе.</dd>
+<dt><code>db.refresh(product)</code></dt><dd>Обновляем объект, чтобы получить id, выданный базой.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li><code>yield</code> dependency гарантирует закрытие Session после запроса.</li>
+<li><code>response_model</code> не отдаёт наружу лишние ORM-поля.</li>
+<li>В учебном режиме таблицы создаются автоматически, а Alembic показан как правильный путь для реального проекта.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Создать объект, но забыть <code>db.commit()</code>: данные не сохранятся.</li>
+<li>Вернуть ORM-модель без DTO и случайно раскрыть лишние поля.</li>
+<li>Держать одну Session глобально на всё приложение.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте поле <code>category</code> в продукт, DTO и Alembic-миграцию. Проверьте, что оно возвращается в <code>GET /api/products</code>.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Поле <code>category</code> должно пройти через все слои: ORM-модель, DTO для ответа, DTO для создания, DTO для обновления и миграцию.</p>
+<ul class="flow-list"><li>В <code>Product</code> добавить колонку <code>category</code>.</li>
+<li>В <code>ProductDto</code> добавить поле <code>category</code>.</li>
+<li>В <code>CreateProductDto</code> добавить обязательное или default-поле.</li>
+<li>В <code>UpdateProductDto</code> добавить optional-поле.</li>
+<li>Создать Alembic migration с <code>op.add_column</code>.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный набор изменений в моделях</h2>
+<pre><code>{% raw %}class Product(Base):
+    __tablename__ = &quot;products&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), default=&quot;general&quot;)
+    description: Mapped[str] = mapped_column(String(500), default=&quot;&quot;)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    stock: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProductDto(BaseModel):
+    id: int
+    name: str
+    category: str
+    description: str
+    price: Decimal
+    stock: int
+
+    model_config = {&quot;from_attributes&quot;: True}
+
+
+class CreateProductDto(BaseModel):
+    name: str = Field(min_length=1)
+    category: str = &quot;general&quot;
+    description: str = &quot;&quot;
+    price: Decimal = Field(gt=0)
+    stock: int = Field(ge=0)
+
+
+class UpdateProductDto(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    description: str | None = None
+    price: Decimal | None = Field(default=None, gt=0)
+    stock: int | None = Field(default=None, ge=0){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Полная Alembic migration</h2>
+<pre><code>{% raw %}from alembic import op
+import sqlalchemy as sa
+
+
+revision = &quot;0002_add_product_category&quot;
+down_revision = &quot;0001_create_products&quot;
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    op.add_column(
+        &quot;products&quot;,
+        sa.Column(&quot;category&quot;, sa.String(length=80), nullable=False, server_default=&quot;general&quot;),
+    )
+
+
+def downgrade():
+    op.drop_column(&quot;products&quot;, &quot;category&quot;){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>4. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Body содержит <code>"category": "books"</code>.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Каждый продукт возвращает поле <code>category</code>.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}category: Mapped[str] = mapped_column(String(80), default=&quot;general&quot;)
+
+
+class ProductDto(BaseModel):
+    id: int
+    name: str
+    category: str
+    ...{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Менять нужно и ORM-модель, и DTO, иначе поле либо не сохранится, либо не попадёт в публичный ответ.</li>
+<li>В миграции используйте <code>op.add_column</code>, а в downgrade - <code>op.drop_column</code>.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

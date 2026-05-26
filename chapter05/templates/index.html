@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 5: Jinja2 UI</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8004">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8006">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 5: Jinja2 UI</h1>
+            <p>Серверные HTML-шаблоны, формы, Form-параметры и Pydantic-валидация вместо Razor Pages.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8005</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8005/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы понимаете, как FastAPI отдаёт HTML, принимает формы и показывает ошибки пользователю.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>Jinja2Templates</strong> - подключение папки HTML-шаблонов.</li>
+<li><strong>TemplateResponse</strong> - ответ, который рендерит шаблон на сервере.</li>
+<li><strong>request</strong> - обязательный объект в context для Starlette templates.</li>
+<li><strong>Form</strong> - чтение данных из HTML-формы вместо JSON-body.</li>
+<li><strong>Pydantic validation</strong> - единая проверка формы перед сохранением или отправкой.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Пользователь открывает <code>/contact</code>, FastAPI рендерит HTML-форму.</li>
+<li>Браузер отправляет <code>POST /contact</code> с <code>application/x-www-form-urlencoded</code>.</li>
+<li>FastAPI передаёт поля в параметры <code>Form</code>.</li>
+<li>Pydantic-модель проверяет пустые строки и формат email.</li>
+<li>При ошибке тот же шаблон рендерится со status 400 и списком ошибок.</li>
+<li>При успехе страница показывает сообщение о принятой форме.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /</code></strong><span>Страница урока.</span></article>
+<article class="endpoint-card"><strong><code>GET /contact</code></strong><span>HTML-форма контакта.</span></article>
+<article class="endpoint-card"><strong><code>POST /contact</code></strong><span>Обработка формы и вывод ошибок.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/contact</code></strong><span>JSON API-версия той же проверки.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}@app.post(&quot;/contact&quot;, response_class=HTMLResponse, include_in_schema=False)
+async def submit_contact(
+    request: Request,
+    name: str = Form(&quot;&quot;),
+    email: str = Form(&quot;&quot;),
+    message: str = Form(&quot;&quot;),
+):
+    values = {&quot;name&quot;: name, &quot;email&quot;: email, &quot;message&quot;: message}
+    ContactForm(**values){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>До этого мы в основном возвращали JSON. Здесь FastAPI возвращает обычную HTML-страницу.</p>
+<p>Jinja2 - это шаблонизатор: HTML-файл с местами, куда сервер подставляет данные.</p>
+<p>Форма отправляет не JSON, а специальные form-поля. Поэтому используются параметры <code>Form</code>.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>@app.post("/contact", response_class=HTMLResponse)</code></dt><dd>Этот endpoint принимает отправку формы и возвращает HTML, а не JSON.</dd>
+<dt><code>include_in_schema=False</code></dt><dd>Прячем HTML endpoint из Swagger, потому что это страница для браузера, а не API для клиента.</dd>
+<dt><code>request: Request</code></dt><dd>Объект запроса нужен Jinja2-шаблону.</dd>
+<dt><code>name: str = Form("")</code></dt><dd>Берём поле <code>name</code> из HTML-формы. Если его нет, используем пустую строку.</dd>
+<dt><code>email: str = Form("")</code></dt><dd>То же самое для email.</dd>
+<dt><code>message: str = Form("")</code></dt><dd>То же самое для текста сообщения.</dd>
+<dt><code>values = {...}</code></dt><dd>Складываем введённые данные в словарь, чтобы при ошибке вернуть их обратно на страницу.</dd>
+<dt><code>ContactForm(**values)</code></dt><dd>Передаём словарь в Pydantic-модель. Две звёздочки означают 'развернуть словарь в именованные аргументы'.</dd>
+<dt><code>ValidationError</code></dt><dd>Если Pydantic нашёл ошибку, мы ловим её и показываем рядом с полями формы.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>HTML-форма и JSON API могут использовать одну Pydantic-модель, чтобы правила не расходились.</li>
+<li>Ошибки формы лучше возвращать на ту же страницу, сохраняя введённые пользователем значения.</li>
+<li>Для файлов и сложных форм понадобится <code>python-multipart</code>, он уже есть в requirements.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Забыть установить <code>python-multipart</code>, без него FastAPI не принимает формы.</li>
+<li>Не передать <code>request</code> в шаблон.</li>
+<li>При ошибке очистить форму, заставив пользователя вводить всё заново.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что добавляем</h2>
+<p>Для полноценной страницы регистрации нужны три части: Pydantic-модель формы, GET-handler для показа страницы и POST-handler для обработки отправки.</p>
+<ul class="flow-list"><li>Добавить модель <code>RegistrationForm</code> в <code>chapter05/app/main.py</code>.</li>
+<li>Добавить <code>GET /register</code> и <code>POST /register</code>.</li>
+<li>Создать шаблон <code>chapter05/templates/register.html</code>.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный код Python-части</h2>
+<pre><code>{% raw %}class RegistrationForm(BaseModel):
+    username: str
+    email: str
+    password: str
+
+    @field_validator(&quot;username&quot;, &quot;email&quot;, &quot;password&quot;)
+    @classmethod
+    def not_empty(cls, value: str) -&gt; str:
+        if not value.strip():
+            raise ValueError(&quot;Поле обязательно&quot;)
+        return value.strip()
+
+    @field_validator(&quot;email&quot;)
+    @classmethod
+    def email_has_at(cls, value: str) -&gt; str:
+        if &quot;@&quot; not in value:
+            raise ValueError(&quot;Email должен содержать @&quot;)
+        return value
+
+    @field_validator(&quot;password&quot;)
+    @classmethod
+    def password_is_long_enough(cls, value: str) -&gt; str:
+        if len(value) &lt; 6:
+            raise ValueError(&quot;Пароль должен быть не короче 6 символов&quot;)
+        return value
+
+
+@app.get(&quot;/register&quot;, response_class=HTMLResponse, include_in_schema=False)
+async def register_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        &quot;register.html&quot;,
+        {&quot;request&quot;: request, &quot;errors&quot;: {}, &quot;values&quot;: {}, &quot;registered&quot;: False},
+    )
+
+
+@app.post(&quot;/register&quot;, response_class=HTMLResponse, include_in_schema=False)
+async def submit_register(
+    request: Request,
+    username: str = Form(&quot;&quot;),
+    email: str = Form(&quot;&quot;),
+    password: str = Form(&quot;&quot;),
+):
+    values = {&quot;username&quot;: username, &quot;email&quot;: email, &quot;password&quot;: password}
+    try:
+        RegistrationForm(**values)
+    except ValidationError as error:
+        errors = {str(item[&quot;loc&quot;][0]): item[&quot;msg&quot;] for item in error.errors()}
+        return templates.TemplateResponse(
+            request,
+            &quot;register.html&quot;,
+            {&quot;request&quot;: request, &quot;errors&quot;: errors, &quot;values&quot;: values, &quot;registered&quot;: False},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        request,
+        &quot;register.html&quot;,
+        {&quot;request&quot;: request, &quot;errors&quot;: {}, &quot;values&quot;: values, &quot;registered&quot;: True},
+    ){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Минимальный шаблон register.html</h2>
+<pre><code>{% raw %}&lt;form method=&quot;post&quot; action=&quot;/register&quot;&gt;
+    &lt;label&gt;Username
+        &lt;input name=&quot;username&quot; value=&quot;{{ values.get(&#x27;username&#x27;, &#x27;&#x27;) }}&quot;&gt;
+        {% if errors.get(&#x27;username&#x27;) %}&lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;username&#x27;) }}&lt;/span&gt;{% endif %}
+    &lt;/label&gt;
+    &lt;label&gt;Email
+        &lt;input name=&quot;email&quot; value=&quot;{{ values.get(&#x27;email&#x27;, &#x27;&#x27;) }}&quot;&gt;
+        {% if errors.get(&#x27;email&#x27;) %}&lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;email&#x27;) }}&lt;/span&gt;{% endif %}
+    &lt;/label&gt;
+    &lt;label&gt;Password
+        &lt;input name=&quot;password&quot; type=&quot;password&quot;&gt;
+        {% if errors.get(&#x27;password&#x27;) %}&lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;password&#x27;) }}&lt;/span&gt;{% endif %}
+    &lt;/label&gt;
+    &lt;button type=&quot;submit&quot;&gt;Зарегистрироваться&lt;/button&gt;
+&lt;/form&gt;{% endraw %}</code></pre>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}class RegistrationForm(BaseModel):
+    username: str
+    email: str
+    password: str
+
+    @field_validator(&quot;password&quot;)
+    @classmethod
+    def password_is_long_enough(cls, value: str) -&gt; str:
+        if len(value) &lt; 6:
+            raise ValueError(&quot;Пароль должен быть не короче 6 символов&quot;)
+        return value{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>GET-handler должен показывать пустую форму, POST-handler - валидировать и возвращать тот же шаблон.</li>
+<li>Не храните пароль в открытом виде: в auth-главах он будет хешироваться.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

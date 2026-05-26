@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 9: WebSockets</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8008">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8010">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 9: WebSockets</h1>
+            <p>Постоянное двустороннее соединение, connection manager, receive loop и broadcast.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8009</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8009/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы умеете принять WebSocket-соединение, хранить клиентов и рассылать сообщения всем участникам.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>WebSocket</strong> - протокол для постоянного двустороннего обмена.</li>
+<li><strong>accept()</strong> - явное принятие соединения сервером.</li>
+<li><strong>receive_text()</strong> - ожидание следующего сообщения клиента.</li>
+<li><strong>WebSocketDisconnect</strong> - штатное отключение клиента.</li>
+<li><strong>ConnectionManager</strong> - объект, который хранит активные подключения.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Клиент подключается к <code>ws://localhost:8009/ws</code>.</li>
+<li>Сервер вызывает <code>websocket.accept()</code> и создаёт connection id.</li>
+<li>Подключение сохраняется в словаре активных клиентов.</li>
+<li>Сервер входит в бесконечный цикл приема сообщений.</li>
+<li>Каждое сообщение рассылается всем текущим клиентам.</li>
+<li>При отключении connection id удаляется из manager-а.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/websocket/info</code></strong><span>Показывает endpoint и количество подключений.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Простой broadcast-чат.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}@app.websocket(&quot;/ws&quot;)
+async def websocket_endpoint(websocket: WebSocket):
+    connection_id = await manager.connect(websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+            await manager.broadcast({
+                &quot;event&quot;: &quot;message&quot;,
+                &quot;connection_id&quot;: connection_id,
+                &quot;message&quot;: message,
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Обычный HTTP-запрос короткий: клиент спросил, сервер ответил, соединение закончилось.</p>
+<p>WebSocket остаётся открытым. Клиент и сервер могут обмениваться сообщениями много раз.</p>
+<p>Для чата серверу нужно помнить, кто сейчас подключён.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>@app.websocket("/ws")</code></dt><dd>Регистрируем не HTTP endpoint, а WebSocket endpoint.</dd>
+<dt><code>websocket: WebSocket</code></dt><dd>Объект активного соединения. Через него принимаем и отправляем сообщения.</dd>
+<dt><code>await manager.connect(websocket)</code></dt><dd>Принимаем соединение и сохраняем его в manager-е.</dd>
+<dt><code>try:</code></dt><dd>Начинаем блок, где соединение считается открытым.</dd>
+<dt><code>while True:</code></dt><dd>Бесконечный цикл. Он работает, пока клиент не отключится.</dd>
+<dt><code>await websocket.receive_text()</code></dt><dd>Ждём следующее текстовое сообщение клиента.</dd>
+<dt><code>await manager.broadcast(...)</code></dt><dd>Рассылаем сообщение всем подключённым клиентам.</dd>
+<dt><code>except WebSocketDisconnect:</code></dt><dd>Если клиент закрыл вкладку или соединение оборвалось, попадаем сюда.</dd>
+<dt><code>manager.disconnect(connection_id)</code></dt><dd>Удаляем клиента из списка активных подключений.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>WebSocket endpoint не возвращает HTTP response, он живёт пока открыто соединение.</li>
+<li>Broadcast должен учитывать отключившихся клиентов, иначе отправка может падать.</li>
+<li>Для масштабирования на несколько процессов нужен внешний broker, например Redis Pub/Sub.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Забыть <code>await websocket.accept()</code> внутри connect.</li>
+<li>Не удалить отключившегося клиента из manager-а.</li>
+<li>Думать, что WebSocket endpoint можно проверить обычным curl как HTTP.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте команду <code>/who</code>, которая отправляет текущему клиенту количество активных подключений.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Команда <code>/who</code> должна обрабатываться внутри receive loop до broadcast. Это команда только для отправителя.</p>
+<ul class="flow-list"><li>Внутри цикла получить текст сообщения.</li>
+<li>Проверить, равно ли сообщение <code>/who</code>.</li>
+<li>Если да, отправить ответ только текущему WebSocket.</li>
+<li>Если нет, оставить обычный broadcast.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный receive loop после изменения</h2>
+<pre><code>{% raw %}@app.websocket(&quot;/ws&quot;)
+async def websocket_endpoint(websocket: WebSocket):
+    connection_id = await manager.connect(websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+
+            if message == &quot;/who&quot;:
+                await websocket.send_json({
+                    &quot;event&quot;: &quot;connections&quot;,
+                    &quot;count&quot;: len(manager.active_connections),
+                })
+                continue
+
+            await manager.broadcast({
+                &quot;event&quot;: &quot;message&quot;,
+                &quot;connection_id&quot;: connection_id,
+                &quot;message&quot;: message,
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id)
+        await manager.broadcast({&quot;event&quot;: &quot;disconnected&quot;, &quot;connection_id&quot;: connection_id}){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Отправьте <code>/who</code> и получите count только в текущем клиенте.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Отправьте обычный текст и получите broadcast у всех клиентов.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}if message == &quot;/who&quot;:
+    await websocket.send_json({
+        &quot;event&quot;: &quot;connections&quot;,
+        &quot;count&quot;: len(manager.active_connections),
+    })
+else:
+    await manager.broadcast(...){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Команды, предназначенные только отправителю, не нужно рассылать через broadcast.</li>
+<li>Так появляется первая серверная логика поверх обычного транспорта.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

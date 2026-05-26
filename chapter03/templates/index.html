@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 3: HTTP Requests</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8002">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8004">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 3: HTTP Requests</h1>
+            <p>Асинхронные запросы к внешним API через httpx и сервисный слой.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8003</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8003/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы понимаете, как не блокировать event loop и как отделять endpoint от внешней интеграции.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>httpx.AsyncClient</strong> - асинхронный HTTP-клиент для outbound-запросов.</li>
+<li><strong>Timeout</strong> - обязательная защита от зависания внешнего сервиса.</li>
+<li><strong>Service layer</strong> - класс, который скрывает детали внешнего API от контроллера.</li>
+<li><strong>raise_for_status</strong> - перевод HTTP 4xx/5xx во внутреннее исключение.</li>
+<li><strong>Error mapping</strong> - преобразование ошибок внешнего API в понятный ответ вашего API.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Клиент вызывает ваш endpoint, например <code>/api/http-client/post/1</code>.</li>
+<li>Endpoint получает <code>ExternalApiService</code> через dependency.</li>
+<li>Сервис открывает <code>httpx.AsyncClient</code> с base URL и timeout.</li>
+<li>Внешний ответ проверяется через <code>raise_for_status()</code>.</li>
+<li>JSON внешнего сервиса возвращается клиенту вашего API.</li>
+<li>При ошибке endpoint возвращает HTTP 502 или код внешнего ответа.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/http-client/direct/{post_id}</code></strong><span>Прямой запрос к JSONPlaceholder без сервиса.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/http-client/post/{post_id}</code></strong><span>То же самое через сервисный слой.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/http-client/posts</code></strong><span>Получение списка постов.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/http-client/post</code></strong><span>Создание демо-поста во внешнем API.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}class ExternalApiService:
+    async def get_post(self, post_id: int) -&gt; dict:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(f&quot;/posts/{post_id}&quot;)
+            response.raise_for_status()
+            return response.json(){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Здесь приложение само становится клиентом другого API. Пользователь обращается к нам, а мы внутри делаем запрос на JSONPlaceholder.</p>
+<p>Важно не путать два направления: входящий запрос приходит в FastAPI, исходящий запрос отправляет <code>httpx</code>.</p>
+<p>Асинхронность нужна, чтобы сервер не простаивал, пока ждёт ответ внешнего сайта.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>class ExternalApiService:</code></dt><dd>Создаём класс-сервис. Он отвечает за общение с внешним API, чтобы endpoint был коротким.</dd>
+<dt><code>async def get_post(...)</code></dt><dd>Асинхронный метод. Его можно вызывать с <code>await</code>.</dd>
+<dt><code>post_id: int</code></dt><dd>Ожидаем целое число. Например, <code>1</code>, <code>2</code>, <code>10</code>.</dd>
+<dt><code>-&gt; dict</code></dt><dd>Подсказка: метод вернёт словарь Python.</dd>
+<dt><code>async with httpx.AsyncClient(...)</code></dt><dd>Открываем HTTP-клиент на время блока. После блока он корректно закрывается.</dd>
+<dt><code>base_url=self.base_url</code></dt><dd>Общий адрес внешнего сервиса задаётся один раз, дальше можно писать только путь.</dd>
+<dt><code>timeout=10.0</code></dt><dd>Если внешний сервис зависнет, мы не будем ждать вечно.</dd>
+<dt><code>await client.get(...)</code></dt><dd>Отправляем GET-запрос и ждём ответ.</dd>
+<dt><code>response.raise_for_status()</code></dt><dd>Если внешний API вернул ошибку 404/500, превращаем её в исключение.</dd>
+<dt><code>return response.json()</code></dt><dd>Берём JSON из ответа и возвращаем его как Python-объект.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Клиент создаётся внутри <code>async with</code>, поэтому соединения корректно закрываются.</li>
+<li>В больших приложениях клиент можно держать дольше через lifespan, но для учебного примера локальный context manager проще.</li>
+<li>Endpoint не знает URL внешнего API: это ответственность сервиса.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Забыть <code>await</code> перед асинхронным запросом.</li>
+<li>Создавать запросы без timeout и зависнуть на плохом внешнем сервисе.</li>
+<li>Смешать логику внешнего API прямо с endpoint-ом, из-за чего код станет трудно тестировать.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте метод и endpoint для получения комментариев поста: <code>GET /api/http-client/post/{post_id}/comments</code>.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что добавляем</h2>
+<p>Добавляем новый метод во внешний сервис и отдельный endpoint. Endpoint остаётся тонким: он только вызывает сервис и обрабатывает ошибку.</p>
+<ul class="flow-list"><li>Добавить метод <code>get_post_comments</code> в <code>ExternalApiService</code>.</li>
+<li>Добавить route <code>GET /api/http-client/post/{post_id}/comments</code>.</li>
+<li>Использовать тот же <code>map_http_error</code>, что и в остальных методах.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный код метода сервиса и endpoint-а</h2>
+<pre><code>{% raw %}class ExternalApiService:
+    def __init__(self, base_url: str = JSONPLACEHOLDER):
+        self.base_url = base_url
+
+    async def get_post_comments(self, post_id: int) -&gt; list[dict]:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(f&quot;/posts/{post_id}/comments&quot;)
+            response.raise_for_status()
+            return response.json()
+
+
+@app.get(&quot;/api/http-client/post/{post_id}/comments&quot;)
+async def get_post_comments(
+    post_id: int,
+    service: ExternalApiService = Depends(get_external_api_service),
+):
+    try:
+        return await service.get_post_comments(post_id)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Вернётся список комментариев к посту 1.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/http-client/post/999999/comments</code></strong><span>Внешний API может вернуть пустой список или ошибку, это зависит от сервиса.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}async def get_post_comments(self, post_id: int) -&gt; list[dict]:
+    async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+        response = await client.get(f&quot;/posts/{post_id}/comments&quot;)
+        response.raise_for_status()
+        return response.json(){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Метод должен жить в сервисе, чтобы endpoint оставался тонким.</li>
+<li>Обработку <code>httpx.HTTPError</code> можно переиспользовать из существующих endpoint-ов.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

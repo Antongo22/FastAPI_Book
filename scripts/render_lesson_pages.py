@@ -1,0 +1,1891 @@
+from __future__ import annotations
+
+from html import escape
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def paragraphs(items: list[str]) -> str:
+    return "\n".join(f"<p>{item}</p>" for item in items)
+
+
+def list_items(items: list[str]) -> str:
+    return "\n".join(f"<li>{item}</li>" for item in items)
+
+
+def endpoint_cards(items: list[tuple[str, str]]) -> str:
+    return "\n".join(
+        f'<article class="endpoint-card"><strong><code>{escape(method)}</code></strong><span>{description}</span></article>'
+        for method, description in items
+    )
+
+
+def code_block(code: str) -> str:
+    return f"<pre><code>{{% raw %}}{escape(code.strip())}{{% endraw %}}</code></pre>"
+
+
+def definition_items(items: list[tuple[str, str]]) -> str:
+    return "\n".join(
+        f"<dt>{term}</dt><dd>{description}</dd>"
+        for term, description in items
+    )
+
+
+def render_solution_sections(sections: list[dict[str, object]]) -> str:
+    rendered = []
+    for index, section in enumerate(sections, start=1):
+        body = section.get("body", "")
+        code = section.get("code")
+        items = section.get("items")
+        checks = section.get("checks")
+        block = [f'<article class="info-box"><h2>{index}. {section["title"]}</h2>']
+        if body:
+            block.append(f"<p>{body}</p>")
+        if items:
+            block.append(f'<ul class="flow-list">{list_items(items)}</ul>')
+        if code:
+            block.append(code_block(str(code)))
+        if checks:
+            block.append(f'<div class="endpoint-grid">{endpoint_cards(checks)}</div>')
+        block.append("</article>")
+        rendered.append("\n".join(block))
+    return "\n".join(rendered)
+
+
+LESSONS = {
+    "chapter01": {
+        "number": 1,
+        "port": 8001,
+        "title": "Глава 1: Начало работы с FastAPI",
+        "subtitle": "Создание приложения, middleware, REST API, Pydantic-модели и автоматическая OpenAPI-документация.",
+        "outcome": "После главы вы понимаете путь HTTP-запроса от браузера до endpoint-функции и умеете собрать простой API.",
+        "concepts": [
+            "<strong>FastAPI app</strong> - объект приложения, который хранит маршруты, middleware и настройки документации.",
+            "<strong>Path operation</strong> - функция с декоратором <code>@app.get</code>, <code>@app.post</code> и так далее.",
+            "<strong>Pydantic model</strong> - контракт входного JSON: типы, обязательные поля и автоматическая валидация.",
+            "<strong>Middleware</strong> - код вокруг каждого запроса. Он может логировать, добавлять заголовки или измерять время.",
+            "<strong>OpenAPI</strong> - схема API, из которой FastAPI строит Swagger UI на <code>/docs</code>.",
+        ],
+        "flow": [
+            "Клиент отправляет <code>POST /api/calculator/add</code> с JSON-телом.",
+            "FastAPI выбирает endpoint по методу и пути.",
+            "Pydantic проверяет, что в теле есть числа <code>a</code> и <code>b</code>.",
+            "Endpoint получает уже разобранный объект <code>CalculationRequest</code>.",
+            "Middleware добавляет заголовок <code>X-FastAPI-Book-Chapter</code> в ответ.",
+            "FastAPI сериализует словарь Python в JSON и возвращает HTTP 200.",
+        ],
+        "endpoints": [
+            ("POST /api/calculator/add", "Сложение двух чисел."),
+            ("POST /api/calculator/subtract", "Вычитание второго числа из первого."),
+            ("POST /api/calculator/multiply", "Умножение двух чисел."),
+            ("POST /api/calculator/divide", "Деление с ручной проверкой деления на ноль."),
+        ],
+        "code": '''
+class CalculationRequest(BaseModel):
+    a: float
+    b: float
+
+
+@app.post("/api/calculator/divide")
+async def divide(request: CalculationRequest):
+    if request.b == 0:
+        raise HTTPException(status_code=400, detail="Деление на ноль невозможно")
+    return {"result": request.a / request.b, "operation": "divide"}
+        ''',
+        "code_notes": [
+            "<code>BaseModel</code> говорит FastAPI читать тело запроса как JSON.",
+            "Если поле отсутствует или тип не подходит, endpoint даже не будет вызван: FastAPI вернет validation error.",
+            "<code>HTTPException</code> используется для ожидаемых бизнес-ошибок, где вы сами выбираете status code.",
+        ],
+        "task": "Добавьте endpoint <code>POST /api/calculator/power</code>, который возводит <code>a</code> в степень <code>b</code>. Он должен возвращать тот же формат ответа: <code>result</code> и <code>operation</code>.",
+        "answer": '''
+@app.post("/api/calculator/power")
+async def power(request: CalculationRequest):
+    return {"result": request.a ** request.b, "operation": "power"}
+        ''',
+        "answer_notes": [
+            "Новая операция использует уже существующую модель, потому что входной контракт такой же.",
+            "Swagger UI автоматически покажет новый endpoint после перезапуска приложения.",
+        ],
+    },
+    "chapter02": {
+        "number": 2,
+        "port": 8002,
+        "title": "Глава 2: Dependency Injection",
+        "subtitle": "Depends, dependency graph, кеширование зависимостей в рамках запроса и singleton-style сервисы.",
+        "outcome": "После главы вы умеете выносить подготовку сервисов из endpoint-ов и понимать, когда объект создаётся один раз, а когда на каждый вызов.",
+        "concepts": [
+            "<strong>Dependency</strong> - функция, результат которой FastAPI передаёт в endpoint.",
+            "<strong>Depends</strong> - декларация зависимости прямо в параметрах функции.",
+            "<strong>Request cache</strong> - одинаковая dependency по умолчанию вызывается один раз за запрос.",
+            "<strong>use_cache=False</strong> - способ получить transient-поведение.",
+            "<strong>Singleton-style</strong> - обычный модульный объект Python, который живёт всё время процесса.",
+        ],
+        "flow": [
+            "Клиент вызывает <code>GET /api/dependency-injection/lifetimes</code>.",
+            "FastAPI строит дерево зависимостей по параметрам endpoint-а.",
+            "Scoped dependency вызывается один раз и переиспользуется для двух параметров.",
+            "Singleton возвращает один и тот же объект из модуля.",
+            "Transient dependency помечена <code>use_cache=False</code>, поэтому создаётся дважды.",
+            "Endpoint возвращает идентификаторы объектов, чтобы поведение было видно в Swagger.",
+        ],
+        "endpoints": [
+            ("GET /api/dependency-injection/lifetimes", "Показывает scoped, singleton и transient идентификаторы."),
+            ("GET /api/dependency-injection/logger-demo", "Демонстрирует logging из endpoint-а."),
+        ],
+        "code": '''
+def get_scoped_service() -> InstanceService:
+    return InstanceService("scoped", str(uuid4()))
+
+
+@app.get("/api/dependency-injection/lifetimes")
+async def lifetimes(
+    scoped1: InstanceService = Depends(get_scoped_service),
+    scoped2: InstanceService = Depends(get_scoped_service),
+    transient1: InstanceService = Depends(get_transient_service, use_cache=False),
+    transient2: InstanceService = Depends(get_transient_service, use_cache=False),
+):
+    ...
+        ''',
+        "code_notes": [
+            "Одинаковый <code>Depends(get_scoped_service)</code> кешируется в рамках одного HTTP-запроса.",
+            "<code>use_cache=False</code> явно отключает кеш, поэтому transient получает разные id.",
+            "В реальном проекте dependency часто возвращает репозиторий, DB session, настройки или текущего пользователя.",
+        ],
+        "task": "Создайте dependency <code>get_request_id()</code>, которая возвращает UUID запроса, и endpoint <code>/api/dependency-injection/request-id</code>.",
+        "answer": '''
+def get_request_id() -> str:
+    return str(uuid4())
+
+
+@app.get("/api/dependency-injection/request-id")
+async def request_id(value: str = Depends(get_request_id)):
+    return {"request_id": value}
+        ''',
+        "answer_notes": [
+            "Если один request id нужен в нескольких зависимостях, оставьте кеширование включённым.",
+            "Если нужен новый id на каждый вызов dependency, используйте <code>use_cache=False</code>.",
+        ],
+    },
+    "chapter03": {
+        "number": 3,
+        "port": 8003,
+        "title": "Глава 3: HTTP Requests",
+        "subtitle": "Асинхронные запросы к внешним API через httpx и сервисный слой.",
+        "outcome": "После главы вы понимаете, как не блокировать event loop и как отделять endpoint от внешней интеграции.",
+        "concepts": [
+            "<strong>httpx.AsyncClient</strong> - асинхронный HTTP-клиент для outbound-запросов.",
+            "<strong>Timeout</strong> - обязательная защита от зависания внешнего сервиса.",
+            "<strong>Service layer</strong> - класс, который скрывает детали внешнего API от контроллера.",
+            "<strong>raise_for_status</strong> - перевод HTTP 4xx/5xx во внутреннее исключение.",
+            "<strong>Error mapping</strong> - преобразование ошибок внешнего API в понятный ответ вашего API.",
+        ],
+        "flow": [
+            "Клиент вызывает ваш endpoint, например <code>/api/http-client/post/1</code>.",
+            "Endpoint получает <code>ExternalApiService</code> через dependency.",
+            "Сервис открывает <code>httpx.AsyncClient</code> с base URL и timeout.",
+            "Внешний ответ проверяется через <code>raise_for_status()</code>.",
+            "JSON внешнего сервиса возвращается клиенту вашего API.",
+            "При ошибке endpoint возвращает HTTP 502 или код внешнего ответа.",
+        ],
+        "endpoints": [
+            ("GET /api/http-client/direct/{post_id}", "Прямой запрос к JSONPlaceholder без сервиса."),
+            ("GET /api/http-client/post/{post_id}", "То же самое через сервисный слой."),
+            ("GET /api/http-client/posts", "Получение списка постов."),
+            ("POST /api/http-client/post", "Создание демо-поста во внешнем API."),
+        ],
+        "code": '''
+class ExternalApiService:
+    async def get_post(self, post_id: int) -> dict:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(f"/posts/{post_id}")
+            response.raise_for_status()
+            return response.json()
+        ''',
+        "code_notes": [
+            "Клиент создаётся внутри <code>async with</code>, поэтому соединения корректно закрываются.",
+            "В больших приложениях клиент можно держать дольше через lifespan, но для учебного примера локальный context manager проще.",
+            "Endpoint не знает URL внешнего API: это ответственность сервиса.",
+        ],
+        "task": "Добавьте метод и endpoint для получения комментариев поста: <code>GET /api/http-client/post/{post_id}/comments</code>.",
+        "answer": '''
+async def get_post_comments(self, post_id: int) -> list[dict]:
+    async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+        response = await client.get(f"/posts/{post_id}/comments")
+        response.raise_for_status()
+        return response.json()
+        ''',
+        "answer_notes": [
+            "Метод должен жить в сервисе, чтобы endpoint оставался тонким.",
+            "Обработку <code>httpx.HTTPError</code> можно переиспользовать из существующих endpoint-ов.",
+        ],
+    },
+    "chapter04": {
+        "number": 4,
+        "port": 8004,
+        "title": "Глава 4: Error Handling",
+        "subtitle": "HTTPException, custom exception handlers, validation errors и middleware для времени обработки.",
+        "outcome": "После главы вы умеете отделять ожидаемые ошибки от неожиданных исключений и возвращать единый JSON-формат.",
+        "concepts": [
+            "<strong>HTTPException</strong> - ожидаемая ошибка с выбранным HTTP status code.",
+            "<strong>Custom exception</strong> - доменное исключение, для которого можно зарегистрировать handler.",
+            "<strong>RequestValidationError</strong> - ошибка валидации входных данных FastAPI/Pydantic.",
+            "<strong>Middleware</strong> - общий код вокруг запроса, здесь он добавляет <code>X-Process-Time</code>.",
+            "<strong>JSONResponse</strong> - ручное формирование тела и status code.",
+        ],
+        "flow": [
+            "Запрос проходит через middleware, который сохраняет время старта.",
+            "Endpoint либо возвращает успешный результат, либо бросает исключение.",
+            "FastAPI ищет самый подходящий exception handler.",
+            "Handler превращает исключение в JSON-ответ.",
+            "Middleware добавляет заголовок времени обработки уже к готовому ответу.",
+            "Клиент получает предсказуемую структуру ошибки.",
+        ],
+        "endpoints": [
+            ("GET /api/error-demo/throw", "Искусственно бросает custom exception."),
+            ("GET /api/error-demo/badrequest", "Возвращает ожидаемый BadRequest через HTTPException."),
+            ("POST /api/error-demo/validate", "Проверяет бизнес-валидацию name и age."),
+            ("GET /api/error-demo/success", "Контрольный успешный ответ."),
+        ],
+        "code": '''
+@app.exception_handler(DemoError)
+async def demo_error_handler(request, exc: DemoError):
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "path": str(request.url.path)},
+    )
+        ''',
+        "code_notes": [
+            "Handler принимает исходный request, поэтому может добавить path, correlation id или user id.",
+            "Для бизнес-ошибок лучше возвращать 400/404/409, а не скрывать их как 500.",
+            "Глобальные handlers помогают держать одинаковый формат ошибок во всём API.",
+        ],
+        "task": "Создайте исключение <code>NotReadyError</code> и handler, который возвращает HTTP 503 с сообщением <code>Сервис временно недоступен</code>.",
+        "answer": '''
+class NotReadyError(Exception):
+    pass
+
+
+@app.exception_handler(NotReadyError)
+async def not_ready_handler(request, exc: NotReadyError):
+    return JSONResponse(status_code=503, content={"error": "Сервис временно недоступен"})
+        ''',
+        "answer_notes": [
+            "HTTP 503 подходит для временной недоступности зависимости или сервиса.",
+            "Если ошибка ожидаемая, её полезно покрыть тестом на status code и JSON-body.",
+        ],
+    },
+    "chapter05": {
+        "number": 5,
+        "port": 8005,
+        "title": "Глава 5: Jinja2 UI",
+        "subtitle": "Серверные HTML-шаблоны, формы, Form-параметры и Pydantic-валидация вместо Razor Pages.",
+        "outcome": "После главы вы понимаете, как FastAPI отдаёт HTML, принимает формы и показывает ошибки пользователю.",
+        "concepts": [
+            "<strong>Jinja2Templates</strong> - подключение папки HTML-шаблонов.",
+            "<strong>TemplateResponse</strong> - ответ, который рендерит шаблон на сервере.",
+            "<strong>request</strong> - обязательный объект в context для Starlette templates.",
+            "<strong>Form</strong> - чтение данных из HTML-формы вместо JSON-body.",
+            "<strong>Pydantic validation</strong> - единая проверка формы перед сохранением или отправкой.",
+        ],
+        "flow": [
+            "Пользователь открывает <code>/contact</code>, FastAPI рендерит HTML-форму.",
+            "Браузер отправляет <code>POST /contact</code> с <code>application/x-www-form-urlencoded</code>.",
+            "FastAPI передаёт поля в параметры <code>Form</code>.",
+            "Pydantic-модель проверяет пустые строки и формат email.",
+            "При ошибке тот же шаблон рендерится со status 400 и списком ошибок.",
+            "При успехе страница показывает сообщение о принятой форме.",
+        ],
+        "endpoints": [
+            ("GET /", "Страница урока."),
+            ("GET /contact", "HTML-форма контакта."),
+            ("POST /contact", "Обработка формы и вывод ошибок."),
+            ("POST /api/contact", "JSON API-версия той же проверки."),
+        ],
+        "code": '''
+@app.post("/contact", response_class=HTMLResponse, include_in_schema=False)
+async def submit_contact(
+    request: Request,
+    name: str = Form(""),
+    email: str = Form(""),
+    message: str = Form(""),
+):
+    values = {"name": name, "email": email, "message": message}
+    ContactForm(**values)
+        ''',
+        "code_notes": [
+            "HTML-форма и JSON API могут использовать одну Pydantic-модель, чтобы правила не расходились.",
+            "Ошибки формы лучше возвращать на ту же страницу, сохраняя введённые пользователем значения.",
+            "Для файлов и сложных форм понадобится <code>python-multipart</code>, он уже есть в requirements.",
+        ],
+        "task": "Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.",
+        "answer": '''
+class RegistrationForm(BaseModel):
+    username: str
+    email: str
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_is_long_enough(cls, value: str) -> str:
+        if len(value) < 6:
+            raise ValueError("Пароль должен быть не короче 6 символов")
+        return value
+        ''',
+        "answer_notes": [
+            "GET-handler должен показывать пустую форму, POST-handler - валидировать и возвращать тот же шаблон.",
+            "Не храните пароль в открытом виде: в auth-главах он будет хешироваться.",
+        ],
+    },
+    "chapter06": {
+        "number": 6,
+        "port": 8006,
+        "title": "Глава 6: SQLAlchemy, DTO и SQLite",
+        "subtitle": "Engine, Session, ORM-модель, Pydantic DTO, CRUD endpoint-ы и минимальная Alembic-миграция.",
+        "outcome": "После главы вы умеете связать FastAPI с SQLite и отделять публичные DTO от внутренних ORM-классов.",
+        "concepts": [
+            "<strong>Engine</strong> - подключение SQLAlchemy к базе данных.",
+            "<strong>Session</strong> - unit of work: через неё читаем, добавляем, изменяем и удаляем строки.",
+            "<strong>DeclarativeBase</strong> - база для ORM-классов.",
+            "<strong>Mapped / mapped_column</strong> - типизированное описание колонок SQLAlchemy 2.",
+            "<strong>DTO</strong> - Pydantic-модели для входного и выходного JSON.",
+            "<strong>Alembic</strong> - инструмент миграций схемы БД.",
+        ],
+        "flow": [
+            "При старте приложения создаётся engine и sessionmaker.",
+            "Dependency <code>get_db</code> открывает Session на время запроса.",
+            "Endpoint получает Session через <code>Depends</code>.",
+            "ORM-модель <code>Product</code> описывает таблицу <code>products</code>.",
+            "Pydantic DTO проверяет входные данные и форматирует выходной JSON.",
+            "После commit SQLAlchemy записывает изменения в SQLite.",
+        ],
+        "endpoints": [
+            ("GET /api/products", "Список продуктов."),
+            ("GET /api/products/{product_id}", "Один продукт или 404."),
+            ("POST /api/products", "Создание продукта с DTO-валидацией."),
+            ("PUT /api/products/{product_id}", "Частичное обновление полей."),
+            ("DELETE /api/products/{product_id}", "Удаление продукта."),
+        ],
+        "code": '''
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.post("/api/products", response_model=ProductDto, status_code=201)
+async def create_product(request: CreateProductDto, db: Session = Depends(get_db)):
+    product = Product(**request.model_dump())
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return product
+        ''',
+        "code_notes": [
+            "<code>yield</code> dependency гарантирует закрытие Session после запроса.",
+            "<code>response_model</code> не отдаёт наружу лишние ORM-поля.",
+            "В учебном режиме таблицы создаются автоматически, а Alembic показан как правильный путь для реального проекта.",
+        ],
+        "task": "Добавьте поле <code>category</code> в продукт, DTO и Alembic-миграцию. Проверьте, что оно возвращается в <code>GET /api/products</code>.",
+        "answer": '''
+category: Mapped[str] = mapped_column(String(80), default="general")
+
+
+class ProductDto(BaseModel):
+    id: int
+    name: str
+    category: str
+    ...
+        ''',
+        "answer_notes": [
+            "Менять нужно и ORM-модель, и DTO, иначе поле либо не сохранится, либо не попадёт в публичный ответ.",
+            "В миграции используйте <code>op.add_column</code>, а в downgrade - <code>op.drop_column</code>.",
+        ],
+    },
+    "chapter07": {
+        "number": 7,
+        "port": 8007,
+        "title": "Глава 7: Authentication и Authorization",
+        "subtitle": "Регистрация, вход, password hashing, JWT access token и protected endpoint.",
+        "outcome": "После главы вы понимаете разницу между проверкой личности и проверкой прав доступа.",
+        "concepts": [
+            "<strong>Authentication</strong> - подтверждаем, кто пользователь.",
+            "<strong>Authorization</strong> - решаем, разрешено ли пользователю действие.",
+            "<strong>Password hash</strong> - пароль нельзя хранить открытым текстом.",
+            "<strong>JWT</strong> - подписанный token с claims вроде <code>sub</code>, <code>role</code> и <code>exp</code>.",
+            "<strong>OAuth2PasswordBearer</strong> - dependency, которая читает Bearer token из заголовка Authorization.",
+        ],
+        "flow": [
+            "Пользователь регистрируется через <code>/api/auth/register</code>.",
+            "Пароль хешируется, а не сохраняется как есть.",
+            "Сервер выпускает JWT с username, role и временем истечения.",
+            "Клиент передаёт token в заголовке <code>Authorization: Bearer ...</code>.",
+            "Dependency декодирует и проверяет подпись JWT.",
+            "Protected endpoint получает текущего пользователя или возвращает 401.",
+        ],
+        "endpoints": [
+            ("POST /api/auth/register", "Создание пользователя и выдача token-а."),
+            ("POST /api/auth/login", "Проверка пароля и выдача token-а."),
+            ("GET /api/protected", "Endpoint, доступный только с валидным Bearer token."),
+        ],
+        "code": '''
+def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    username = payload.get("sub")
+    user = USERS.get(str(username))
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+        ''',
+        "code_notes": [
+            "Token не шифруется, а подписывается: содержимое можно прочитать, но нельзя незаметно изменить без secret key.",
+            "В demo пользователи хранятся в памяти, поэтому после перезапуска они пропадают.",
+            "Для role-based доступа добавьте отдельную dependency, которая проверяет <code>user['role']</code>.",
+        ],
+        "task": "Добавьте endpoint <code>GET /api/admin</code>, доступный только пользователю с ролью <code>admin</code>.",
+        "answer": '''
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
+
+
+@app.get("/api/admin")
+async def admin(user: dict = Depends(require_admin)):
+    return {"message": "admin area"}
+        ''',
+        "answer_notes": [
+            "401 означает, что пользователь не аутентифицирован; 403 - пользователь известен, но прав не хватает.",
+            "Проверку роли лучше вынести в dependency, чтобы переиспользовать в нескольких endpoint-ах.",
+        ],
+    },
+    "chapter08": {
+        "number": 8,
+        "port": 8008,
+        "title": "Глава 8: Refresh Tokens",
+        "subtitle": "Короткий access token, долгоживущий refresh token, rotation, revoke и logout.",
+        "outcome": "После главы вы понимаете, зачем разделять access и refresh token и почему refresh token нужно хранить на сервере.",
+        "concepts": [
+            "<strong>Access token</strong> - короткоживущий JWT для доступа к API.",
+            "<strong>Refresh token</strong> - случайная строка, которая хранится в БД и выпускает новую пару token-ов.",
+            "<strong>Rotation</strong> - при refresh старый refresh token отзывается и создаётся новый.",
+            "<strong>Revoke</strong> - ручное прекращение действия refresh token-а.",
+            "<strong>Logout</strong> - отзыв всех активных refresh token-ов пользователя.",
+        ],
+        "flow": [
+            "Register/login создаёт пользователя и выдаёт access + refresh token.",
+            "Access token живёт недолго и отправляется в Bearer header.",
+            "Refresh token хранится в таблице <code>refresh_tokens</code>.",
+            "При <code>/api/auth/refresh</code> сервер проверяет token, срок действия и revoked flag.",
+            "Старый refresh token отзывается, новая пара token-ов возвращается клиенту.",
+            "Повторное использование старого refresh token-а возвращает HTTP 401.",
+        ],
+        "endpoints": [
+            ("POST /api/auth/register", "Создание пользователя и первой пары token-ов."),
+            ("POST /api/auth/login", "Вход и выдача новой пары token-ов."),
+            ("POST /api/auth/refresh", "Rotation refresh token-а."),
+            ("POST /api/auth/revoke", "Отзыв конкретного refresh token-а."),
+            ("POST /api/auth/logout", "Отзыв всех token-ов текущего пользователя."),
+        ],
+        "code": '''
+stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+if stored is None or stored.revoked or stored.expires_at <= datetime.utcnow():
+    raise HTTPException(status_code=401, detail="Недействительный refresh token")
+
+stored.revoked = True
+access_token, access_expires = create_access_token(user)
+refresh_token, refresh_expires = create_refresh_token(db, user)
+        ''',
+        "code_notes": [
+            "Refresh token не является JWT: это opaque value, смысл которого известен только серверу.",
+            "Rotation помогает обнаруживать и блокировать повторное использование украденного token-а.",
+            "В production refresh token обычно хранится в HttpOnly cookie или защищённом хранилище клиента.",
+        ],
+        "task": "Добавьте поле <code>revoked_at</code>, чтобы видеть, когда token был отозван.",
+        "answer": '''
+revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+stored.revoked = True
+stored.revoked_at = datetime.utcnow()
+        ''',
+        "answer_notes": [
+            "Не забудьте обновить миграцию или создать новую Alembic revision.",
+            "Тест должен проверять не только HTTP 401, но и заполнение <code>revoked_at</code> в БД.",
+        ],
+    },
+    "chapter09": {
+        "number": 9,
+        "port": 8009,
+        "title": "Глава 9: WebSockets",
+        "subtitle": "Постоянное двустороннее соединение, connection manager, receive loop и broadcast.",
+        "outcome": "После главы вы умеете принять WebSocket-соединение, хранить клиентов и рассылать сообщения всем участникам.",
+        "concepts": [
+            "<strong>WebSocket</strong> - протокол для постоянного двустороннего обмена.",
+            "<strong>accept()</strong> - явное принятие соединения сервером.",
+            "<strong>receive_text()</strong> - ожидание следующего сообщения клиента.",
+            "<strong>WebSocketDisconnect</strong> - штатное отключение клиента.",
+            "<strong>ConnectionManager</strong> - объект, который хранит активные подключения.",
+        ],
+        "flow": [
+            "Клиент подключается к <code>ws://localhost:8009/ws</code>.",
+            "Сервер вызывает <code>websocket.accept()</code> и создаёт connection id.",
+            "Подключение сохраняется в словаре активных клиентов.",
+            "Сервер входит в бесконечный цикл приема сообщений.",
+            "Каждое сообщение рассылается всем текущим клиентам.",
+            "При отключении connection id удаляется из manager-а.",
+        ],
+        "endpoints": [
+            ("GET /api/websocket/info", "Показывает endpoint и количество подключений."),
+            ("WS /ws", "Простой broadcast-чат."),
+        ],
+        "code": '''
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    connection_id = await manager.connect(websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+            await manager.broadcast({
+                "event": "message",
+                "connection_id": connection_id,
+                "message": message,
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id)
+        ''',
+        "code_notes": [
+            "WebSocket endpoint не возвращает HTTP response, он живёт пока открыто соединение.",
+            "Broadcast должен учитывать отключившихся клиентов, иначе отправка может падать.",
+            "Для масштабирования на несколько процессов нужен внешний broker, например Redis Pub/Sub.",
+        ],
+        "task": "Добавьте команду <code>/who</code>, которая отправляет текущему клиенту количество активных подключений.",
+        "answer": '''
+if message == "/who":
+    await websocket.send_json({
+        "event": "connections",
+        "count": len(manager.active_connections),
+    })
+else:
+    await manager.broadcast(...)
+        ''',
+        "answer_notes": [
+            "Команды, предназначенные только отправителю, не нужно рассылать через broadcast.",
+            "Так появляется первая серверная логика поверх обычного транспорта.",
+        ],
+    },
+    "chapter10": {
+        "number": 10,
+        "port": 8010,
+        "title": "Глава 10: SignalR-подобный WebSocket manager",
+        "subtitle": "Connection id, direct send, broadcast, groups и JSON-команды поверх WebSocket.",
+        "outcome": "После главы вы понимаете, как построить более удобный слой real-time общения без SignalR.",
+        "concepts": [
+            "<strong>Connection id</strong> - серверный идентификатор конкретного WebSocket-клиента.",
+            "<strong>Direct send</strong> - отправка одному подключению.",
+            "<strong>Broadcast</strong> - отправка всем подключениям.",
+            "<strong>Group</strong> - набор connection id, например комната чата.",
+            "<strong>Action protocol</strong> - JSON-команды вроде <code>send_to_group</code> и <code>join</code>.",
+        ],
+        "flow": [
+            "Клиент подключается к <code>/ws/chat?group=general</code>.",
+            "Manager создаёт connection id и добавляет его в группу.",
+            "Клиент отправляет JSON с action и message.",
+            "Action определяет маршрут сообщения: всем, группе или конкретному connection id.",
+            "Manager выбирает получателей и отправляет JSON-событие.",
+            "При отключении клиент удаляется из всех групп.",
+        ],
+        "endpoints": [
+            ("GET /api/chat/info", "Состояние подключений и групп."),
+            ("WS /ws/chat", "JSON real-time чат с группами и direct send."),
+        ],
+        "code": '''
+elif action == "send_to_group":
+    await manager.send_to_group(data.get("group", group), payload)
+elif action == "join":
+    manager.groups[data.get("group", group)].add(connection_id)
+    await manager.send_to_connection(connection_id, {"event": "joined", "group": data.get("group", group)})
+else:
+    await manager.broadcast(payload)
+        ''',
+        "code_notes": [
+            "Это не полный аналог SignalR: нет автогенерации клиента, backplane и typed hubs.",
+            "Но учебно видно, какие задачи решает SignalR: хранение клиентов, группы, direct send и события.",
+            "JSON-протокол проще расширять, чем plain text сообщения из предыдущей главы.",
+        ],
+        "task": "Добавьте action <code>leave</code>, который удаляет подключение из указанной группы и отправляет событие <code>left</code>.",
+        "answer": '''
+elif action == "leave":
+    target_group = data.get("group", group)
+    manager.groups[target_group].discard(connection_id)
+    await manager.send_to_connection(connection_id, {"event": "left", "group": target_group})
+        ''',
+        "answer_notes": [
+            "Используйте <code>discard</code>, а не <code>remove</code>, чтобы отсутствие connection id не бросало исключение.",
+            "После выхода из группы broadcast всем всё ещё может доставлять сообщения этому клиенту.",
+        ],
+    },
+    "chapter11": {
+        "number": 11,
+        "port": 8011,
+        "title": "Глава 11: Авторизация WebSockets",
+        "subtitle": "JWT в query string, проверка до accept(), close code 1008 и сообщения с username.",
+        "outcome": "После главы вы умеете закрывать WebSocket до принятия соединения, если клиент не прислал валидный token.",
+        "concepts": [
+            "<strong>access_token query</strong> - практичный способ передать token из браузерного WebSocket-клиента.",
+            "<strong>verify before accept</strong> - сервер проверяет token до <code>websocket.accept()</code>.",
+            "<strong>1008 Policy Violation</strong> - WebSocket close code для нарушения политики доступа.",
+            "<strong>JWT claims</strong> - username и роль можно брать из подписанного token-а.",
+            "<strong>Authorized broadcast</strong> - каждое сообщение содержит подтверждённого пользователя.",
+        ],
+        "flow": [
+            "Клиент получает access token через <code>/api/auth/login</code>.",
+            "Клиент открывает <code>/ws/authorized?access_token=...</code>.",
+            "Сервер декодирует JWT и проверяет подпись и срок действия.",
+            "Если token плохой, сервер закрывает соединение кодом 1008.",
+            "Если token валиден, сервер принимает WebSocket и отправляет событие connected.",
+            "Сообщения в broadcast получают username из token-а, а не из клиентского текста.",
+        ],
+        "endpoints": [
+            ("POST /api/auth/login", "Демо-выдача access token-а."),
+            ("WS /ws/authorized?access_token=...", "Защищённый WebSocket-чат."),
+        ],
+        "code": '''
+@app.websocket("/ws/authorized")
+async def authorized_socket(websocket: WebSocket, access_token: str | None = Query(default=None)):
+    if not access_token:
+        await websocket.close(code=1008)
+        return
+    try:
+        username = verify_token(access_token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+        ''',
+        "code_notes": [
+            "Важно проверять token до <code>accept()</code>, чтобы не считать соединение авторизованным даже на короткое время.",
+            "Клиенту нельзя доверять username из сообщения: он должен быть взят из JWT.",
+            "В production query token может попасть в логи, поэтому часто применяют короткий срок жизни и HTTPS.",
+        ],
+        "task": "Добавьте claim <code>role</code> в token и запретите подключение к admin-комнате всем, кроме admin.",
+        "answer": '''
+payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+role = payload.get("role")
+if room == "admin" and role != "admin":
+    await websocket.close(code=1008)
+    return
+        ''',
+        "answer_notes": [
+            "Authorization для WebSocket - это не только проверка token-а, но и проверка доступа к конкретной комнате или действию.",
+            "Для сложных правил лучше вынести проверку в отдельную функцию.",
+        ],
+    },
+    "chapter12": {
+        "number": 12,
+        "port": 8012,
+        "title": "Глава 12: Тестирование",
+        "subtitle": "TestClient, dependency overrides, in-memory SQLite, service layer и интеграционные сценарии.",
+        "outcome": "После главы вы умеете тестировать FastAPI endpoint-ы без реальной БД и проверять бизнес-логику отдельно от HTTP.",
+        "concepts": [
+            "<strong>TestClient</strong> - синхронный клиент для тестирования ASGI-приложения.",
+            "<strong>dependency_overrides</strong> - замена production dependency тестовой реализацией.",
+            "<strong>sqlite:// + StaticPool</strong> - одна in-memory БД на весь тестовый engine.",
+            "<strong>Service layer</strong> - класс <code>ChatService</code>, который можно проверять отдельно.",
+            "<strong>Integration test</strong> - запрос проходит через routing, validation, dependency и БД.",
+        ],
+        "flow": [
+            "Тест создаёт in-memory SQLite engine.",
+            "Таблицы создаются через <code>Base.metadata.create_all</code>.",
+            "Production dependency <code>get_db</code> заменяется тестовой.",
+            "TestClient вызывает реальные HTTP endpoint-ы приложения.",
+            "Endpoint использует тестовую Session и не трогает файл на диске.",
+            "После теста overrides очищаются, чтобы не повлиять на другие тесты.",
+        ],
+        "endpoints": [
+            ("POST /api/chat/groups", "Создание группы."),
+            ("GET /api/chat/groups", "Список групп."),
+            ("POST /api/chat/messages", "Отправка сообщения."),
+            ("GET /api/chat/messages?group_id=...", "Получение сообщений, опционально по группе."),
+        ],
+        "code": '''
+app.dependency_overrides[get_db] = override
+try:
+    client = TestClient(app)
+    group = client.post("/api/chat/groups", json={"name": "general"}).json()
+    response = client.post("/api/chat/messages", json={
+        "text": "hello",
+        "sender": "anna",
+        "group_id": group["id"],
+    })
+finally:
+    app.dependency_overrides.clear()
+        ''',
+        "code_notes": [
+            "Override делает тест изолированным: он не зависит от локальных SQLite-файлов.",
+            "Проверяйте не только status code, но и важные поля JSON-ответа.",
+            "Для WebSocket есть отдельный <code>websocket_connect</code> в TestClient.",
+        ],
+        "task": "Добавьте endpoint удаления группы и тест, что сообщение удалённой группы больше не возвращается.",
+        "answer": '''
+@app.delete("/api/chat/groups/{group_id}", status_code=204)
+async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
+    service.delete_group(group_id)
+        ''',
+        "answer_notes": [
+            "Сначала напишите тест на ожидаемое поведение, затем реализуйте service method.",
+            "Решите явно: сообщения удаляются каскадно или получают <code>group_id=None</code>. Для учебного чата проще каскадное удаление.",
+        ],
+    },
+}
+
+
+FULL_SOLUTIONS = {
+    "chapter01": [
+        {
+            "title": "Что меняем",
+            "body": "Задача просит добавить новую операцию калькулятора. Никакие новые модели не нужны: входные данные такие же, как у add/subtract/multiply/divide.",
+            "items": [
+                "Открыть файл <code>chapter01/app/main.py</code>.",
+                "Найти блок endpoint-ов калькулятора.",
+                "Добавить новый endpoint рядом с остальными операциями.",
+                "Проверить через Swagger, что endpoint появился в группе calculator.",
+            ],
+        },
+        {
+            "title": "Полный фрагмент калькулятора после изменения",
+            "body": "Ниже не одна функция, а весь логический блок калькулятора. Так проще увидеть, что новая операция использует тот же request model и тот же стиль ответа.",
+            "code": '''
+class CalculationRequest(BaseModel):
+    a: float
+    b: float
+
+
+@app.post("/api/calculator/add")
+async def add(request: CalculationRequest):
+    return {"result": request.a + request.b, "operation": "add"}
+
+
+@app.post("/api/calculator/subtract")
+async def subtract(request: CalculationRequest):
+    return {"result": request.a - request.b, "operation": "subtract"}
+
+
+@app.post("/api/calculator/multiply")
+async def multiply(request: CalculationRequest):
+    return {"result": request.a * request.b, "operation": "multiply"}
+
+
+@app.post("/api/calculator/divide")
+async def divide(request: CalculationRequest):
+    if request.b == 0:
+        raise HTTPException(status_code=400, detail="Деление на ноль невозможно")
+    return {"result": request.a / request.b, "operation": "divide"}
+
+
+@app.post("/api/calculator/power")
+async def power(request: CalculationRequest):
+    return {"result": request.a ** request.b, "operation": "power"}
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "body": "Запустите главу и выполните запросы через Swagger или curl.",
+            "checks": [
+                ("POST /api/calculator/power", 'Body: <code>{"a": 2, "b": 3}</code> → <code>{"result": 8, "operation": "power"}</code>'),
+                ("POST /api/calculator/power", 'Body: <code>{"a": 5, "b": 0}</code> → <code>{"result": 1, "operation": "power"}</code>'),
+            ],
+        },
+    ],
+    "chapter02": [
+        {
+            "title": "Что создаём",
+            "body": "Нужно добавить отдельную dependency, которая генерирует request id, и endpoint, который показывает этот id клиенту.",
+            "items": [
+                "В файле <code>chapter02/app/main.py</code> уже импортирован <code>uuid4</code>.",
+                "Создаём функцию <code>get_request_id</code> рядом с другими dependency.",
+                "Создаём endpoint <code>GET /api/dependency-injection/request-id</code>.",
+                "Передаём dependency в endpoint через <code>Depends</code>, а не вызываем вручную.",
+            ],
+        },
+        {
+            "title": "Полный код новой dependency и endpoint-а",
+            "code": '''
+def get_request_id() -> str:
+    return str(uuid4())
+
+
+@app.get("/api/dependency-injection/request-id")
+async def request_id(value: str = Depends(get_request_id)):
+    return {
+        "request_id": value,
+        "explanation": "FastAPI вызвал get_request_id() и передал результат в endpoint.",
+    }
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "body": "Вызовите endpoint два раза подряд. Значение должно меняться, потому что каждый HTTP-запрос получает свой request id.",
+            "checks": [
+                ("GET /api/dependency-injection/request-id", "Ответ содержит поле <code>request_id</code>."),
+                ("GET /api/dependency-injection/request-id", "Повторный запрос возвращает другой UUID."),
+            ],
+        },
+    ],
+    "chapter03": [
+        {
+            "title": "Что добавляем",
+            "body": "Добавляем новый метод во внешний сервис и отдельный endpoint. Endpoint остаётся тонким: он только вызывает сервис и обрабатывает ошибку.",
+            "items": [
+                "Добавить метод <code>get_post_comments</code> в <code>ExternalApiService</code>.",
+                "Добавить route <code>GET /api/http-client/post/{post_id}/comments</code>.",
+                "Использовать тот же <code>map_http_error</code>, что и в остальных методах.",
+            ],
+        },
+        {
+            "title": "Полный код метода сервиса и endpoint-а",
+            "code": '''
+class ExternalApiService:
+    def __init__(self, base_url: str = JSONPLACEHOLDER):
+        self.base_url = base_url
+
+    async def get_post_comments(self, post_id: int) -> list[dict]:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(f"/posts/{post_id}/comments")
+            response.raise_for_status()
+            return response.json()
+
+
+@app.get("/api/http-client/post/{post_id}/comments")
+async def get_post_comments(
+    post_id: int,
+    service: ExternalApiService = Depends(get_external_api_service),
+):
+    try:
+        return await service.get_post_comments(post_id)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("GET /api/http-client/post/1/comments", "Вернётся список комментариев к посту 1."),
+                ("GET /api/http-client/post/999999/comments", "Внешний API может вернуть пустой список или ошибку, это зависит от сервиса."),
+            ],
+        },
+    ],
+    "chapter04": [
+        {
+            "title": "Что создаём",
+            "body": "Добавляем новый тип ошибки, handler для него и demo-endpoint, чтобы можно было увидеть HTTP 503 в Swagger.",
+            "items": [
+                "Создать класс <code>NotReadyError</code>.",
+                "Зарегистрировать <code>@app.exception_handler(NotReadyError)</code>.",
+                "Добавить endpoint, который бросает эту ошибку для проверки.",
+            ],
+        },
+        {
+            "title": "Полный код ошибки, handler-а и проверки",
+            "code": '''
+class NotReadyError(Exception):
+    pass
+
+
+@app.exception_handler(NotReadyError)
+async def not_ready_handler(request, exc: NotReadyError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "Сервис временно недоступен",
+            "path": str(request.url.path),
+        },
+    )
+
+
+@app.get("/api/error-demo/not-ready")
+async def not_ready():
+    raise NotReadyError()
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("GET /api/error-demo/not-ready", "HTTP 503 и JSON с <code>error</code>."),
+                ("GET /api/error-demo/success", "HTTP 200, чтобы убедиться, что приложение в целом работает."),
+            ],
+        },
+    ],
+    "chapter05": [
+        {
+            "title": "Что добавляем",
+            "body": "Для полноценной страницы регистрации нужны три части: Pydantic-модель формы, GET-handler для показа страницы и POST-handler для обработки отправки.",
+            "items": [
+                "Добавить модель <code>RegistrationForm</code> в <code>chapter05/app/main.py</code>.",
+                "Добавить <code>GET /register</code> и <code>POST /register</code>.",
+                "Создать шаблон <code>chapter05/templates/register.html</code>.",
+            ],
+        },
+        {
+            "title": "Полный код Python-части",
+            "code": '''
+class RegistrationForm(BaseModel):
+    username: str
+    email: str
+    password: str
+
+    @field_validator("username", "email", "password")
+    @classmethod
+    def not_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Поле обязательно")
+        return value.strip()
+
+    @field_validator("email")
+    @classmethod
+    def email_has_at(cls, value: str) -> str:
+        if "@" not in value:
+            raise ValueError("Email должен содержать @")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def password_is_long_enough(cls, value: str) -> str:
+        if len(value) < 6:
+            raise ValueError("Пароль должен быть не короче 6 символов")
+        return value
+
+
+@app.get("/register", response_class=HTMLResponse, include_in_schema=False)
+async def register_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "register.html",
+        {"request": request, "errors": {}, "values": {}, "registered": False},
+    )
+
+
+@app.post("/register", response_class=HTMLResponse, include_in_schema=False)
+async def submit_register(
+    request: Request,
+    username: str = Form(""),
+    email: str = Form(""),
+    password: str = Form(""),
+):
+    values = {"username": username, "email": email, "password": password}
+    try:
+        RegistrationForm(**values)
+    except ValidationError as error:
+        errors = {str(item["loc"][0]): item["msg"] for item in error.errors()}
+        return templates.TemplateResponse(
+            request,
+            "register.html",
+            {"request": request, "errors": errors, "values": values, "registered": False},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        request,
+        "register.html",
+        {"request": request, "errors": {}, "values": values, "registered": True},
+    )
+            ''',
+        },
+        {
+            "title": "Минимальный шаблон register.html",
+            "code": '''
+<form method="post" action="/register">
+    <label>Username
+        <input name="username" value="{{ values.get('username', '') }}">
+        {% if errors.get('username') %}<span class="error">{{ errors.get('username') }}</span>{% endif %}
+    </label>
+    <label>Email
+        <input name="email" value="{{ values.get('email', '') }}">
+        {% if errors.get('email') %}<span class="error">{{ errors.get('email') }}</span>{% endif %}
+    </label>
+    <label>Password
+        <input name="password" type="password">
+        {% if errors.get('password') %}<span class="error">{{ errors.get('password') }}</span>{% endif %}
+    </label>
+    <button type="submit">Зарегистрироваться</button>
+</form>
+            ''',
+        },
+    ],
+    "chapter06": [
+        {
+            "title": "Что меняем",
+            "body": "Поле <code>category</code> должно пройти через все слои: ORM-модель, DTO для ответа, DTO для создания, DTO для обновления и миграцию.",
+            "items": [
+                "В <code>Product</code> добавить колонку <code>category</code>.",
+                "В <code>ProductDto</code> добавить поле <code>category</code>.",
+                "В <code>CreateProductDto</code> добавить обязательное или default-поле.",
+                "В <code>UpdateProductDto</code> добавить optional-поле.",
+                "Создать Alembic migration с <code>op.add_column</code>.",
+            ],
+        },
+        {
+            "title": "Полный набор изменений в моделях",
+            "code": '''
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), default="general")
+    description: Mapped[str] = mapped_column(String(500), default="")
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    stock: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProductDto(BaseModel):
+    id: int
+    name: str
+    category: str
+    description: str
+    price: Decimal
+    stock: int
+
+    model_config = {"from_attributes": True}
+
+
+class CreateProductDto(BaseModel):
+    name: str = Field(min_length=1)
+    category: str = "general"
+    description: str = ""
+    price: Decimal = Field(gt=0)
+    stock: int = Field(ge=0)
+
+
+class UpdateProductDto(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    description: str | None = None
+    price: Decimal | None = Field(default=None, gt=0)
+    stock: int | None = Field(default=None, ge=0)
+            ''',
+        },
+        {
+            "title": "Полная Alembic migration",
+            "code": '''
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = "0002_add_product_category"
+down_revision = "0001_create_products"
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    op.add_column(
+        "products",
+        sa.Column("category", sa.String(length=80), nullable=False, server_default="general"),
+    )
+
+
+def downgrade():
+    op.drop_column("products", "category")
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("POST /api/products", 'Body содержит <code>"category": "books"</code>.'),
+                ("GET /api/products", "Каждый продукт возвращает поле <code>category</code>."),
+            ],
+        },
+    ],
+    "chapter07": [
+        {
+            "title": "Что меняем",
+            "body": "Admin endpoint должен состоять из отдельной dependency проверки роли и самого endpoint-а. Для demo также нужен способ создать admin-пользователя.",
+            "items": [
+                "Добавить dependency <code>require_admin</code>.",
+                "Добавить endpoint <code>GET /api/admin</code>.",
+                "Для учебной проверки можно назначать role <code>admin</code> пользователю с username <code>admin</code>.",
+            ],
+        },
+        {
+            "title": "Полный код проверки admin-роли",
+            "code": '''
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
+
+
+@app.get("/api/admin")
+async def admin_area(user: dict = Depends(require_admin)):
+    return {
+        "message": "Это admin endpoint",
+        "username": user["username"],
+        "role": user["role"],
+    }
+            ''',
+        },
+        {
+            "title": "Как выдать admin-роль в учебном примере",
+            "code": '''
+role = "admin" if request.username == "admin" else "user"
+USERS[request.username] = {
+    "username": request.username,
+    "email": request.email,
+    "password_hash": pwd_context.hash(request.password),
+    "role": role,
+}
+token, expires = create_access_token(request.username, role)
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("POST /api/auth/register", "Создайте пользователя <code>admin</code>, получите token."),
+                ("GET /api/admin", "С admin token вернётся 200."),
+                ("GET /api/admin", "С token обычного пользователя вернётся 403."),
+            ],
+        },
+    ],
+    "chapter08": [
+        {
+            "title": "Что меняем",
+            "body": "Нужно добавить поле в ORM-модель refresh token-а и заполнять его во всех местах, где token отзывается.",
+            "items": [
+                "Добавить поле <code>revoked_at</code> в модель <code>RefreshToken</code>.",
+                "Заполнять <code>revoked_at</code> в <code>/refresh</code>, когда старый token отзывается.",
+                "Заполнять <code>revoked_at</code> в <code>/revoke</code>.",
+                "Для logout обновлять все активные token-ы пользователя.",
+            ],
+        },
+        {
+            "title": "Полный фрагмент модели и revoke-логики",
+            "code": '''
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    user: Mapped[User] = relationship(back_populates="refresh_tokens")
+
+
+def revoke_token(stored: RefreshToken) -> None:
+    stored.revoked = True
+    stored.revoked_at = datetime.utcnow()
+            ''',
+        },
+        {
+            "title": "Где использовать revoke_token",
+            "code": '''
+# В /api/auth/refresh
+revoke_token(stored)
+access_token, access_expires = create_access_token(user)
+refresh_token, refresh_expires = create_refresh_token(db, user)
+db.commit()
+
+
+# В /api/auth/revoke
+if stored is not None and not stored.revoked:
+    revoke_token(stored)
+    db.commit()
+            ''',
+        },
+    ],
+    "chapter09": [
+        {
+            "title": "Что меняем",
+            "body": "Команда <code>/who</code> должна обрабатываться внутри receive loop до broadcast. Это команда только для отправителя.",
+            "items": [
+                "Внутри цикла получить текст сообщения.",
+                "Проверить, равно ли сообщение <code>/who</code>.",
+                "Если да, отправить ответ только текущему WebSocket.",
+                "Если нет, оставить обычный broadcast.",
+            ],
+        },
+        {
+            "title": "Полный receive loop после изменения",
+            "code": '''
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    connection_id = await manager.connect(websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+
+            if message == "/who":
+                await websocket.send_json({
+                    "event": "connections",
+                    "count": len(manager.active_connections),
+                })
+                continue
+
+            await manager.broadcast({
+                "event": "message",
+                "connection_id": connection_id,
+                "message": message,
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id)
+        await manager.broadcast({"event": "disconnected", "connection_id": connection_id})
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("WS /ws", "Отправьте <code>/who</code> и получите count только в текущем клиенте."),
+                ("WS /ws", "Отправьте обычный текст и получите broadcast у всех клиентов."),
+            ],
+        },
+    ],
+    "chapter10": [
+        {
+            "title": "Что меняем",
+            "body": "Добавляем новую команду протокола. Она меняет состояние manager-а и возвращает подтверждение только текущему клиенту.",
+            "items": [
+                "В обработчик action добавить ветку <code>leave</code>.",
+                "Взять имя группы из JSON или использовать текущую группу.",
+                "Удалить connection id из set участников.",
+                "Отправить событие <code>left</code> текущему клиенту.",
+            ],
+        },
+        {
+            "title": "Полный блок обработки action",
+            "code": '''
+if action == "send_to_connection":
+    await manager.send_to_connection(data["connection_id"], payload)
+elif action == "send_to_group":
+    await manager.send_to_group(data.get("group", group), payload)
+elif action == "join":
+    target_group = data.get("group", group)
+    manager.groups[target_group].add(connection_id)
+    await manager.send_to_connection(connection_id, {"event": "joined", "group": target_group})
+elif action == "leave":
+    target_group = data.get("group", group)
+    manager.groups[target_group].discard(connection_id)
+    await manager.send_to_connection(connection_id, {"event": "left", "group": target_group})
+else:
+    await manager.broadcast(payload)
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("WS /ws/chat", 'Отправьте <code>{"action": "join", "group": "python"}</code>.'),
+                ("WS /ws/chat", 'Отправьте <code>{"action": "leave", "group": "python"}</code> и получите событие <code>left</code>.'),
+            ],
+        },
+    ],
+    "chapter11": [
+        {
+            "title": "Что меняем",
+            "body": "Нужно добавить роль в JWT и проверить эту роль перед подключением к admin-комнате.",
+            "items": [
+                "Добавить claim <code>role</code> при создании access token-а.",
+                "Вернуть из <code>verify_token</code> username и role.",
+                "В WebSocket endpoint принять параметр <code>room</code>.",
+                "Если <code>room == 'admin'</code> и role не admin, закрыть соединение кодом 1008.",
+            ],
+        },
+        {
+            "title": "Полный код token payload и проверки комнаты",
+            "code": '''
+def create_access_token(username: str, role: str = "user") -> str:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=30)
+    return jwt.encode({"sub": username, "role": role, "exp": expires}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return {"username": str(payload["sub"]), "role": str(payload.get("role", "user"))}
+    except (JWTError, KeyError) as error:
+        raise HTTPException(status_code=401, detail="Invalid token") from error
+
+
+@app.websocket("/ws/authorized")
+async def authorized_socket(
+    websocket: WebSocket,
+    access_token: str | None = Query(default=None),
+    room: str = "general",
+):
+    if not access_token:
+        await websocket.close(code=1008)
+        return
+    try:
+        user = verify_token(access_token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+    if room == "admin" and user["role"] != "admin":
+        await websocket.close(code=1008)
+        return
+            ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("WS /ws/authorized?access_token=...&room=general", "Обычный пользователь подключается."),
+                ("WS /ws/authorized?access_token=...&room=admin", "Обычный пользователь получает close 1008."),
+                ("WS /ws/authorized?access_token=ADMIN_TOKEN&room=admin", "Admin подключается."),
+            ],
+        },
+    ],
+    "chapter12": [
+        {
+            "title": "Что меняем",
+            "body": "Задача про удаление группы должна быть решена на всех уровнях: service method, endpoint и тест.",
+            "items": [
+                "Добавить метод <code>delete_group</code> в <code>ChatService</code>.",
+                "Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.",
+                "Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.",
+                "Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.",
+            ],
+        },
+        {
+            "title": "Полный service method и endpoint",
+            "code": '''
+class ChatService:
+    def delete_group(self, group_id: int) -> None:
+        group = self.db.get(ChatGroup, group_id)
+        if group is None:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        self.db.query(Message).filter(Message.group_id == group_id).delete()
+        self.db.delete(group)
+        self.db.commit()
+
+
+@app.delete("/api/chat/groups/{group_id}", status_code=204)
+async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
+    service.delete_group(group_id)
+            ''',
+        },
+        {
+            "title": "Полный тест",
+            "code": '''
+def test_delete_group_removes_group_messages():
+    _, override = make_sqlite_override(Base, get_db)
+    app.dependency_overrides[get_db] = override
+    try:
+        client = TestClient(app)
+        group = client.post("/api/chat/groups", json={"name": "general"}).json()
+        client.post("/api/chat/messages", json={
+            "text": "hello",
+            "sender": "anna",
+            "group_id": group["id"],
+        })
+
+        response = client.delete(f"/api/chat/groups/{group['id']}")
+        assert response.status_code == 204
+        assert client.get(f"/api/chat/messages?group_id={group['id']}").json() == []
+    finally:
+        app.dependency_overrides.clear()
+            ''',
+        },
+    ],
+}
+
+
+BEGINNER_GUIDES = {
+    "chapter01": {
+        "plain": [
+            "Код в этой главе делает маленький калькулятор. Пользователь отправляет два числа, сервер считает результат и возвращает JSON.",
+            "Главная идея: FastAPI сам читает JSON, сам проверяет типы, сам вызывает нужную функцию и сам превращает словарь Python в HTTP-ответ.",
+            "Если вы только начинаете Python: двоеточие <code>:</code> открывает блок кода, а отступы показывают, какие строки относятся к классу, функции или условию.",
+        ],
+        "line_by_line": [
+            ("<code>class CalculationRequest(BaseModel):</code>", "Создаём класс-описание входных данных. Это не обычный калькулятор, а схема: какие поля пользователь должен прислать в JSON."),
+            ("<code>BaseModel</code>", "Базовый класс Pydantic. Благодаря ему FastAPI понимает, что нужно проверить тело запроса."),
+            ("<code>a: float</code>", "Поле <code>a</code> обязательно. <code>float</code> значит число с дробной частью или без неё: <code>10</code>, <code>10.5</code>, <code>0</code>."),
+            ("<code>b: float</code>", "Второе обязательное число. Если пользователь пришлёт строку, которую нельзя превратить в число, FastAPI вернёт ошибку валидации."),
+            ("<code>@app.post(\"/api/calculator/divide\")</code>", "Декоратор. Он говорит FastAPI: когда придёт POST-запрос на этот адрес, вызови функцию ниже."),
+            ("<code>async def divide(...):</code>", "Объявляем асинхронную функцию endpoint-а. <code>async</code> нужно, чтобы FastAPI мог эффективно обслуживать много запросов."),
+            ("<code>request: CalculationRequest</code>", "Параметр функции. FastAPI создаст объект <code>CalculationRequest</code> из JSON-тела запроса и положит его в переменную <code>request</code>."),
+            ("<code>if request.b == 0:</code>", "Обычная проверка Python: если второе число равно нулю, делить нельзя."),
+            ("<code>raise HTTPException(...)</code>", "Останавливаем выполнение функции и возвращаем клиенту ошибку HTTP 400. Это лучше, чем дать Python упасть с делением на ноль."),
+            ("<code>return {\"result\": ...}</code>", "Возвращаем словарь. FastAPI сам превратит его в JSON-ответ."),
+        ],
+        "mistakes": [
+            "Забыть двоеточие после <code>class</code>, <code>def</code> или <code>if</code>.",
+            "Сделать неправильный отступ: в Python отступы заменяют фигурные скобки.",
+            "Написать <code>request[\"b\"]</code> вместо <code>request.b</code>. Pydantic-модель здесь используется как объект с полями.",
+            "Не проверить деление на ноль и получить внутреннюю ошибку сервера вместо понятного ответа 400.",
+        ],
+    },
+    "chapter02": {
+        "plain": [
+            "Dependency Injection в FastAPI - это способ попросить фреймворк подготовить нужный объект за вас.",
+            "Вместо того чтобы внутри endpoint-а вручную создавать сервис, вы пишете <code>Depends(...)</code>, а FastAPI вызывает нужную функцию сам.",
+            "Для новичка это можно представить так: endpoint говорит 'мне нужен сервис', FastAPI приносит его перед запуском функции.",
+        ],
+        "line_by_line": [
+            ("<code>def get_scoped_service()</code>", "Обычная функция Python. Её задача - создать и вернуть объект сервиса."),
+            ("<code>-&gt; InstanceService</code>", "Подсказка типа. Она не создаёт объект сама, но помогает читать код и понимать, что функция возвращает."),
+            ("<code>return InstanceService(...)</code>", "Создаём новый объект и сразу возвращаем его тому, кто вызвал функцию."),
+            ("<code>@app.get(...)</code>", "Регистрируем GET endpoint. Браузер или Swagger может вызвать его обычным GET-запросом."),
+            ("<code>async def lifetimes(...)</code>", "Endpoint принимает не только данные запроса, но и зависимости."),
+            ("<code>Depends(get_scoped_service)</code>", "FastAPI вызовет <code>get_scoped_service</code> и подставит результат в параметр."),
+            ("<code>scoped1</code> и <code>scoped2</code>", "Оба параметра используют одну dependency. FastAPI по умолчанию кеширует результат в рамках одного запроса."),
+            ("<code>use_cache=False</code>", "Отключаем кеш. Поэтому transient-сервис создаётся заново для каждого параметра."),
+            ("<code>shape(scoped1)</code>", "Вспомогательная функция превращает объект сервиса в простой словарь для JSON-ответа."),
+        ],
+        "mistakes": [
+            "Вызвать dependency самому: <code>Depends(get_service())</code>. Нужно передавать функцию без скобок: <code>Depends(get_service)</code>.",
+            "Ожидать, что FastAPI создаст новый объект при каждом параметре, хотя кеширование включено.",
+            "Хранить изменяемое состояние в singleton без понимания, что оно общее для всех запросов.",
+        ],
+    },
+    "chapter03": {
+        "plain": [
+            "Здесь приложение само становится клиентом другого API. Пользователь обращается к нам, а мы внутри делаем запрос на JSONPlaceholder.",
+            "Важно не путать два направления: входящий запрос приходит в FastAPI, исходящий запрос отправляет <code>httpx</code>.",
+            "Асинхронность нужна, чтобы сервер не простаивал, пока ждёт ответ внешнего сайта.",
+        ],
+        "line_by_line": [
+            ("<code>class ExternalApiService:</code>", "Создаём класс-сервис. Он отвечает за общение с внешним API, чтобы endpoint был коротким."),
+            ("<code>async def get_post(...)</code>", "Асинхронный метод. Его можно вызывать с <code>await</code>."),
+            ("<code>post_id: int</code>", "Ожидаем целое число. Например, <code>1</code>, <code>2</code>, <code>10</code>."),
+            ("<code>-&gt; dict</code>", "Подсказка: метод вернёт словарь Python."),
+            ("<code>async with httpx.AsyncClient(...)</code>", "Открываем HTTP-клиент на время блока. После блока он корректно закрывается."),
+            ("<code>base_url=self.base_url</code>", "Общий адрес внешнего сервиса задаётся один раз, дальше можно писать только путь."),
+            ("<code>timeout=10.0</code>", "Если внешний сервис зависнет, мы не будем ждать вечно."),
+            ("<code>await client.get(...)</code>", "Отправляем GET-запрос и ждём ответ."),
+            ("<code>response.raise_for_status()</code>", "Если внешний API вернул ошибку 404/500, превращаем её в исключение."),
+            ("<code>return response.json()</code>", "Берём JSON из ответа и возвращаем его как Python-объект."),
+        ],
+        "mistakes": [
+            "Забыть <code>await</code> перед асинхронным запросом.",
+            "Создавать запросы без timeout и зависнуть на плохом внешнем сервисе.",
+            "Смешать логику внешнего API прямо с endpoint-ом, из-за чего код станет трудно тестировать.",
+        ],
+    },
+    "chapter04": {
+        "plain": [
+            "Ошибка - это не всегда авария. Иногда это нормальная бизнес-ситуация: не найдено, неверные данные, сервис временно недоступен.",
+            "FastAPI позволяет перехватывать исключения и возвращать понятный JSON вместо большого traceback.",
+            "В этой главе мы учимся делать ошибки предсказуемыми для клиента.",
+        ],
+        "line_by_line": [
+            ("<code>@app.exception_handler(DemoError)</code>", "Регистрируем обработчик для конкретного типа ошибки."),
+            ("<code>async def demo_error_handler(request, exc)</code>", "Функция получит сам запрос и объект исключения."),
+            ("<code>request</code>", "Из него можно взять путь, headers, query-параметры и другую информацию о запросе."),
+            ("<code>exc</code>", "Это ошибка, которую кто-то бросил через <code>raise DemoError(...)</code>."),
+            ("<code>JSONResponse(...)</code>", "Создаём ответ вручную: выбираем status code и тело JSON."),
+            ("<code>status_code=500</code>", "Говорим клиенту, что произошла серверная ошибка."),
+            ("<code>content={...}</code>", "Тело ответа. Клиент получит именно этот JSON."),
+            ("<code>str(exc)</code>", "Превращаем исключение в строку, чтобы показать сообщение."),
+            ("<code>str(request.url.path)</code>", "Добавляем путь, на котором произошла ошибка. Это помогает отладке."),
+        ],
+        "mistakes": [
+            "Возвращать 200 OK при ошибке. Клиент тогда не поймёт, что запрос не удался.",
+            "Показывать пользователю внутренний traceback и секретные детали сервера.",
+            "Ловить вообще все исключения и скрывать настоящие баги без логирования.",
+        ],
+    },
+    "chapter05": {
+        "plain": [
+            "До этого мы в основном возвращали JSON. Здесь FastAPI возвращает обычную HTML-страницу.",
+            "Jinja2 - это шаблонизатор: HTML-файл с местами, куда сервер подставляет данные.",
+            "Форма отправляет не JSON, а специальные form-поля. Поэтому используются параметры <code>Form</code>.",
+        ],
+        "line_by_line": [
+            ("<code>@app.post(\"/contact\", response_class=HTMLResponse)</code>", "Этот endpoint принимает отправку формы и возвращает HTML, а не JSON."),
+            ("<code>include_in_schema=False</code>", "Прячем HTML endpoint из Swagger, потому что это страница для браузера, а не API для клиента."),
+            ("<code>request: Request</code>", "Объект запроса нужен Jinja2-шаблону."),
+            ("<code>name: str = Form(\"\")</code>", "Берём поле <code>name</code> из HTML-формы. Если его нет, используем пустую строку."),
+            ("<code>email: str = Form(\"\")</code>", "То же самое для email."),
+            ("<code>message: str = Form(\"\")</code>", "То же самое для текста сообщения."),
+            ("<code>values = {...}</code>", "Складываем введённые данные в словарь, чтобы при ошибке вернуть их обратно на страницу."),
+            ("<code>ContactForm(**values)</code>", "Передаём словарь в Pydantic-модель. Две звёздочки означают 'развернуть словарь в именованные аргументы'."),
+            ("<code>ValidationError</code>", "Если Pydantic нашёл ошибку, мы ловим её и показываем рядом с полями формы."),
+        ],
+        "mistakes": [
+            "Забыть установить <code>python-multipart</code>, без него FastAPI не принимает формы.",
+            "Не передать <code>request</code> в шаблон.",
+            "При ошибке очистить форму, заставив пользователя вводить всё заново.",
+        ],
+    },
+    "chapter06": {
+        "plain": [
+            "База данных хранит данные дольше, чем живёт один запрос. SQLAlchemy помогает работать с таблицами как с Python-объектами.",
+            "Session - это рабочая область для операций с БД. Через неё мы добавляем, читаем, сохраняем и удаляем данные.",
+            "DTO нужны, чтобы внешний JSON API не зависел напрямую от внутренней ORM-модели.",
+        ],
+        "line_by_line": [
+            ("<code>def get_db()</code>", "Dependency-функция, которая выдаёт подключение к БД на время запроса."),
+            ("<code>db = SessionLocal()</code>", "Создаём новую Session. Через неё endpoint будет работать с БД."),
+            ("<code>try:</code>", "Начинаем блок, где Session отдаётся endpoint-у."),
+            ("<code>yield db</code>", "Отдаём Session наружу. После завершения запроса выполнение вернётся сюда."),
+            ("<code>finally:</code>", "Этот блок выполнится даже если в endpoint-е случилась ошибка."),
+            ("<code>db.close()</code>", "Закрываем Session, чтобы не держать ресурсы."),
+            ("<code>response_model=ProductDto</code>", "FastAPI отдаст наружу только поля, описанные в DTO."),
+            ("<code>Product(**request.model_dump())</code>", "Берём проверенные поля из DTO и создаём ORM-объект."),
+            ("<code>db.add(product)</code>", "Говорим Session: этот объект нужно вставить в таблицу."),
+            ("<code>db.commit()</code>", "Фактически сохраняем изменения в базе."),
+            ("<code>db.refresh(product)</code>", "Обновляем объект, чтобы получить id, выданный базой."),
+        ],
+        "mistakes": [
+            "Создать объект, но забыть <code>db.commit()</code>: данные не сохранятся.",
+            "Вернуть ORM-модель без DTO и случайно раскрыть лишние поля.",
+            "Держать одну Session глобально на всё приложение.",
+        ],
+    },
+    "chapter07": {
+        "plain": [
+            "Пользователь доказывает, кто он, через логин и пароль. После этого сервер выдаёт token.",
+            "Token похож на пропуск: клиент показывает его при каждом защищённом запросе.",
+            "Сервер проверяет подпись token-а и понимает, можно ли доверять данным внутри него.",
+        ],
+        "line_by_line": [
+            ("<code>def get_current_user(...)</code>", "Dependency, которая пытается найти пользователя по Bearer token."),
+            ("<code>token: str = Depends(oauth2_scheme)</code>", "FastAPI достаёт token из заголовка <code>Authorization</code>."),
+            ("<code>jwt.decode(...)</code>", "Проверяем подпись JWT и читаем payload."),
+            ("<code>SECRET_KEY</code>", "Секрет, которым token подписывался. Без него нельзя проверить подлинность."),
+            ("<code>algorithms=[ALGORITHM]</code>", "Явно разрешаем алгоритм подписи, чтобы не принимать что попало."),
+            ("<code>payload.get(\"sub\")</code>", "Берём subject token-а. В примере это username."),
+            ("<code>USERS.get(...)</code>", "Ищем пользователя в demo-хранилище."),
+            ("<code>if user is None</code>", "Если token указывает на несуществующего пользователя, возвращаем 401."),
+            ("<code>return user</code>", "Если всё хорошо, endpoint получит готовый объект пользователя."),
+        ],
+        "mistakes": [
+            "Хранить пароль в открытом виде вместо hash.",
+            "Доверять username, который прислал клиент, вместо username из token-а.",
+            "Путать 401 и 403: 401 - не вошёл, 403 - вошёл, но прав не хватает.",
+        ],
+    },
+    "chapter08": {
+        "plain": [
+            "Access token должен жить недолго: если его украдут, ущерб ограничен временем жизни.",
+            "Refresh token нужен, чтобы пользователь не вводил пароль каждые 15 минут.",
+            "Refresh token хранится на сервере, поэтому его можно отозвать.",
+        ],
+        "line_by_line": [
+            ("<code>db.query(RefreshToken)</code>", "Начинаем запрос к таблице refresh token-ов."),
+            ("<code>.filter(...)</code>", "Ищем строку, где token совпадает с тем, что прислал клиент."),
+            ("<code>.first()</code>", "Берём первую найденную строку или <code>None</code>."),
+            ("<code>stored is None</code>", "Token вообще не найден в БД."),
+            ("<code>stored.revoked</code>", "Token уже был отозван раньше."),
+            ("<code>stored.expires_at &lt;= datetime.utcnow()</code>", "Срок действия token-а закончился."),
+            ("<code>raise HTTPException(status_code=401)</code>", "Любая из этих проблем означает: клиент не может обновить сессию."),
+            ("<code>stored.revoked = True</code>", "Старый refresh token больше нельзя использовать."),
+            ("<code>create_access_token(user)</code>", "Создаём новый короткий access token."),
+            ("<code>create_refresh_token(db, user)</code>", "Создаём новый refresh token и сохраняем его в БД."),
+        ],
+        "mistakes": [
+            "Не отзывать старый refresh token при обновлении.",
+            "Делать refresh token JWT без хранения на сервере, а потом не иметь возможности его отозвать.",
+            "Хранить refresh token в небезопасном месте на клиенте.",
+        ],
+    },
+    "chapter09": {
+        "plain": [
+            "Обычный HTTP-запрос короткий: клиент спросил, сервер ответил, соединение закончилось.",
+            "WebSocket остаётся открытым. Клиент и сервер могут обмениваться сообщениями много раз.",
+            "Для чата серверу нужно помнить, кто сейчас подключён.",
+        ],
+        "line_by_line": [
+            ("<code>@app.websocket(\"/ws\")</code>", "Регистрируем не HTTP endpoint, а WebSocket endpoint."),
+            ("<code>websocket: WebSocket</code>", "Объект активного соединения. Через него принимаем и отправляем сообщения."),
+            ("<code>await manager.connect(websocket)</code>", "Принимаем соединение и сохраняем его в manager-е."),
+            ("<code>try:</code>", "Начинаем блок, где соединение считается открытым."),
+            ("<code>while True:</code>", "Бесконечный цикл. Он работает, пока клиент не отключится."),
+            ("<code>await websocket.receive_text()</code>", "Ждём следующее текстовое сообщение клиента."),
+            ("<code>await manager.broadcast(...)</code>", "Рассылаем сообщение всем подключённым клиентам."),
+            ("<code>except WebSocketDisconnect:</code>", "Если клиент закрыл вкладку или соединение оборвалось, попадаем сюда."),
+            ("<code>manager.disconnect(connection_id)</code>", "Удаляем клиента из списка активных подключений."),
+        ],
+        "mistakes": [
+            "Забыть <code>await websocket.accept()</code> внутри connect.",
+            "Не удалить отключившегося клиента из manager-а.",
+            "Думать, что WebSocket endpoint можно проверить обычным curl как HTTP.",
+        ],
+    },
+    "chapter10": {
+        "plain": [
+            "Глава показывает, как поверх WebSocket сделать более удобный протокол: команды, группы и отправку одному клиенту.",
+            "Это учебная замена SignalR: мы вручную делаем часть того, что SignalR обычно берёт на себя.",
+            "Главная мысль: WebSocket - транспорт, а правила сообщений вы проектируете сами.",
+        ],
+        "line_by_line": [
+            ("<code>elif action == \"send_to_group\"</code>", "Проверяем, какую команду прислал клиент в JSON."),
+            ("<code>data.get(\"group\", group)</code>", "Берём группу из сообщения. Если её нет, используем текущую группу подключения."),
+            ("<code>await manager.send_to_group(...)</code>", "Отправляем payload только участникам выбранной группы."),
+            ("<code>elif action == \"join\"</code>", "Команда подключения к группе."),
+            ("<code>manager.groups[...].add(connection_id)</code>", "Добавляем текущего клиента в set участников группы."),
+            ("<code>send_to_connection(...)</code>", "Отправляем подтверждение только этому клиенту."),
+            ("<code>else:</code>", "Если action не распознан или равен broadcast, используем поведение по умолчанию."),
+            ("<code>await manager.broadcast(payload)</code>", "Рассылаем сообщение всем активным подключениям."),
+        ],
+        "mistakes": [
+            "Не договориться о формате JSON-команд между клиентом и сервером.",
+            "Хранить группы списком и получать дубликаты connection id.",
+            "Не удалять connection id из групп при отключении.",
+        ],
+    },
+    "chapter11": {
+        "plain": [
+            "WebSocket тоже нужно защищать. Иначе любой сможет подключиться к чату.",
+            "Перед <code>accept()</code> сервер проверяет token. Если token плохой, соединение закрывается.",
+            "Username берётся из JWT, чтобы клиент не мог притвориться другим человеком.",
+        ],
+        "line_by_line": [
+            ("<code>@app.websocket(\"/ws/authorized\")</code>", "Регистрируем защищённый WebSocket endpoint."),
+            ("<code>access_token: str | None = Query(default=None)</code>", "Читаем token из query string. Он может отсутствовать, поэтому тип включает <code>None</code>."),
+            ("<code>if not access_token:</code>", "Если token не передали, подключение нельзя принимать."),
+            ("<code>await websocket.close(code=1008)</code>", "Закрываем соединение кодом 'нарушение политики'."),
+            ("<code>return</code>", "Останавливаем функцию, чтобы дальше код не выполнялся."),
+            ("<code>try:</code>", "Пробуем проверить token."),
+            ("<code>username = verify_token(access_token)</code>", "Если token валиден, получаем username."),
+            ("<code>except HTTPException:</code>", "Если проверка token-а упала, закрываем WebSocket."),
+            ("<code>await manager.connect(...)</code>", "Только после успешной проверки принимаем соединение."),
+        ],
+        "mistakes": [
+            "Сначала вызвать <code>accept()</code>, а потом проверять token.",
+            "Брать username из сообщения клиента вместо token-а.",
+            "Не закрывать соединение явным кодом, из-за чего клиенту труднее понять причину отказа.",
+        ],
+    },
+    "chapter12": {
+        "plain": [
+            "Тесты нужны, чтобы изменения не ломали уже работающий код.",
+            "FastAPI позволяет запускать endpoint-ы в тестах без настоящего веб-сервера.",
+            "Dependency override позволяет подменить настоящую БД тестовой in-memory БД.",
+        ],
+        "line_by_line": [
+            ("<code>app.dependency_overrides[get_db] = override</code>", "Говорим FastAPI: когда endpoint попросит <code>get_db</code>, используй тестовую функцию."),
+            ("<code>try:</code>", "Начинаем блок теста, после которого обязательно очистим override."),
+            ("<code>client = TestClient(app)</code>", "Создаём тестовый клиент. Он вызывает приложение как будто по HTTP."),
+            ("<code>client.post(...)</code>", "Отправляем POST-запрос в приложение."),
+            ("<code>json={...}</code>", "Тело запроса. TestClient сам превратит словарь в JSON."),
+            ("<code>group[\"id\"]</code>", "Берём id созданной группы из ответа, чтобы использовать его в следующем запросе."),
+            ("<code>finally:</code>", "Этот блок выполнится даже если assert упал."),
+            ("<code>app.dependency_overrides.clear()</code>", "Очищаем подмены зависимостей, чтобы следующий тест был независимым."),
+        ],
+        "mistakes": [
+            "Не очищать dependency overrides после теста.",
+            "Тестировать на реальной локальной БД и получать нестабильные результаты.",
+            "Проверять только status code и не проверять важные поля ответа.",
+        ],
+    },
+}
+
+
+def render_lesson(service: str, data: dict) -> str:
+    number = data["number"]
+    port = data["port"]
+    guide = BEGINNER_GUIDES[service]
+    prev_link = f'http://localhost:{port - 1}' if number > 1 else "http://localhost:8000"
+    next_link = f'http://localhost:{port + 1}' if number < 12 else "http://localhost:8000"
+    prev_label = "Предыдущая глава" if number > 1 else "Главная"
+    next_label = "Следующая глава" if number < 12 else "Главная"
+
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{data["title"]}</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="{prev_link}">{prev_label}</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="{next_link}">{next_label}</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>{data["title"]}</h1>
+            <p>{data["subtitle"]}</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> {port}</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:{port}/docs</code></span>
+                <span><strong>Результат:</strong> {data["outcome"]}</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        {list_items(data["concepts"])}
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        {list_items(data["flow"])}
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        {endpoint_cards(data["endpoints"])}
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    {code_block(data["code"])}
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    {paragraphs(guide["plain"])}
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        {definition_items(guide["line_by_line"])}
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        {list_items(data["code_notes"])}
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        {list_items(guide["mistakes"])}
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>{data["task"]}</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                {render_solution_sections(FULL_SOLUTIONS[service])}
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    {code_block(data["answer"])}
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        {list_items(data["answer_notes"])}
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>
+"""
+
+
+CONTACT_TEMPLATE = """<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Форма контакта</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="/">К уроку</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Форма контакта</h1>
+            <p>Пример binding HTML-формы на сервере, сохранения введённых значений и вывода ошибок рядом с полями.</p>
+        </section>
+
+        {% if sent %}
+        <section class="info-box success">
+            <h2>Форма принята</h2>
+            <p>Сообщение от {{ values.name }} принято: {{ values.message }}</p>
+        </section>
+        {% endif %}
+
+        <section class="info-box">
+            <h2>Данные формы</h2>
+            <p>Отправьте пустые поля или email без символа @, чтобы увидеть серверную валидацию Pydantic.</p>
+            <form method="post" action="/contact">
+                <label>Имя
+                    <input name="name" value="{{ values.get('name', '') }}">
+                    {% if errors.get('name') %}<span class="error">{{ errors.get('name') }}</span>{% endif %}
+                </label>
+                <label>Email
+                    <input name="email" value="{{ values.get('email', '') }}">
+                    {% if errors.get('email') %}<span class="error">{{ errors.get('email') }}</span>{% endif %}
+                </label>
+                <label>Сообщение
+                    <textarea name="message">{{ values.get('message', '') }}</textarea>
+                    {% if errors.get('message') %}<span class="error">{{ errors.get('message') }}</span>{% endif %}
+                </label>
+                <button type="submit">Отправить</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>
+"""
+
+
+def main() -> None:
+    for service, data in LESSONS.items():
+        (ROOT / service / "templates" / "index.html").write_text(render_lesson(service, data), encoding="utf-8")
+
+    (ROOT / "chapter05" / "templates" / "contact.html").write_text(CONTACT_TEMPLATE, encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

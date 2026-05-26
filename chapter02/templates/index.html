@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 2: Dependency Injection</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8001">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8003">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 2: Dependency Injection</h1>
+            <p>Depends, dependency graph, кеширование зависимостей в рамках запроса и singleton-style сервисы.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8002</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8002/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы умеете выносить подготовку сервисов из endpoint-ов и понимать, когда объект создаётся один раз, а когда на каждый вызов.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>Dependency</strong> - функция, результат которой FastAPI передаёт в endpoint.</li>
+<li><strong>Depends</strong> - декларация зависимости прямо в параметрах функции.</li>
+<li><strong>Request cache</strong> - одинаковая dependency по умолчанию вызывается один раз за запрос.</li>
+<li><strong>use_cache=False</strong> - способ получить transient-поведение.</li>
+<li><strong>Singleton-style</strong> - обычный модульный объект Python, который живёт всё время процесса.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Клиент вызывает <code>GET /api/dependency-injection/lifetimes</code>.</li>
+<li>FastAPI строит дерево зависимостей по параметрам endpoint-а.</li>
+<li>Scoped dependency вызывается один раз и переиспользуется для двух параметров.</li>
+<li>Singleton возвращает один и тот же объект из модуля.</li>
+<li>Transient dependency помечена <code>use_cache=False</code>, поэтому создаётся дважды.</li>
+<li>Endpoint возвращает идентификаторы объектов, чтобы поведение было видно в Swagger.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/dependency-injection/lifetimes</code></strong><span>Показывает scoped, singleton и transient идентификаторы.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/dependency-injection/logger-demo</code></strong><span>Демонстрирует logging из endpoint-а.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}def get_scoped_service() -&gt; InstanceService:
+    return InstanceService(&quot;scoped&quot;, str(uuid4()))
+
+
+@app.get(&quot;/api/dependency-injection/lifetimes&quot;)
+async def lifetimes(
+    scoped1: InstanceService = Depends(get_scoped_service),
+    scoped2: InstanceService = Depends(get_scoped_service),
+    transient1: InstanceService = Depends(get_transient_service, use_cache=False),
+    transient2: InstanceService = Depends(get_transient_service, use_cache=False),
+):
+    ...{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Dependency Injection в FastAPI - это способ попросить фреймворк подготовить нужный объект за вас.</p>
+<p>Вместо того чтобы внутри endpoint-а вручную создавать сервис, вы пишете <code>Depends(...)</code>, а FastAPI вызывает нужную функцию сам.</p>
+<p>Для новичка это можно представить так: endpoint говорит 'мне нужен сервис', FastAPI приносит его перед запуском функции.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>def get_scoped_service()</code></dt><dd>Обычная функция Python. Её задача - создать и вернуть объект сервиса.</dd>
+<dt><code>-&gt; InstanceService</code></dt><dd>Подсказка типа. Она не создаёт объект сама, но помогает читать код и понимать, что функция возвращает.</dd>
+<dt><code>return InstanceService(...)</code></dt><dd>Создаём новый объект и сразу возвращаем его тому, кто вызвал функцию.</dd>
+<dt><code>@app.get(...)</code></dt><dd>Регистрируем GET endpoint. Браузер или Swagger может вызвать его обычным GET-запросом.</dd>
+<dt><code>async def lifetimes(...)</code></dt><dd>Endpoint принимает не только данные запроса, но и зависимости.</dd>
+<dt><code>Depends(get_scoped_service)</code></dt><dd>FastAPI вызовет <code>get_scoped_service</code> и подставит результат в параметр.</dd>
+<dt><code>scoped1</code> и <code>scoped2</code></dt><dd>Оба параметра используют одну dependency. FastAPI по умолчанию кеширует результат в рамках одного запроса.</dd>
+<dt><code>use_cache=False</code></dt><dd>Отключаем кеш. Поэтому transient-сервис создаётся заново для каждого параметра.</dd>
+<dt><code>shape(scoped1)</code></dt><dd>Вспомогательная функция превращает объект сервиса в простой словарь для JSON-ответа.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Одинаковый <code>Depends(get_scoped_service)</code> кешируется в рамках одного HTTP-запроса.</li>
+<li><code>use_cache=False</code> явно отключает кеш, поэтому transient получает разные id.</li>
+<li>В реальном проекте dependency часто возвращает репозиторий, DB session, настройки или текущего пользователя.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Вызвать dependency самому: <code>Depends(get_service())</code>. Нужно передавать функцию без скобок: <code>Depends(get_service)</code>.</li>
+<li>Ожидать, что FastAPI создаст новый объект при каждом параметре, хотя кеширование включено.</li>
+<li>Хранить изменяемое состояние в singleton без понимания, что оно общее для всех запросов.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Создайте dependency <code>get_request_id()</code>, которая возвращает UUID запроса, и endpoint <code>/api/dependency-injection/request-id</code>.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что создаём</h2>
+<p>Нужно добавить отдельную dependency, которая генерирует request id, и endpoint, который показывает этот id клиенту.</p>
+<ul class="flow-list"><li>В файле <code>chapter02/app/main.py</code> уже импортирован <code>uuid4</code>.</li>
+<li>Создаём функцию <code>get_request_id</code> рядом с другими dependency.</li>
+<li>Создаём endpoint <code>GET /api/dependency-injection/request-id</code>.</li>
+<li>Передаём dependency в endpoint через <code>Depends</code>, а не вызываем вручную.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный код новой dependency и endpoint-а</h2>
+<pre><code>{% raw %}def get_request_id() -&gt; str:
+    return str(uuid4())
+
+
+@app.get(&quot;/api/dependency-injection/request-id&quot;)
+async def request_id(value: str = Depends(get_request_id)):
+    return {
+        &quot;request_id&quot;: value,
+        &quot;explanation&quot;: &quot;FastAPI вызвал get_request_id() и передал результат в endpoint.&quot;,
+    }{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<p>Вызовите endpoint два раза подряд. Значение должно меняться, потому что каждый HTTP-запрос получает свой request id.</p>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/dependency-injection/request-id</code></strong><span>Ответ содержит поле <code>request_id</code>.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/dependency-injection/request-id</code></strong><span>Повторный запрос возвращает другой UUID.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}def get_request_id() -&gt; str:
+    return str(uuid4())
+
+
+@app.get(&quot;/api/dependency-injection/request-id&quot;)
+async def request_id(value: str = Depends(get_request_id)):
+    return {&quot;request_id&quot;: value}{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Если один request id нужен в нескольких зависимостях, оставьте кеширование включённым.</li>
+<li>Если нужен новый id на каждый вызов dependency, используйте <code>use_cache=False</code>.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

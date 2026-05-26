@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 12: Тестирование</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8011">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8000">Главная</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 12: Тестирование</h1>
+            <p>TestClient, dependency overrides, in-memory SQLite, service layer и интеграционные сценарии.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8012</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8012/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы умеете тестировать FastAPI endpoint-ы без реальной БД и проверять бизнес-логику отдельно от HTTP.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>TestClient</strong> - синхронный клиент для тестирования ASGI-приложения.</li>
+<li><strong>dependency_overrides</strong> - замена production dependency тестовой реализацией.</li>
+<li><strong>sqlite:// + StaticPool</strong> - одна in-memory БД на весь тестовый engine.</li>
+<li><strong>Service layer</strong> - класс <code>ChatService</code>, который можно проверять отдельно.</li>
+<li><strong>Integration test</strong> - запрос проходит через routing, validation, dependency и БД.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Тест создаёт in-memory SQLite engine.</li>
+<li>Таблицы создаются через <code>Base.metadata.create_all</code>.</li>
+<li>Production dependency <code>get_db</code> заменяется тестовой.</li>
+<li>TestClient вызывает реальные HTTP endpoint-ы приложения.</li>
+<li>Endpoint использует тестовую Session и не трогает файл на диске.</li>
+<li>После теста overrides очищаются, чтобы не повлиять на другие тесты.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>POST /api/chat/groups</code></strong><span>Создание группы.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/chat/groups</code></strong><span>Список групп.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/chat/messages</code></strong><span>Отправка сообщения.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/chat/messages?group_id=...</code></strong><span>Получение сообщений, опционально по группе.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}app.dependency_overrides[get_db] = override
+try:
+    client = TestClient(app)
+    group = client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;general&quot;}).json()
+    response = client.post(&quot;/api/chat/messages&quot;, json={
+        &quot;text&quot;: &quot;hello&quot;,
+        &quot;sender&quot;: &quot;anna&quot;,
+        &quot;group_id&quot;: group[&quot;id&quot;],
+    })
+finally:
+    app.dependency_overrides.clear(){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Тесты нужны, чтобы изменения не ломали уже работающий код.</p>
+<p>FastAPI позволяет запускать endpoint-ы в тестах без настоящего веб-сервера.</p>
+<p>Dependency override позволяет подменить настоящую БД тестовой in-memory БД.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>app.dependency_overrides[get_db] = override</code></dt><dd>Говорим FastAPI: когда endpoint попросит <code>get_db</code>, используй тестовую функцию.</dd>
+<dt><code>try:</code></dt><dd>Начинаем блок теста, после которого обязательно очистим override.</dd>
+<dt><code>client = TestClient(app)</code></dt><dd>Создаём тестовый клиент. Он вызывает приложение как будто по HTTP.</dd>
+<dt><code>client.post(...)</code></dt><dd>Отправляем POST-запрос в приложение.</dd>
+<dt><code>json={...}</code></dt><dd>Тело запроса. TestClient сам превратит словарь в JSON.</dd>
+<dt><code>group["id"]</code></dt><dd>Берём id созданной группы из ответа, чтобы использовать его в следующем запросе.</dd>
+<dt><code>finally:</code></dt><dd>Этот блок выполнится даже если assert упал.</dd>
+<dt><code>app.dependency_overrides.clear()</code></dt><dd>Очищаем подмены зависимостей, чтобы следующий тест был независимым.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Override делает тест изолированным: он не зависит от локальных SQLite-файлов.</li>
+<li>Проверяйте не только status code, но и важные поля JSON-ответа.</li>
+<li>Для WebSocket есть отдельный <code>websocket_connect</code> в TestClient.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Не очищать dependency overrides после теста.</li>
+<li>Тестировать на реальной локальной БД и получать нестабильные результаты.</li>
+<li>Проверять только status code и не проверять важные поля ответа.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте endpoint удаления группы и тест, что сообщение удалённой группы больше не возвращается.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Задача про удаление группы должна быть решена на всех уровнях: service method, endpoint и тест.</p>
+<ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
+<li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
+<li>Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.</li>
+<li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный service method и endpoint</h2>
+<pre><code>{% raw %}class ChatService:
+    def delete_group(self, group_id: int) -&gt; None:
+        group = self.db.get(ChatGroup, group_id)
+        if group is None:
+            raise HTTPException(status_code=404, detail=&quot;Group not found&quot;)
+
+        self.db.query(Message).filter(Message.group_id == group_id).delete()
+        self.db.delete(group)
+        self.db.commit()
+
+
+@app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
+async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
+    service.delete_group(group_id){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Полный тест</h2>
+<pre><code>{% raw %}def test_delete_group_removes_group_messages():
+    _, override = make_sqlite_override(Base, get_db)
+    app.dependency_overrides[get_db] = override
+    try:
+        client = TestClient(app)
+        group = client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;general&quot;}).json()
+        client.post(&quot;/api/chat/messages&quot;, json={
+            &quot;text&quot;: &quot;hello&quot;,
+            &quot;sender&quot;: &quot;anna&quot;,
+            &quot;group_id&quot;: group[&quot;id&quot;],
+        })
+
+        response = client.delete(f&quot;/api/chat/groups/{group[&#x27;id&#x27;]}&quot;)
+        assert response.status_code == 204
+        assert client.get(f&quot;/api/chat/messages?group_id={group[&#x27;id&#x27;]}&quot;).json() == []
+    finally:
+        app.dependency_overrides.clear(){% endraw %}</code></pre>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}@app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
+async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
+    service.delete_group(group_id){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Сначала напишите тест на ожидаемое поведение, затем реализуйте service method.</li>
+<li>Решите явно: сообщения удаляются каскадно или получают <code>group_id=None</code>. Для учебного чата проще каскадное удаление.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

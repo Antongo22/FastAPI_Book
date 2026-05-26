@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Учебник по Python FastAPI</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <section class="hero">
+            <h1>Учебник по Python FastAPI</h1>
+            <p>Полное руководство для начинающих разработчиков: от REST API до JWT, WebSockets, SQLAlchemy и тестирования.</p>
+        </section>
+
+        <section class="chapter-grid">
+            {% for chapter in chapters %}
+            <article class="chapter-card">
+                <h2>Глава {{ "%02d"|format(chapter.number) }}: {{ chapter.title }}</h2>
+                <p>{{ chapter.text }}</p>
+                <a class="button-link" href="http://localhost:{{ chapter.port }}">Открыть</a>
+                <a class="button-link secondary" href="http://localhost:{{ chapter.port }}/docs">Swagger</a>
+            </article>
+            {% endfor %}
+        </section>
+
+        <section class="info-box" style="margin-top: 20px;">
+            <h2>Как использовать учебник</h2>
+            <p>Открывайте главы последовательно, изучайте теорию, запускайте демонстрации через Swagger UI и проверяйте решения в разделе ответов.</p>
+        </section>
+    </main>
+</body>
+</html>

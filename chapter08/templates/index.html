@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 8: Refresh Tokens</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8007">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8009">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 8: Refresh Tokens</h1>
+            <p>Короткий access token, долгоживущий refresh token, rotation, revoke и logout.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8008</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8008/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы понимаете, зачем разделять access и refresh token и почему refresh token нужно хранить на сервере.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>Access token</strong> - короткоживущий JWT для доступа к API.</li>
+<li><strong>Refresh token</strong> - случайная строка, которая хранится в БД и выпускает новую пару token-ов.</li>
+<li><strong>Rotation</strong> - при refresh старый refresh token отзывается и создаётся новый.</li>
+<li><strong>Revoke</strong> - ручное прекращение действия refresh token-а.</li>
+<li><strong>Logout</strong> - отзыв всех активных refresh token-ов пользователя.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Register/login создаёт пользователя и выдаёт access + refresh token.</li>
+<li>Access token живёт недолго и отправляется в Bearer header.</li>
+<li>Refresh token хранится в таблице <code>refresh_tokens</code>.</li>
+<li>При <code>/api/auth/refresh</code> сервер проверяет token, срок действия и revoked flag.</li>
+<li>Старый refresh token отзывается, новая пара token-ов возвращается клиенту.</li>
+<li>Повторное использование старого refresh token-а возвращает HTTP 401.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>POST /api/auth/register</code></strong><span>Создание пользователя и первой пары token-ов.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/login</code></strong><span>Вход и выдача новой пары token-ов.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/refresh</code></strong><span>Rotation refresh token-а.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/revoke</code></strong><span>Отзыв конкретного refresh token-а.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/logout</code></strong><span>Отзыв всех token-ов текущего пользователя.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+if stored is None or stored.revoked or stored.expires_at &lt;= datetime.utcnow():
+    raise HTTPException(status_code=401, detail=&quot;Недействительный refresh token&quot;)
+
+stored.revoked = True
+access_token, access_expires = create_access_token(user)
+refresh_token, refresh_expires = create_refresh_token(db, user){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Access token должен жить недолго: если его украдут, ущерб ограничен временем жизни.</p>
+<p>Refresh token нужен, чтобы пользователь не вводил пароль каждые 15 минут.</p>
+<p>Refresh token хранится на сервере, поэтому его можно отозвать.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>db.query(RefreshToken)</code></dt><dd>Начинаем запрос к таблице refresh token-ов.</dd>
+<dt><code>.filter(...)</code></dt><dd>Ищем строку, где token совпадает с тем, что прислал клиент.</dd>
+<dt><code>.first()</code></dt><dd>Берём первую найденную строку или <code>None</code>.</dd>
+<dt><code>stored is None</code></dt><dd>Token вообще не найден в БД.</dd>
+<dt><code>stored.revoked</code></dt><dd>Token уже был отозван раньше.</dd>
+<dt><code>stored.expires_at &lt;= datetime.utcnow()</code></dt><dd>Срок действия token-а закончился.</dd>
+<dt><code>raise HTTPException(status_code=401)</code></dt><dd>Любая из этих проблем означает: клиент не может обновить сессию.</dd>
+<dt><code>stored.revoked = True</code></dt><dd>Старый refresh token больше нельзя использовать.</dd>
+<dt><code>create_access_token(user)</code></dt><dd>Создаём новый короткий access token.</dd>
+<dt><code>create_refresh_token(db, user)</code></dt><dd>Создаём новый refresh token и сохраняем его в БД.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Refresh token не является JWT: это opaque value, смысл которого известен только серверу.</li>
+<li>Rotation помогает обнаруживать и блокировать повторное использование украденного token-а.</li>
+<li>В production refresh token обычно хранится в HttpOnly cookie или защищённом хранилище клиента.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Не отзывать старый refresh token при обновлении.</li>
+<li>Делать refresh token JWT без хранения на сервере, а потом не иметь возможности его отозвать.</li>
+<li>Хранить refresh token в небезопасном месте на клиенте.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте поле <code>revoked_at</code>, чтобы видеть, когда token был отозван.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Нужно добавить поле в ORM-модель refresh token-а и заполнять его во всех местах, где token отзывается.</p>
+<ul class="flow-list"><li>Добавить поле <code>revoked_at</code> в модель <code>RefreshToken</code>.</li>
+<li>Заполнять <code>revoked_at</code> в <code>/refresh</code>, когда старый token отзывается.</li>
+<li>Заполнять <code>revoked_at</code> в <code>/revoke</code>.</li>
+<li>Для logout обновлять все активные token-ы пользователя.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный фрагмент модели и revoke-логики</h2>
+<pre><code>{% raw %}class RefreshToken(Base):
+    __tablename__ = &quot;refresh_tokens&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey(&quot;users.id&quot;))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    user: Mapped[User] = relationship(back_populates=&quot;refresh_tokens&quot;)
+
+
+def revoke_token(stored: RefreshToken) -&gt; None:
+    stored.revoked = True
+    stored.revoked_at = datetime.utcnow(){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Где использовать revoke_token</h2>
+<pre><code>{% raw %}# В /api/auth/refresh
+revoke_token(stored)
+access_token, access_expires = create_access_token(user)
+refresh_token, refresh_expires = create_refresh_token(db, user)
+db.commit()
+
+
+# В /api/auth/revoke
+if stored is not None and not stored.revoked:
+    revoke_token(stored)
+    db.commit(){% endraw %}</code></pre>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+stored.revoked = True
+stored.revoked_at = datetime.utcnow(){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Не забудьте обновить миграцию или создать новую Alembic revision.</li>
+<li>Тест должен проверять не только HTTP 401, но и заполнение <code>revoked_at</code> в БД.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

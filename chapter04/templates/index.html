@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 4: Error Handling</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8003">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8005">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 4: Error Handling</h1>
+            <p>HTTPException, custom exception handlers, validation errors и middleware для времени обработки.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8004</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8004/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы умеете отделять ожидаемые ошибки от неожиданных исключений и возвращать единый JSON-формат.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>HTTPException</strong> - ожидаемая ошибка с выбранным HTTP status code.</li>
+<li><strong>Custom exception</strong> - доменное исключение, для которого можно зарегистрировать handler.</li>
+<li><strong>RequestValidationError</strong> - ошибка валидации входных данных FastAPI/Pydantic.</li>
+<li><strong>Middleware</strong> - общий код вокруг запроса, здесь он добавляет <code>X-Process-Time</code>.</li>
+<li><strong>JSONResponse</strong> - ручное формирование тела и status code.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Запрос проходит через middleware, который сохраняет время старта.</li>
+<li>Endpoint либо возвращает успешный результат, либо бросает исключение.</li>
+<li>FastAPI ищет самый подходящий exception handler.</li>
+<li>Handler превращает исключение в JSON-ответ.</li>
+<li>Middleware добавляет заголовок времени обработки уже к готовому ответу.</li>
+<li>Клиент получает предсказуемую структуру ошибки.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/error-demo/throw</code></strong><span>Искусственно бросает custom exception.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/error-demo/badrequest</code></strong><span>Возвращает ожидаемый BadRequest через HTTPException.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/error-demo/validate</code></strong><span>Проверяет бизнес-валидацию name и age.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/error-demo/success</code></strong><span>Контрольный успешный ответ.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}@app.exception_handler(DemoError)
+async def demo_error_handler(request, exc: DemoError):
+    return JSONResponse(
+        status_code=500,
+        content={&quot;error&quot;: str(exc), &quot;path&quot;: str(request.url.path)},
+    ){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Ошибка - это не всегда авария. Иногда это нормальная бизнес-ситуация: не найдено, неверные данные, сервис временно недоступен.</p>
+<p>FastAPI позволяет перехватывать исключения и возвращать понятный JSON вместо большого traceback.</p>
+<p>В этой главе мы учимся делать ошибки предсказуемыми для клиента.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>@app.exception_handler(DemoError)</code></dt><dd>Регистрируем обработчик для конкретного типа ошибки.</dd>
+<dt><code>async def demo_error_handler(request, exc)</code></dt><dd>Функция получит сам запрос и объект исключения.</dd>
+<dt><code>request</code></dt><dd>Из него можно взять путь, headers, query-параметры и другую информацию о запросе.</dd>
+<dt><code>exc</code></dt><dd>Это ошибка, которую кто-то бросил через <code>raise DemoError(...)</code>.</dd>
+<dt><code>JSONResponse(...)</code></dt><dd>Создаём ответ вручную: выбираем status code и тело JSON.</dd>
+<dt><code>status_code=500</code></dt><dd>Говорим клиенту, что произошла серверная ошибка.</dd>
+<dt><code>content={...}</code></dt><dd>Тело ответа. Клиент получит именно этот JSON.</dd>
+<dt><code>str(exc)</code></dt><dd>Превращаем исключение в строку, чтобы показать сообщение.</dd>
+<dt><code>str(request.url.path)</code></dt><dd>Добавляем путь, на котором произошла ошибка. Это помогает отладке.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Handler принимает исходный request, поэтому может добавить path, correlation id или user id.</li>
+<li>Для бизнес-ошибок лучше возвращать 400/404/409, а не скрывать их как 500.</li>
+<li>Глобальные handlers помогают держать одинаковый формат ошибок во всём API.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Возвращать 200 OK при ошибке. Клиент тогда не поймёт, что запрос не удался.</li>
+<li>Показывать пользователю внутренний traceback и секретные детали сервера.</li>
+<li>Ловить вообще все исключения и скрывать настоящие баги без логирования.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Создайте исключение <code>NotReadyError</code> и handler, который возвращает HTTP 503 с сообщением <code>Сервис временно недоступен</code>.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что создаём</h2>
+<p>Добавляем новый тип ошибки, handler для него и demo-endpoint, чтобы можно было увидеть HTTP 503 в Swagger.</p>
+<ul class="flow-list"><li>Создать класс <code>NotReadyError</code>.</li>
+<li>Зарегистрировать <code>@app.exception_handler(NotReadyError)</code>.</li>
+<li>Добавить endpoint, который бросает эту ошибку для проверки.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный код ошибки, handler-а и проверки</h2>
+<pre><code>{% raw %}class NotReadyError(Exception):
+    pass
+
+
+@app.exception_handler(NotReadyError)
+async def not_ready_handler(request, exc: NotReadyError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            &quot;error&quot;: &quot;Сервис временно недоступен&quot;,
+            &quot;path&quot;: str(request.url.path),
+        },
+    )
+
+
+@app.get(&quot;/api/error-demo/not-ready&quot;)
+async def not_ready():
+    raise NotReadyError(){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/error-demo/not-ready</code></strong><span>HTTP 503 и JSON с <code>error</code>.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/error-demo/success</code></strong><span>HTTP 200, чтобы убедиться, что приложение в целом работает.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}class NotReadyError(Exception):
+    pass
+
+
+@app.exception_handler(NotReadyError)
+async def not_ready_handler(request, exc: NotReadyError):
+    return JSONResponse(status_code=503, content={&quot;error&quot;: &quot;Сервис временно недоступен&quot;}){% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>HTTP 503 подходит для временной недоступности зависимости или сервиса.</li>
+<li>Если ошибка ожидаемая, её полезно покрыть тестом на status code и JSON-body.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

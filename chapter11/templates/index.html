@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 11: Авторизация WebSockets</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8010">Предыдущая глава</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8012">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 11: Авторизация WebSockets</h1>
+            <p>JWT в query string, проверка до accept(), close code 1008 и сообщения с username.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8011</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8011/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы умеете закрывать WebSocket до принятия соединения, если клиент не прислал валидный token.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>access_token query</strong> - практичный способ передать token из браузерного WebSocket-клиента.</li>
+<li><strong>verify before accept</strong> - сервер проверяет token до <code>websocket.accept()</code>.</li>
+<li><strong>1008 Policy Violation</strong> - WebSocket close code для нарушения политики доступа.</li>
+<li><strong>JWT claims</strong> - username и роль можно брать из подписанного token-а.</li>
+<li><strong>Authorized broadcast</strong> - каждое сообщение содержит подтверждённого пользователя.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Клиент получает access token через <code>/api/auth/login</code>.</li>
+<li>Клиент открывает <code>/ws/authorized?access_token=...</code>.</li>
+<li>Сервер декодирует JWT и проверяет подпись и срок действия.</li>
+<li>Если token плохой, сервер закрывает соединение кодом 1008.</li>
+<li>Если token валиден, сервер принимает WebSocket и отправляет событие connected.</li>
+<li>Сообщения в broadcast получают username из token-а, а не из клиентского текста.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>POST /api/auth/login</code></strong><span>Демо-выдача access token-а.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=...</code></strong><span>Защищённый WebSocket-чат.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}@app.websocket(&quot;/ws/authorized&quot;)
+async def authorized_socket(websocket: WebSocket, access_token: str | None = Query(default=None)):
+    if not access_token:
+        await websocket.close(code=1008)
+        return
+    try:
+        username = verify_token(access_token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>WebSocket тоже нужно защищать. Иначе любой сможет подключиться к чату.</p>
+<p>Перед <code>accept()</code> сервер проверяет token. Если token плохой, соединение закрывается.</p>
+<p>Username берётся из JWT, чтобы клиент не мог притвориться другим человеком.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>@app.websocket("/ws/authorized")</code></dt><dd>Регистрируем защищённый WebSocket endpoint.</dd>
+<dt><code>access_token: str | None = Query(default=None)</code></dt><dd>Читаем token из query string. Он может отсутствовать, поэтому тип включает <code>None</code>.</dd>
+<dt><code>if not access_token:</code></dt><dd>Если token не передали, подключение нельзя принимать.</dd>
+<dt><code>await websocket.close(code=1008)</code></dt><dd>Закрываем соединение кодом 'нарушение политики'.</dd>
+<dt><code>return</code></dt><dd>Останавливаем функцию, чтобы дальше код не выполнялся.</dd>
+<dt><code>try:</code></dt><dd>Пробуем проверить token.</dd>
+<dt><code>username = verify_token(access_token)</code></dt><dd>Если token валиден, получаем username.</dd>
+<dt><code>except HTTPException:</code></dt><dd>Если проверка token-а упала, закрываем WebSocket.</dd>
+<dt><code>await manager.connect(...)</code></dt><dd>Только после успешной проверки принимаем соединение.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li>Важно проверять token до <code>accept()</code>, чтобы не считать соединение авторизованным даже на короткое время.</li>
+<li>Клиенту нельзя доверять username из сообщения: он должен быть взят из JWT.</li>
+<li>В production query token может попасть в логи, поэтому часто применяют короткий срок жизни и HTTPS.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Сначала вызвать <code>accept()</code>, а потом проверять token.</li>
+<li>Брать username из сообщения клиента вместо token-а.</li>
+<li>Не закрывать соединение явным кодом, из-за чего клиенту труднее понять причину отказа.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте claim <code>role</code> в token и запретите подключение к admin-комнате всем, кроме admin.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Нужно добавить роль в JWT и проверить эту роль перед подключением к admin-комнате.</p>
+<ul class="flow-list"><li>Добавить claim <code>role</code> при создании access token-а.</li>
+<li>Вернуть из <code>verify_token</code> username и role.</li>
+<li>В WebSocket endpoint принять параметр <code>room</code>.</li>
+<li>Если <code>room == 'admin'</code> и role не admin, закрыть соединение кодом 1008.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный код token payload и проверки комнаты</h2>
+<pre><code>{% raw %}def create_access_token(username: str, role: str = &quot;user&quot;) -&gt; str:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=30)
+    return jwt.encode({&quot;sub&quot;: username, &quot;role&quot;: role, &quot;exp&quot;: expires}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_token(token: str) -&gt; dict:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return {&quot;username&quot;: str(payload[&quot;sub&quot;]), &quot;role&quot;: str(payload.get(&quot;role&quot;, &quot;user&quot;))}
+    except (JWTError, KeyError) as error:
+        raise HTTPException(status_code=401, detail=&quot;Invalid token&quot;) from error
+
+
+@app.websocket(&quot;/ws/authorized&quot;)
+async def authorized_socket(
+    websocket: WebSocket,
+    access_token: str | None = Query(default=None),
+    room: str = &quot;general&quot;,
+):
+    if not access_token:
+        await websocket.close(code=1008)
+        return
+    try:
+        user = verify_token(access_token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+    if room == &quot;admin&quot; and user[&quot;role&quot;] != &quot;admin&quot;:
+        await websocket.close(code=1008)
+        return{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=...&amp;room=general</code></strong><span>Обычный пользователь подключается.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=...&amp;room=admin</code></strong><span>Обычный пользователь получает close 1008.</span></article>
+<article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=ADMIN_TOKEN&amp;room=admin</code></strong><span>Admin подключается.</span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+role = payload.get(&quot;role&quot;)
+if room == &quot;admin&quot; and role != &quot;admin&quot;:
+    await websocket.close(code=1008)
+    return{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Authorization для WebSocket - это не только проверка token-а, но и проверка доступа к конкретной комнате или действию.</li>
+<li>Для сложных правил лучше вынести проверку в отдельную функцию.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>

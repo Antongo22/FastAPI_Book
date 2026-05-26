@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Глава 1: Начало работы с FastAPI</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="http://localhost:8000">Главная</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+                <a class="nav-link light" href="http://localhost:8002">Следующая глава</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Глава 1: Начало работы с FastAPI</h1>
+            <p>Создание приложения, middleware, REST API, Pydantic-модели и автоматическая OpenAPI-документация.</p>
+            <div class="lesson-meta">
+                <span><strong>Порт:</strong> 8001</span>
+                <span><strong>Swagger:</strong> <code>http://localhost:8001/docs</code></span>
+                <span><strong>Результат:</strong> После главы вы понимаете путь HTTP-запроса от браузера до endpoint-функции и умеете собрать простой API.</span>
+            </div>
+        </section>
+
+        <nav class="lesson-tabs" aria-label="Разделы главы">
+            <button class="active" data-tab-target="#theory">Теория</button>
+            <button data-tab-target="#code">Разбор кода</button>
+            <button data-tab-target="#task">Задача</button>
+            <button data-tab-target="#answers">Ответы</button>
+        </nav>
+
+        <section id="theory" class="tab-panel active">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Что разбираем в этой главе</h2>
+                    <ul class="flow-list">
+                        <li><strong>FastAPI app</strong> - объект приложения, который хранит маршруты, middleware и настройки документации.</li>
+<li><strong>Path operation</strong> - функция с декоратором <code>@app.get</code>, <code>@app.post</code> и так далее.</li>
+<li><strong>Pydantic model</strong> - контракт входного JSON: типы, обязательные поля и автоматическая валидация.</li>
+<li><strong>Middleware</strong> - код вокруг каждого запроса. Он может логировать, добавлять заголовки или измерять время.</li>
+<li><strong>OpenAPI</strong> - схема API, из которой FastAPI строит Swagger UI на <code>/docs</code>.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проходит запрос</h2>
+                    <ol class="flow-list">
+                        <li>Клиент отправляет <code>POST /api/calculator/add</code> с JSON-телом.</li>
+<li>FastAPI выбирает endpoint по методу и пути.</li>
+<li>Pydantic проверяет, что в теле есть числа <code>a</code> и <code>b</code>.</li>
+<li>Endpoint получает уже разобранный объект <code>CalculationRequest</code>.</li>
+<li>Middleware добавляет заголовок <code>X-FastAPI-Book-Chapter</code> в ответ.</li>
+<li>FastAPI сериализует словарь Python в JSON и возвращает HTTP 200.</li>
+                    </ol>
+                </article>
+
+                <article class="info-box">
+                    <h2>Endpoint-ы для проверки</h2>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>POST /api/calculator/add</code></strong><span>Сложение двух чисел.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/subtract</code></strong><span>Вычитание второго числа из первого.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/multiply</code></strong><span>Умножение двух чисел.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/divide</code></strong><span>Деление с ручной проверкой деления на ноль.</span></article>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="code" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Ключевой фрагмент</h2>
+                    <pre><code>{% raw %}class CalculationRequest(BaseModel):
+    a: float
+    b: float
+
+
+@app.post(&quot;/api/calculator/divide&quot;)
+async def divide(request: CalculationRequest):
+    if request.b == 0:
+        raise HTTPException(status_code=400, detail=&quot;Деление на ноль невозможно&quot;)
+    return {&quot;result&quot;: request.a / request.b, &quot;operation&quot;: &quot;divide&quot;}{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Если совсем по-простому</h2>
+                    <p>Код в этой главе делает маленький калькулятор. Пользователь отправляет два числа, сервер считает результат и возвращает JSON.</p>
+<p>Главная идея: FastAPI сам читает JSON, сам проверяет типы, сам вызывает нужную функцию и сам превращает словарь Python в HTTP-ответ.</p>
+<p>Если вы только начинаете Python: двоеточие <code>:</code> открывает блок кода, а отступы показывают, какие строки относятся к классу, функции или условию.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Построчный разбор</h2>
+                    <dl class="line-breakdown">
+                        <dt><code>class CalculationRequest(BaseModel):</code></dt><dd>Создаём класс-описание входных данных. Это не обычный калькулятор, а схема: какие поля пользователь должен прислать в JSON.</dd>
+<dt><code>BaseModel</code></dt><dd>Базовый класс Pydantic. Благодаря ему FastAPI понимает, что нужно проверить тело запроса.</dd>
+<dt><code>a: float</code></dt><dd>Поле <code>a</code> обязательно. <code>float</code> значит число с дробной частью или без неё: <code>10</code>, <code>10.5</code>, <code>0</code>.</dd>
+<dt><code>b: float</code></dt><dd>Второе обязательное число. Если пользователь пришлёт строку, которую нельзя превратить в число, FastAPI вернёт ошибку валидации.</dd>
+<dt><code>@app.post("/api/calculator/divide")</code></dt><dd>Декоратор. Он говорит FastAPI: когда придёт POST-запрос на этот адрес, вызови функцию ниже.</dd>
+<dt><code>async def divide(...):</code></dt><dd>Объявляем асинхронную функцию endpoint-а. <code>async</code> нужно, чтобы FastAPI мог эффективно обслуживать много запросов.</dd>
+<dt><code>request: CalculationRequest</code></dt><dd>Параметр функции. FastAPI создаст объект <code>CalculationRequest</code> из JSON-тела запроса и положит его в переменную <code>request</code>.</dd>
+<dt><code>if request.b == 0:</code></dt><dd>Обычная проверка Python: если второе число равно нулю, делить нельзя.</dd>
+<dt><code>raise HTTPException(...)</code></dt><dd>Останавливаем выполнение функции и возвращаем клиенту ошибку HTTP 400. Это лучше, чем дать Python упасть с делением на ноль.</dd>
+<dt><code>return {"result": ...}</code></dt><dd>Возвращаем словарь. FastAPI сам превратит его в JSON-ответ.</dd>
+                    </dl>
+                </article>
+
+                <article class="info-box">
+                    <h2>Что здесь важно</h2>
+                    <ul class="flow-list">
+                        <li><code>BaseModel</code> говорит FastAPI читать тело запроса как JSON.</li>
+<li>Если поле отсутствует или тип не подходит, endpoint даже не будет вызван: FastAPI вернет validation error.</li>
+<li><code>HTTPException</code> используется для ожидаемых бизнес-ошибок, где вы сами выбираете status code.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Типичные ошибки новичков</h2>
+                    <ul class="flow-list">
+                        <li>Забыть двоеточие после <code>class</code>, <code>def</code> или <code>if</code>.</li>
+<li>Сделать неправильный отступ: в Python отступы заменяют фигурные скобки.</li>
+<li>Написать <code>request["b"]</code> вместо <code>request.b</code>. Pydantic-модель здесь используется как объект с полями.</li>
+<li>Не проверить деление на ноль и получить внутреннюю ошибку сервера вместо понятного ответа 400.</li>
+                    </ul>
+                </article>
+
+                <article class="info-box">
+                    <h2>Как проверить руками</h2>
+                    <p>Откройте <a href="/docs">Swagger UI</a>, найдите endpoint-ы этой главы, нажмите <strong>Try it out</strong> и выполните запросы с разными входными данными. После этого вернитесь в код и сопоставьте каждый ответ с тем участком, который его формирует.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="task" class="tab-panel">
+            <article class="info-box">
+                <h2>Практическая задача</h2>
+                <p>Добавьте endpoint <code>POST /api/calculator/power</code>, который возводит <code>a</code> в степень <code>b</code>. Он должен возвращать тот же формат ответа: <code>result</code> и <code>operation</code>.</p>
+                <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+            </article>
+        </section>
+
+        <section id="answers" class="tab-panel">
+            <div class="section-grid">
+                <article class="info-box">
+                    <h2>Полное решение задачи</h2>
+                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                </article>
+
+                <article class="info-box"><h2>1. Что меняем</h2>
+<p>Задача просит добавить новую операцию калькулятора. Никакие новые модели не нужны: входные данные такие же, как у add/subtract/multiply/divide.</p>
+<ul class="flow-list"><li>Открыть файл <code>chapter01/app/main.py</code>.</li>
+<li>Найти блок endpoint-ов калькулятора.</li>
+<li>Добавить новый endpoint рядом с остальными операциями.</li>
+<li>Проверить через Swagger, что endpoint появился в группе calculator.</li></ul>
+</article>
+<article class="info-box"><h2>2. Полный фрагмент калькулятора после изменения</h2>
+<p>Ниже не одна функция, а весь логический блок калькулятора. Так проще увидеть, что новая операция использует тот же request model и тот же стиль ответа.</p>
+<pre><code>{% raw %}class CalculationRequest(BaseModel):
+    a: float
+    b: float
+
+
+@app.post(&quot;/api/calculator/add&quot;)
+async def add(request: CalculationRequest):
+    return {&quot;result&quot;: request.a + request.b, &quot;operation&quot;: &quot;add&quot;}
+
+
+@app.post(&quot;/api/calculator/subtract&quot;)
+async def subtract(request: CalculationRequest):
+    return {&quot;result&quot;: request.a - request.b, &quot;operation&quot;: &quot;subtract&quot;}
+
+
+@app.post(&quot;/api/calculator/multiply&quot;)
+async def multiply(request: CalculationRequest):
+    return {&quot;result&quot;: request.a * request.b, &quot;operation&quot;: &quot;multiply&quot;}
+
+
+@app.post(&quot;/api/calculator/divide&quot;)
+async def divide(request: CalculationRequest):
+    if request.b == 0:
+        raise HTTPException(status_code=400, detail=&quot;Деление на ноль невозможно&quot;)
+    return {&quot;result&quot;: request.a / request.b, &quot;operation&quot;: &quot;divide&quot;}
+
+
+@app.post(&quot;/api/calculator/power&quot;)
+async def power(request: CalculationRequest):
+    return {&quot;result&quot;: request.a ** request.b, &quot;operation&quot;: &quot;power&quot;}{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>3. Как проверить</h2>
+<p>Запустите главу и выполните запросы через Swagger или curl.</p>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 2, "b": 3}</code> → <code>{"result": 8, "operation": "power"}</code></span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 5, "b": 0}</code> → <code>{"result": 1, "operation": "power"}</code></span></article></div>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткая версия решения</h2>
+                    <pre><code>{% raw %}@app.post(&quot;/api/calculator/power&quot;)
+async def power(request: CalculationRequest):
+    return {&quot;result&quot;: request.a ** request.b, &quot;operation&quot;: &quot;power&quot;}{% endraw %}</code></pre>
+                </article>
+
+                <article class="info-box">
+                    <h2>Разбор решения</h2>
+                    <ul class="flow-list">
+                        <li>Новая операция использует уже существующую модель, потому что входной контракт такой же.</li>
+<li>Swagger UI автоматически покажет новый endpoint после перезапуска приложения.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+    <script src="/static/site.js"></script>
+</body>
+</html>
