@@ -26,6 +26,11 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
+@fastapi_app.get("/socket-tester", response_class=HTMLResponse, include_in_schema=False)
+async def socket_tester(request: Request):
+    return templates.TemplateResponse(request, "socket_tester.html", {"request": request})
+
+
 @fastapi_app.get("/swagger", include_in_schema=False)
 async def swagger():
     return RedirectResponse(url="/docs")

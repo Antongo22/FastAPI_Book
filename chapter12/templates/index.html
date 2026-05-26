@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Глава 12: Тестирование</title>
+    <title>Глава 12: Socket.IO чат, БД и тестирование</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
@@ -19,12 +19,12 @@
         </nav>
 
         <section class="hero">
-            <h1>Глава 12: Тестирование</h1>
-            <p>TestClient, dependency overrides, in-memory SQLite, service layer и интеграционные сценарии.</p>
+            <h1>Глава 12: Socket.IO чат, БД и тестирование</h1>
+            <p>Chat API, SQLAlchemy storage, service layer, Socket.IO events и тестовая SQLite-БД.</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8012</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8012/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы умеете тестировать FastAPI endpoint-ы без реальной БД и проверять бизнес-логику отдельно от HTTP.</span>
+                <span><strong>Результат:</strong> После главы вы умеете хранить сообщения чата в БД, отдавать их через REST и отправлять новые сообщения через Socket.IO.</span>
             </div>
         </section>
 
@@ -40,9 +40,9 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Как пользоваться этой главой</h2>
-                    <p>Финальная глава собирает API, базу, сервисный слой и тесты в один учебный пример.</p>
-<p>Главная мысль: тест должен быть независимым. Поэтому настоящая база подменяется тестовой через dependency override.</p>
-<p>После этой главы вы должны уметь проверить endpoint, сервисную логику и сценарий с несколькими запросами без ручного кликанья в браузере.</p>
+                    <p>Финальная глава собирает REST API, Socket.IO, базу, сервисный слой и тесты в один учебный пример.</p>
+<p>Главная мысль: REST и Socket.IO не должны иметь две разные бизнес-логики. Оба слоя вызывают <code>ChatService</code>.</p>
+<p>После этой главы вы должны уметь сохранить сообщение через real-time событие и увидеть ту же запись через REST endpoint.</p>
                     <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
                 </article>
 
@@ -107,19 +107,19 @@ open http://localhost:8012/docs{% endraw %}</code></pre></article>
 <li><strong>dependency_overrides</strong> - замена production dependency тестовой реализацией.</li>
 <li><strong>sqlite:// + StaticPool</strong> - одна in-memory БД на весь тестовый engine.</li>
 <li><strong>Service layer</strong> - класс <code>ChatService</code>, который можно проверять отдельно.</li>
-<li><strong>Integration test</strong> - запрос проходит через routing, validation, dependency и БД.</li>
+<li><strong>Socket.IO chat event</strong> - событие <code>chat_message</code> сохраняет сообщение через тот же service layer.</li>
                     </ul>
                 </article>
 
                 <article class="info-box">
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
-                        <li>Тест создаёт in-memory SQLite engine.</li>
-<li>Таблицы создаются через <code>Base.metadata.create_all</code>.</li>
-<li>Production dependency <code>get_db</code> заменяется тестовой.</li>
-<li>TestClient вызывает реальные HTTP endpoint-ы приложения.</li>
-<li>Endpoint использует тестовую Session и не трогает файл на диске.</li>
-<li>После теста overrides очищаются, чтобы не повлиять на другие тесты.</li>
+                        <li>REST endpoint создаёт группу через <code>ChatService.create_group</code>.</li>
+<li>Socket.IO клиент подключается к <code>/socket.io</code> и отправляет <code>join_group</code>.</li>
+<li>Клиент отправляет событие <code>chat_message</code> с <code>text</code>, <code>sender</code> и <code>group_id</code>.</li>
+<li>Socket.IO handler открывает SQLAlchemy Session и вызывает <code>ChatService.send_message</code>.</li>
+<li>Сообщение сохраняется в SQLite и превращается в простой JSON через <code>message_to_dict</code>.</li>
+<li>Сервер делает <code>emit</code> в комнату группы, а REST endpoint может потом вернуть ту же запись из БД.</li>
                     </ol>
                 </article>
 
@@ -130,6 +130,8 @@ open http://localhost:8012/docs{% endraw %}</code></pre></article>
 <article class="endpoint-card"><strong><code>GET /api/chat/groups</code></strong><span>Список групп.</span></article>
 <article class="endpoint-card"><strong><code>POST /api/chat/messages</code></strong><span>Отправка сообщения.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/chat/messages?group_id=...</code></strong><span>Получение сообщений, опционально по группе.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/chat/realtime</code></strong><span>Справка по Socket.IO events главы.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO /socket.io</code></strong><span>События <code>set_name</code>, <code>join_group</code>, <code>chat_message</code>, <code>list_messages</code>.</span></article>
                     </div>
                 </article>
 
@@ -145,6 +147,11 @@ open http://localhost:8012/docs{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Отправить сообщение</h2><pre><code>{% raw %}curl -X POST http://localhost:8012/api/chat/messages \
   -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;text&quot;:&quot;hello&quot;,&quot;sender&quot;:&quot;anna&quot;,&quot;group_id&quot;:1}&#x27;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Отправить сообщение через Socket.IO</h2><pre><code>{% raw %}const socket = io(&quot;http://localhost:8012&quot;, { path: &quot;/socket.io&quot; });
+socket.on(&quot;chat_message&quot;, data =&gt; console.log(data));
+socket.emit(&quot;set_name&quot;, { username: &quot;anna&quot; });
+socket.emit(&quot;join_group&quot;, { group_id: 1 });
+socket.emit(&quot;chat_message&quot;, { text: &quot;hello realtime&quot;, group_id: 1 });{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -153,55 +160,55 @@ open http://localhost:8012/docs{% endraw %}</code></pre></article>
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}app.dependency_overrides[get_db] = override
-try:
-    client = TestClient(app)
-    group = client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;general&quot;}).json()
-    response = client.post(&quot;/api/chat/messages&quot;, json={
-        &quot;text&quot;: &quot;hello&quot;,
-        &quot;sender&quot;: &quot;anna&quot;,
-        &quot;group_id&quot;: group[&quot;id&quot;],
-    })
-finally:
-    app.dependency_overrides.clear(){% endraw %}</code></pre>
+                    <pre><code>{% raw %}@sio.event
+async def chat_message(sid, data):
+    sender = data.get(&quot;sender&quot;) or socketio_clients.get(sid, &quot;anonymous&quot;)
+    text = data.get(&quot;text&quot;) or data.get(&quot;message&quot;, &quot;&quot;)
+    group_id = data.get(&quot;group_id&quot;)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        message = service.send_message(text=text, sender=sender, group_id=group_id)
+        payload = {&quot;event&quot;: &quot;chat_message&quot;, &quot;message&quot;: message_to_dict(message)}
+    room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
+    await sio.emit(&quot;chat_message&quot;, payload, room=room){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
-                    <p>Тесты нужны, чтобы изменения не ломали уже работающий код.</p>
-<p>FastAPI позволяет запускать endpoint-ы в тестах без настоящего веб-сервера.</p>
-<p>Dependency override позволяет подменить настоящую БД тестовой in-memory БД.</p>
+                    <p>В финальной главе один и тот же чат работает двумя способами: через REST API и через Socket.IO события.</p>
+<p>REST endpoint и Socket.IO handler используют один <code>ChatService</code>, поэтому правила сохранения сообщений находятся в одном месте.</p>
+<p>Тесты по-прежнему подменяют БД через dependency override для REST, а Socket.IO часть показывает, как подключить real-time слой к тому же сервису.</p>
                 </article>
 
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>app.dependency_overrides[get_db] = override</code></dt><dd>Говорим FastAPI: когда endpoint попросит <code>get_db</code>, используй тестовую функцию.</dd>
-<dt><code>try:</code></dt><dd>Начинаем блок теста, после которого обязательно очистим override.</dd>
-<dt><code>client = TestClient(app)</code></dt><dd>Создаём тестовый клиент. Он вызывает приложение как будто по HTTP.</dd>
-<dt><code>client.post(...)</code></dt><dd>Отправляем POST-запрос в приложение.</dd>
-<dt><code>json={...}</code></dt><dd>Тело запроса. TestClient сам превратит словарь в JSON.</dd>
-<dt><code>group["id"]</code></dt><dd>Берём id созданной группы из ответа, чтобы использовать его в следующем запросе.</dd>
-<dt><code>finally:</code></dt><dd>Этот блок выполнится даже если assert упал.</dd>
-<dt><code>app.dependency_overrides.clear()</code></dt><dd>Очищаем подмены зависимостей, чтобы следующий тест был независимым.</dd>
+                        <dt><code>@sio.event</code></dt><dd>Регистрируем Socket.IO событие. Имя функции становится именем события для клиента.</dd>
+<dt><code>async def chat_message(sid, data)</code></dt><dd>Сервер обрабатывает событие <code>chat_message</code>, которое прислал Socket.IO клиент.</dd>
+<dt><code>sender = data.get(...)</code></dt><dd>Берём отправителя из payload или из имени, сохранённого при <code>set_name</code>.</dd>
+<dt><code>with SessionLocal() as db</code></dt><dd>Открываем короткую Session для работы с SQLite внутри real-time события.</dd>
+<dt><code>service = ChatService(db)</code></dt><dd>Используем тот же service layer, что и REST endpoint-ы.</dd>
+<dt><code>service.send_message(...)</code></dt><dd>Сохраняем сообщение в БД и получаем ORM-объект с id и created_at.</dd>
+<dt><code>message_to_dict(message)</code></dt><dd>Превращаем ORM-объект в простой JSON-friendly словарь.</dd>
+<dt><code>await sio.emit(..., room=room)</code></dt><dd>Отправляем сохранённое сообщение всем Socket.IO клиентам выбранной комнаты.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
-                        <li>Override делает тест изолированным: он не зависит от локальных SQLite-файлов.</li>
-<li>Проверяйте не только status code, но и важные поля JSON-ответа.</li>
-<li>Для WebSocket есть отдельный <code>websocket_connect</code> в TestClient.</li>
+                        <li>Socket.IO handler использует тот же <code>ChatService</code>, что и REST API, поэтому бизнес-правила не дублируются.</li>
+<li>Для каждого Socket.IO события открывается короткая Session и закрывается после сохранения сообщения.</li>
+<li>REST API и Socket.IO смотрят на одну таблицу, поэтому сообщение, отправленное через событие, видно через <code>GET /api/chat/messages</code>.</li>
                     </ul>
                 </article>
 
                 <article class="info-box">
                     <h2>Типичные ошибки новичков</h2>
                     <ul class="flow-list">
-                        <li>Не очищать dependency overrides после теста.</li>
-<li>Тестировать на реальной локальной БД и получать нестабильные результаты.</li>
-<li>Проверять только status code и не проверять важные поля ответа.</li>
+                        <li>Дублировать сохранение сообщений отдельно для REST и Socket.IO вместо общего <code>ChatService</code>.</li>
+<li>Держать одну SQLAlchemy Session глобально для всех Socket.IO событий.</li>
+<li>Отправлять в событие ORM-объект напрямую, не превращая его в простой JSON-словарь.</li>
                     </ul>
                 </article>
 
@@ -216,26 +223,26 @@ finally:
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Главная практическая задача</h2>
-                    <p>Добавьте endpoint удаления группы и тест, что сообщение удалённой группы больше не возвращается.</p>
+                    <p>Добавьте Socket.IO событие <code>delete_group</code>, которое вызывает service method удаления группы и отправляет событие <code>group_deleted</code>.</p>
                     <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Практика по уровням</h2>
                     <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте тест, который проверяет создание группы.</dd>
-<dt>Средний уровень</dt><dd>Добавьте удаление группы вместе с сообщениями и покройте это тестом.</dd>
-<dt>Сложный уровень</dt><dd>Разделите тесты сервиса и API так, чтобы бизнес-логика проверялась без HTTP-клиента.</dd>
+                        <dt>Лёгкий уровень</dt><dd>Добавьте событие <code>typing</code>, которое отправляет в комнату имя печатающего пользователя.</dd>
+<dt>Средний уровень</dt><dd>Добавьте событие <code>delete_group</code> и покройте удаление тестом service layer.</dd>
+<dt>Сложный уровень</dt><dd>Проверьте сценарий: Socket.IO сохраняет сообщение, REST API возвращает это сообщение из БД.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
                     <ol class="flow-list">
-                        <li>Что именно подменяет <code>app.dependency_overrides</code>?</li>
+                        <li>Почему REST API и Socket.IO handler должны использовать один <code>ChatService</code>?</li>
+<li>Где в Socket.IO событии открывается SQLAlchemy Session?</li>
+<li>Как сообщение, отправленное через Socket.IO, потом увидеть через REST endpoint?</li>
 <li>Почему тестовая БД должна быть отдельной от demo-БД?</li>
-<li>Зачем очищать overrides в <code>finally</code>?</li>
-<li>Почему хороший тест проверяет не только status code?</li>
                     </ol>
                 </article>
             </div>
@@ -293,15 +300,19 @@ async def delete_group(group_id: int, service: ChatService = Depends(get_chat_se
 
                 <article class="info-box">
                     <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}@app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
-async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
-    service.delete_group(group_id){% endraw %}</code></pre>
+                    <pre><code>{% raw %}@sio.event
+async def delete_group(sid, data):
+    group_id = int(data[&quot;group_id&quot;])
+    with SessionLocal() as db:
+        service = ChatService(db)
+        service.delete_group(group_id)
+    await sio.emit(&quot;group_deleted&quot;, {&quot;group_id&quot;: group_id}){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>
                     <ul class="flow-list">
-                        <li>Сначала напишите тест на ожидаемое поведение, затем реализуйте service method.</li>
+                        <li>Сначала напишите тест на ожидаемое поведение service method, затем подключайте Socket.IO событие.</li>
 <li>Решите явно: сообщения удаляются каскадно или получают <code>group_id=None</code>. Для учебного чата проще каскадное удаление.</li>
                     </ul>
                 </article>

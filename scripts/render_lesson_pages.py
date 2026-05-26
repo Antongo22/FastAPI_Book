@@ -662,111 +662,124 @@ async def leave_room(sid, data):
     "chapter11": {
         "number": 11,
         "port": 8011,
-        "title": "Глава 11: Авторизация WebSockets",
-        "subtitle": "JWT в query string, проверка до accept(), close code 1008 и сообщения с username.",
-        "outcome": "После главы вы умеете закрывать WebSocket до принятия соединения, если клиент не прислал валидный token.",
+        "title": "Глава 11: Авторизация Socket.IO",
+        "subtitle": "JWT в Socket.IO auth payload, отказ в connect и события от подтверждённого пользователя.",
+        "outcome": "После главы вы умеете принимать Socket.IO-подключение только с валидным JWT и не доверять username из клиента.",
         "concepts": [
-            "<strong>access_token query</strong> - практичный способ передать token из браузерного WebSocket-клиента.",
-            "<strong>verify before accept</strong> - сервер проверяет token до <code>websocket.accept()</code>.",
-            "<strong>1008 Policy Violation</strong> - WebSocket close code для нарушения политики доступа.",
+            "<strong>Socket.IO auth</strong> - объект, который клиент передаёт при подключении: <code>{ access_token: token }</code>.",
+            "<strong>connect event</strong> - место, где сервер решает принять или отклонить подключение.",
+            "<strong>return False</strong> - способ отказать Socket.IO-клиенту при невалидном token-е.",
             "<strong>JWT claims</strong> - username и роль можно брать из подписанного token-а.",
-            "<strong>Authorized broadcast</strong> - каждое сообщение содержит подтверждённого пользователя.",
+            "<strong>Authorized event</strong> - каждое сообщение содержит пользователя, которого подтвердил сервер.",
         ],
         "flow": [
             "Клиент получает access token через <code>/api/auth/login</code>.",
-            "Клиент открывает <code>/ws/authorized?access_token=...</code>.",
+            "Клиент подключается к Socket.IO endpoint-у <code>/socket.io</code> и передаёт token в <code>auth</code>.",
             "Сервер декодирует JWT и проверяет подпись и срок действия.",
-            "Если token плохой, сервер закрывает соединение кодом 1008.",
-            "Если token валиден, сервер принимает WebSocket и отправляет событие connected.",
-            "Сообщения в broadcast получают username из token-а, а не из клиентского текста.",
+            "Если token плохой, обработчик <code>connect</code> возвращает <code>False</code>, и Socket.IO отказывает клиенту.",
+            "Если token валиден, сервер сохраняет <code>sid -> username</code> и отправляет событие <code>authorized</code>.",
+            "Событие <code>authorized_message</code> берёт username из серверного словаря, а не из клиентского payload.",
         ],
         "endpoints": [
             ("POST /api/auth/login", "Демо-выдача access token-а."),
-            ("WS /ws/authorized?access_token=...", "Защищённый WebSocket-чат."),
+            ("GET /api/socket/info", "Количество авторизованных Socket.IO-подключений."),
+            ("Socket.IO /socket.io", "Защищённые события <code>authorized</code> и <code>authorized_message</code>."),
         ],
         "code": '''
-@app.websocket("/ws/authorized")
-async def authorized_socket(websocket: WebSocket, access_token: str | None = Query(default=None)):
-    if not access_token:
-        await websocket.close(code=1008)
-        return
+def authorize_socketio(auth: dict | None) -> str | None:
+    token = (auth or {}).get("access_token") or (auth or {}).get("token")
+    if not token:
+        return None
     try:
-        username = verify_token(access_token)
+        return verify_token(str(token))
     except HTTPException:
-        await websocket.close(code=1008)
-        return
+        return None
+
+
+@sio.event
+async def connect(sid, environ, auth):
+    username = authorize_socketio(auth)
+    if username is None:
+        return False
+    authorized_clients[sid] = username
+    await sio.emit("authorized", {"sid": sid, "username": username}, to=sid)
         ''',
         "code_notes": [
-            "Важно проверять token до <code>accept()</code>, чтобы не считать соединение авторизованным даже на короткое время.",
+            "Важно проверять token в <code>connect</code>, до обработки любых пользовательских событий.",
             "Клиенту нельзя доверять username из сообщения: он должен быть взят из JWT.",
-            "В production query token может попасть в логи, поэтому часто применяют короткий срок жизни и HTTPS.",
+            "Token передаётся в Socket.IO auth payload, а не в query string raw WebSocket URL.",
         ],
-        "task": "Добавьте claim <code>role</code> в token и запретите подключение к admin-комнате всем, кроме admin.",
+        "task": "Добавьте claim <code>role</code> в token и запретите событие <code>admin_message</code> всем, кроме admin.",
         "answer": '''
 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 role = payload.get("role")
-if room == "admin" and role != "admin":
-    await websocket.close(code=1008)
+if role != "admin":
     return
         ''',
         "answer_notes": [
-            "Authorization для WebSocket - это не только проверка token-а, но и проверка доступа к конкретной комнате или действию.",
+            "Authorization для Socket.IO - это не только проверка token-а при connect, но и проверка доступа к конкретному событию.",
             "Для сложных правил лучше вынести проверку в отдельную функцию.",
         ],
     },
     "chapter12": {
         "number": 12,
         "port": 8012,
-        "title": "Глава 12: Тестирование",
-        "subtitle": "TestClient, dependency overrides, in-memory SQLite, service layer и интеграционные сценарии.",
-        "outcome": "После главы вы умеете тестировать FastAPI endpoint-ы без реальной БД и проверять бизнес-логику отдельно от HTTP.",
+        "title": "Глава 12: Socket.IO чат, БД и тестирование",
+        "subtitle": "Chat API, SQLAlchemy storage, service layer, Socket.IO events и тестовая SQLite-БД.",
+        "outcome": "После главы вы умеете хранить сообщения чата в БД, отдавать их через REST и отправлять новые сообщения через Socket.IO.",
         "concepts": [
             "<strong>TestClient</strong> - синхронный клиент для тестирования ASGI-приложения.",
             "<strong>dependency_overrides</strong> - замена production dependency тестовой реализацией.",
             "<strong>sqlite:// + StaticPool</strong> - одна in-memory БД на весь тестовый engine.",
             "<strong>Service layer</strong> - класс <code>ChatService</code>, который можно проверять отдельно.",
-            "<strong>Integration test</strong> - запрос проходит через routing, validation, dependency и БД.",
+            "<strong>Socket.IO chat event</strong> - событие <code>chat_message</code> сохраняет сообщение через тот же service layer.",
         ],
         "flow": [
-            "Тест создаёт in-memory SQLite engine.",
-            "Таблицы создаются через <code>Base.metadata.create_all</code>.",
-            "Production dependency <code>get_db</code> заменяется тестовой.",
-            "TestClient вызывает реальные HTTP endpoint-ы приложения.",
-            "Endpoint использует тестовую Session и не трогает файл на диске.",
-            "После теста overrides очищаются, чтобы не повлиять на другие тесты.",
+            "REST endpoint создаёт группу через <code>ChatService.create_group</code>.",
+            "Socket.IO клиент подключается к <code>/socket.io</code> и отправляет <code>join_group</code>.",
+            "Клиент отправляет событие <code>chat_message</code> с <code>text</code>, <code>sender</code> и <code>group_id</code>.",
+            "Socket.IO handler открывает SQLAlchemy Session и вызывает <code>ChatService.send_message</code>.",
+            "Сообщение сохраняется в SQLite и превращается в простой JSON через <code>message_to_dict</code>.",
+            "Сервер делает <code>emit</code> в комнату группы, а REST endpoint может потом вернуть ту же запись из БД.",
         ],
         "endpoints": [
             ("POST /api/chat/groups", "Создание группы."),
             ("GET /api/chat/groups", "Список групп."),
             ("POST /api/chat/messages", "Отправка сообщения."),
             ("GET /api/chat/messages?group_id=...", "Получение сообщений, опционально по группе."),
+            ("GET /api/chat/realtime", "Справка по Socket.IO events главы."),
+            ("Socket.IO /socket.io", "События <code>set_name</code>, <code>join_group</code>, <code>chat_message</code>, <code>list_messages</code>."),
         ],
         "code": '''
-app.dependency_overrides[get_db] = override
-try:
-    client = TestClient(app)
-    group = client.post("/api/chat/groups", json={"name": "general"}).json()
-    response = client.post("/api/chat/messages", json={
-        "text": "hello",
-        "sender": "anna",
-        "group_id": group["id"],
-    })
-finally:
-    app.dependency_overrides.clear()
+@sio.event
+async def chat_message(sid, data):
+    sender = data.get("sender") or socketio_clients.get(sid, "anonymous")
+    text = data.get("text") or data.get("message", "")
+    group_id = data.get("group_id")
+    with SessionLocal() as db:
+        service = ChatService(db)
+        message = service.send_message(text=text, sender=sender, group_id=group_id)
+        payload = {"event": "chat_message", "message": message_to_dict(message)}
+    room = f"group:{group_id}" if group_id is not None else "global"
+    await sio.emit("chat_message", payload, room=room)
         ''',
         "code_notes": [
-            "Override делает тест изолированным: он не зависит от локальных SQLite-файлов.",
-            "Проверяйте не только status code, но и важные поля JSON-ответа.",
-            "Для WebSocket есть отдельный <code>websocket_connect</code> в TestClient.",
+            "Socket.IO handler использует тот же <code>ChatService</code>, что и REST API, поэтому бизнес-правила не дублируются.",
+            "Для каждого Socket.IO события открывается короткая Session и закрывается после сохранения сообщения.",
+            "REST API и Socket.IO смотрят на одну таблицу, поэтому сообщение, отправленное через событие, видно через <code>GET /api/chat/messages</code>.",
         ],
-        "task": "Добавьте endpoint удаления группы и тест, что сообщение удалённой группы больше не возвращается.",
+        "task": "Добавьте Socket.IO событие <code>delete_group</code>, которое вызывает service method удаления группы и отправляет событие <code>group_deleted</code>.",
         "answer": '''
-@app.delete("/api/chat/groups/{group_id}", status_code=204)
-async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
-    service.delete_group(group_id)
+@sio.event
+async def delete_group(sid, data):
+    group_id = int(data["group_id"])
+    with SessionLocal() as db:
+        service = ChatService(db)
+        service.delete_group(group_id)
+    await sio.emit("group_deleted", {"group_id": group_id})
         ''',
         "answer_notes": [
-            "Сначала напишите тест на ожидаемое поведение, затем реализуйте service method.",
+            "Сначала напишите тест на ожидаемое поведение service method, затем подключайте Socket.IO событие.",
             "Решите явно: сообщения удаляются каскадно или получают <code>group_id=None</code>. Для учебного чата проще каскадное удаление.",
         ],
     },
@@ -1330,23 +1343,24 @@ async def chat_message(sid, data):
     "chapter11": [
         {
             "title": "Что меняем",
-            "body": "Нужно добавить роль в JWT и проверить эту роль перед подключением к admin-комнате.",
+            "body": "Нужно добавить роль в JWT и проверять её в Socket.IO событии, которое доступно только admin.",
             "items": [
                 "Добавить claim <code>role</code> при создании access token-а.",
-                "Вернуть из <code>verify_token</code> username и role.",
-                "В WebSocket endpoint принять параметр <code>room</code>.",
-                "Если <code>room == 'admin'</code> и role не admin, закрыть соединение кодом 1008.",
+                "Вернуть из helper-а проверки token-а username и role.",
+                "Сохранить данные пользователя в словаре <code>authorized_clients</code> при Socket.IO connect.",
+                "Добавить событие <code>admin_message</code>.",
+                "Если роль текущего <code>sid</code> не admin, отправить событие <code>forbidden</code> только этому клиенту.",
             ],
         },
         {
-            "title": "Полный код token payload и проверки комнаты",
+            "title": "Полный код token payload и admin-события",
             "code": '''
 def create_access_token(username: str, role: str = "user") -> str:
     expires = datetime.now(timezone.utc) + timedelta(minutes=30)
     return jwt.encode({"sub": username, "role": role, "exp": expires}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def verify_token(token: str) -> dict:
+def verify_user_token(token: str) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return {"username": str(payload["sub"]), "role": str(payload.get("role", "user"))}
@@ -1354,31 +1368,24 @@ def verify_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token") from error
 
 
-@app.websocket("/ws/authorized")
-async def authorized_socket(
-    websocket: WebSocket,
-    access_token: str | None = Query(default=None),
-    room: str = "general",
-):
-    if not access_token:
-        await websocket.close(code=1008)
+@sio.event
+async def admin_message(sid, data):
+    user = authorized_clients.get(sid)
+    if user is None or user["role"] != "admin":
+        await sio.emit("forbidden", {"reason": "admin role required"}, to=sid)
         return
-    try:
-        user = verify_token(access_token)
-    except HTTPException:
-        await websocket.close(code=1008)
-        return
-    if room == "admin" and user["role"] != "admin":
-        await websocket.close(code=1008)
-        return
+    await sio.emit("admin_message", {
+        "from": user["username"],
+        "message": data.get("message", ""),
+    }, room="admins")
             ''',
         },
         {
             "title": "Как проверить",
             "checks": [
-                ("WS /ws/authorized?access_token=...&room=general", "Обычный пользователь подключается."),
-                ("WS /ws/authorized?access_token=...&room=admin", "Обычный пользователь получает close 1008."),
-                ("WS /ws/authorized?access_token=ADMIN_TOKEN&room=admin", "Admin подключается."),
+                ("Socket.IO connect", "Обычный пользователь подключается с <code>auth: { access_token }</code>."),
+                ("Socket.IO admin_message", "Обычный пользователь получает событие <code>forbidden</code>."),
+                ("Socket.IO admin_message", "Admin получает событие <code>admin_message</code>."),
             ],
         },
     ],
@@ -1676,47 +1683,46 @@ BEGINNER_GUIDES = {
     },
     "chapter11": {
         "plain": [
-            "WebSocket тоже нужно защищать. Иначе любой сможет подключиться к чату.",
-            "Перед <code>accept()</code> сервер проверяет token. Если token плохой, соединение закрывается.",
-            "Username берётся из JWT, чтобы клиент не мог притвориться другим человеком.",
+            "Socket.IO-подключение тоже нужно защищать. Иначе любой клиент сможет отправлять события в чат.",
+            "Token передаётся при подключении в объекте <code>auth</code>. Сервер проверяет token прямо в событии <code>connect</code>.",
+            "Username берётся из JWT и хранится на сервере по <code>sid</code>, чтобы клиент не мог притвориться другим пользователем.",
         ],
         "line_by_line": [
-            ("<code>@app.websocket(\"/ws/authorized\")</code>", "Регистрируем защищённый WebSocket endpoint."),
-            ("<code>access_token: str | None = Query(default=None)</code>", "Читаем token из query string. Он может отсутствовать, поэтому тип включает <code>None</code>."),
-            ("<code>if not access_token:</code>", "Если token не передали, подключение нельзя принимать."),
-            ("<code>await websocket.close(code=1008)</code>", "Закрываем соединение кодом 'нарушение политики'."),
-            ("<code>return</code>", "Останавливаем функцию, чтобы дальше код не выполнялся."),
-            ("<code>try:</code>", "Пробуем проверить token."),
-            ("<code>username = verify_token(access_token)</code>", "Если token валиден, получаем username."),
-            ("<code>except HTTPException:</code>", "Если проверка token-а упала, закрываем WebSocket."),
-            ("<code>await manager.connect(...)</code>", "Только после успешной проверки принимаем соединение."),
+            ("<code>def authorize_socketio(auth)</code>", "Helper получает auth payload от Socket.IO клиента и возвращает username или <code>None</code>."),
+            ("<code>(auth or {}).get(\"access_token\")</code>", "Безопасно читаем token, даже если клиент вообще не передал auth."),
+            ("<code>verify_token(str(token))</code>", "Проверяем подпись JWT и достаём username."),
+            ("<code>@sio.event</code>", "Регистрируем Socket.IO событие."),
+            ("<code>async def connect(sid, environ, auth)</code>", "Socket.IO вызывает эту функцию при попытке подключения."),
+            ("<code>if username is None: return False</code>", "Отказываем клиенту в подключении, если token отсутствует или невалиден."),
+            ("<code>authorized_clients[sid] = username</code>", "Запоминаем, какой подтверждённый пользователь стоит за этим подключением."),
+            ("<code>await sio.emit(\"authorized\", ...)</code>", "Отправляем подтверждение только текущему клиенту."),
         ],
         "mistakes": [
-            "Сначала вызвать <code>accept()</code>, а потом проверять token.",
-            "Брать username из сообщения клиента вместо token-а.",
-            "Не закрывать соединение явным кодом, из-за чего клиенту труднее понять причину отказа.",
+            "Передавать token в query string raw WebSocket URL, хотя в этой главе используется Socket.IO auth payload.",
+            "Брать username из события клиента вместо JWT.",
+            "Проверять token только на первом HTTP login, но не проверять его при real-time подключении.",
         ],
     },
     "chapter12": {
         "plain": [
-            "Тесты нужны, чтобы изменения не ломали уже работающий код.",
-            "FastAPI позволяет запускать endpoint-ы в тестах без настоящего веб-сервера.",
-            "Dependency override позволяет подменить настоящую БД тестовой in-memory БД.",
+            "В финальной главе один и тот же чат работает двумя способами: через REST API и через Socket.IO события.",
+            "REST endpoint и Socket.IO handler используют один <code>ChatService</code>, поэтому правила сохранения сообщений находятся в одном месте.",
+            "Тесты по-прежнему подменяют БД через dependency override для REST, а Socket.IO часть показывает, как подключить real-time слой к тому же сервису.",
         ],
         "line_by_line": [
-            ("<code>app.dependency_overrides[get_db] = override</code>", "Говорим FastAPI: когда endpoint попросит <code>get_db</code>, используй тестовую функцию."),
-            ("<code>try:</code>", "Начинаем блок теста, после которого обязательно очистим override."),
-            ("<code>client = TestClient(app)</code>", "Создаём тестовый клиент. Он вызывает приложение как будто по HTTP."),
-            ("<code>client.post(...)</code>", "Отправляем POST-запрос в приложение."),
-            ("<code>json={...}</code>", "Тело запроса. TestClient сам превратит словарь в JSON."),
-            ("<code>group[\"id\"]</code>", "Берём id созданной группы из ответа, чтобы использовать его в следующем запросе."),
-            ("<code>finally:</code>", "Этот блок выполнится даже если assert упал."),
-            ("<code>app.dependency_overrides.clear()</code>", "Очищаем подмены зависимостей, чтобы следующий тест был независимым."),
+            ("<code>@sio.event</code>", "Регистрируем Socket.IO событие. Имя функции становится именем события для клиента."),
+            ("<code>async def chat_message(sid, data)</code>", "Сервер обрабатывает событие <code>chat_message</code>, которое прислал Socket.IO клиент."),
+            ("<code>sender = data.get(...)</code>", "Берём отправителя из payload или из имени, сохранённого при <code>set_name</code>."),
+            ("<code>with SessionLocal() as db</code>", "Открываем короткую Session для работы с SQLite внутри real-time события."),
+            ("<code>service = ChatService(db)</code>", "Используем тот же service layer, что и REST endpoint-ы."),
+            ("<code>service.send_message(...)</code>", "Сохраняем сообщение в БД и получаем ORM-объект с id и created_at."),
+            ("<code>message_to_dict(message)</code>", "Превращаем ORM-объект в простой JSON-friendly словарь."),
+            ("<code>await sio.emit(..., room=room)</code>", "Отправляем сохранённое сообщение всем Socket.IO клиентам выбранной комнаты."),
         ],
         "mistakes": [
-            "Не очищать dependency overrides после теста.",
-            "Тестировать на реальной локальной БД и получать нестабильные результаты.",
-            "Проверять только status code и не проверять важные поля ответа.",
+            "Дублировать сохранение сообщений отдельно для REST и Socket.IO вместо общего <code>ChatService</code>.",
+            "Держать одну SQLAlchemy Session глобально для всех Socket.IO событий.",
+            "Отправлять в событие ORM-объект напрямую, не превращая его в простой JSON-словарь.",
         ],
     },
 }
@@ -1774,14 +1780,14 @@ CHAPTER_STUDY_NOTES = {
         "Обратите внимание на договорённость между клиентом и сервером: какие события существуют, какие поля есть в payload и куда сервер делает emit.",
     ],
     "chapter11": [
-        "WebSocket-соединения тоже нужно защищать. Иначе любой клиент сможет подключиться напрямую, минуя обычные HTTP-страницы.",
-        "Порядок важен: сначала проверить token, потом принять соединение. Если token плохой, соединение закрывается до нормальной работы чата.",
-        "Username берётся из JWT, а не из сообщения клиента. Это защищает от ситуации, где клиент просто пишет чужое имя.",
+        "Socket.IO-соединения тоже нужно защищать. Иначе любой клиент сможет подключиться напрямую, минуя обычный login.",
+        "Порядок важен: token проверяется в событии <code>connect</code>, до обработки любых пользовательских событий.",
+        "Username берётся из JWT, а не из payload события. Это защищает от ситуации, где клиент просто пишет чужое имя.",
     ],
     "chapter12": [
-        "Финальная глава собирает API, базу, сервисный слой и тесты в один учебный пример.",
-        "Главная мысль: тест должен быть независимым. Поэтому настоящая база подменяется тестовой через dependency override.",
-        "После этой главы вы должны уметь проверить endpoint, сервисную логику и сценарий с несколькими запросами без ручного кликанья в браузере.",
+        "Финальная глава собирает REST API, Socket.IO, базу, сервисный слой и тесты в один учебный пример.",
+        "Главная мысль: REST и Socket.IO не должны иметь две разные бизнес-логики. Оба слоя вызывают <code>ChatService</code>.",
+        "После этой главы вы должны уметь сохранить сообщение через real-time событие и увидеть ту же запись через REST endpoint.",
     ],
 }
 
@@ -1829,11 +1835,13 @@ REQUEST_EXAMPLES = {
     ],
     "chapter11": [
         ("Получить access token", 'curl -X POST http://localhost:8011/api/auth/login \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"demo","password":"password"}\''),
-        ("Подключиться с token-ом", 'const token = "PASTE_ACCESS_TOKEN";\nconst ws = new WebSocket(`ws://localhost:8011/ws/authorized?access_token=${token}`);\nws.onmessage = event => console.log(event.data);'),
+        ("Подключиться через Socket.IO с token-ом", 'const script = document.createElement("script");\nscript.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";\nscript.onload = () => {\n  const token = "PASTE_ACCESS_TOKEN";\n  const socket = io("http://localhost:8011", {\n    path: "/socket.io",\n    auth: { access_token: token }\n  });\n  socket.on("authorized", data => console.log("authorized", data));\n  socket.on("authorized_message", data => console.log("message", data));\n  window.socket = socket;\n};\ndocument.head.append(script);'),
+        ("Отправить авторизованное сообщение", 'socket.emit("authorized_message", { message: "Привет из защищённого Socket.IO" });'),
     ],
     "chapter12": [
         ("Создать группу", 'curl -X POST http://localhost:8012/api/chat/groups \\\n  -H "Content-Type: application/json" \\\n  -d \'{"name":"general"}\''),
         ("Отправить сообщение", 'curl -X POST http://localhost:8012/api/chat/messages \\\n  -H "Content-Type: application/json" \\\n  -d \'{"text":"hello","sender":"anna","group_id":1}\''),
+        ("Отправить сообщение через Socket.IO", 'const socket = io("http://localhost:8012", { path: "/socket.io" });\nsocket.on("chat_message", data => console.log(data));\nsocket.emit("set_name", { username: "anna" });\nsocket.emit("join_group", { group_id: 1 });\nsocket.emit("chat_message", { text: "hello realtime", group_id: 1 });'),
     ],
 }
 
@@ -1900,16 +1908,16 @@ CONTROL_QUESTIONS = {
         "Чем <code>emit(..., room=room)</code> отличается от <code>emit(..., to=sid)</code>?",
     ],
     "chapter11": [
-        "Почему token проверяется до <code>accept()</code>?",
-        "Почему username нельзя брать из первого сообщения клиента?",
-        "Что означает закрытие WebSocket с code 1008?",
-        "Как HTTP login связан с WebSocket-подключением?",
+        "Почему token нужно проверять в Socket.IO событии <code>connect</code>?",
+        "Почему username нельзя брать из payload события клиента?",
+        "Что означает <code>return False</code> внутри Socket.IO connect handler?",
+        "Как HTTP login связан с Socket.IO-подключением?",
     ],
     "chapter12": [
-        "Что именно подменяет <code>app.dependency_overrides</code>?",
+        "Почему REST API и Socket.IO handler должны использовать один <code>ChatService</code>?",
+        "Где в Socket.IO событии открывается SQLAlchemy Session?",
+        "Как сообщение, отправленное через Socket.IO, потом увидеть через REST endpoint?",
         "Почему тестовая БД должна быть отдельной от demo-БД?",
-        "Зачем очищать overrides в <code>finally</code>?",
-        "Почему хороший тест проверяет не только status code?",
     ],
 }
 
@@ -1966,14 +1974,14 @@ PRACTICE_LEVELS = {
         ("Сложный уровень", "Сделайте <code>direct_message</code> по username, а не по техническому <code>sid</code>."),
     ],
     "chapter11": [
-        ("Лёгкий уровень", "Добавьте сообщение приветствия с username после успешного подключения."),
-        ("Средний уровень", "Запретите отправку пустых сообщений через защищённый WebSocket."),
-        ("Сложный уровень", "Добавьте роли в JWT и отдельную группу только для admin-подключений."),
+        ("Лёгкий уровень", "Добавьте событие <code>whoami</code>, которое возвращает username текущего <code>sid</code>."),
+        ("Средний уровень", "Запретите отправку пустых сообщений через событие <code>authorized_message</code>."),
+        ("Сложный уровень", "Добавьте роли в JWT и событие <code>admin_message</code> только для admin."),
     ],
     "chapter12": [
-        ("Лёгкий уровень", "Добавьте тест, который проверяет создание группы."),
-        ("Средний уровень", "Добавьте удаление группы вместе с сообщениями и покройте это тестом."),
-        ("Сложный уровень", "Разделите тесты сервиса и API так, чтобы бизнес-логика проверялась без HTTP-клиента."),
+        ("Лёгкий уровень", "Добавьте событие <code>typing</code>, которое отправляет в комнату имя печатающего пользователя."),
+        ("Средний уровень", "Добавьте событие <code>delete_group</code> и покройте удаление тестом service layer."),
+        ("Сложный уровень", "Проверьте сценарий: Socket.IO сохраняет сообщение, REST API возвращает это сообщение из БД."),
     ],
 }
 
@@ -1986,7 +1994,7 @@ TEST_FILES = {
     "chapter07": "tests/test_chapter07_auth.py",
     "chapter08": "tests/test_chapter08_refresh.py",
     "chapter09": "tests/test_chapter09_websocket.py",
-    "chapter11": "tests/test_chapter11_authorized_websocket.py",
+    "chapter11": "tests/test_chapter11_authorized_socketio.py",
     "chapter12": "tests/test_chapter12_chat.py",
 }
 
@@ -2042,12 +2050,15 @@ def run_commands(service: str, data: dict) -> list[tuple[str, str]]:
 
 def browser_targets(data: dict) -> list[tuple[str, str]]:
     port = data["port"]
-    return [
+    targets = [
         (f"http://localhost:{port}", "Страница урока: теория, разбор кода, практика и ответы."),
         (f"http://localhost:{port}/docs", "Swagger UI: интерактивная документация, где удобно нажимать Try it out."),
         (f"http://localhost:{port}/redoc", "ReDoc: статичная документация для спокойного чтения схемы API."),
         ("http://localhost:8000", "Gateway: общая главная страница со всеми главами."),
     ]
+    if data["number"] == 10:
+        targets.insert(1, ("http://localhost:8010/socket-tester", "Тестер Socket.IO и raw WebSocket: можно ввести URL своего сервиса и отправить сообщение."))
+    return targets
 
 
 def render_lesson(service: str, data: dict) -> str:

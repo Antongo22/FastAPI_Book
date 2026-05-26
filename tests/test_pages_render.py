@@ -77,3 +77,13 @@ def test_chapter10_uses_socketio_wording_without_old_comparison():
     assert "Socket.IO чат" in gateway_response.text
     assert old_comparison_term not in chapter_response.text
     assert old_comparison_term not in gateway_response.text
+
+
+def test_chapter10_socket_tester_page_renders_defaults():
+    response = TestClient(chapter10_app).get("/socket-tester")
+
+    assert response.status_code == 200
+    assert "Тест сокетов" in response.text
+    assert "http://localhost:8010" in response.text
+    assert "/socket.io" in response.text
+    assert "ws://localhost:8010/ws/chat?group=general" in response.text

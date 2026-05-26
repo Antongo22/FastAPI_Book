@@ -23,8 +23,8 @@ CHAPTERS = [
     {"number": 8, "port": 8008, "title": "Refresh Tokens", "text": "Обновление access token, revoke и logout."},
     {"number": 9, "port": 8009, "title": "WebSockets", "text": "Низкоуровневый чат и broadcast сообщений."},
     {"number": 10, "port": 8010, "title": "Socket.IO чат", "text": "Events, rooms, broadcast и прямые сообщения."},
-    {"number": 11, "port": 8011, "title": "Auth WebSockets", "text": "Проверка JWT перед WebSocket-соединением."},
-    {"number": 12, "port": 8012, "title": "Тестирование", "text": "API, сервисный слой, WebSocket и in-memory БД."},
+    {"number": 11, "port": 8011, "title": "Auth Socket.IO", "text": "Проверка JWT при Socket.IO connect."},
+    {"number": 12, "port": 8012, "title": "Socket.IO и тесты", "text": "Чат API, real-time события, сервисный слой и БД."},
 ]
 
 

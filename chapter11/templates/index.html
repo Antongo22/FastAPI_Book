@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Глава 11: Авторизация WebSockets</title>
+    <title>Глава 11: Авторизация Socket.IO</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
@@ -19,12 +19,12 @@
         </nav>
 
         <section class="hero">
-            <h1>Глава 11: Авторизация WebSockets</h1>
-            <p>JWT в query string, проверка до accept(), close code 1008 и сообщения с username.</p>
+            <h1>Глава 11: Авторизация Socket.IO</h1>
+            <p>JWT в Socket.IO auth payload, отказ в connect и события от подтверждённого пользователя.</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8011</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8011/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы умеете закрывать WebSocket до принятия соединения, если клиент не прислал валидный token.</span>
+                <span><strong>Результат:</strong> После главы вы умеете принимать Socket.IO-подключение только с валидным JWT и не доверять username из клиента.</span>
             </div>
         </section>
 
@@ -40,9 +40,9 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Как пользоваться этой главой</h2>
-                    <p>WebSocket-соединения тоже нужно защищать. Иначе любой клиент сможет подключиться напрямую, минуя обычные HTTP-страницы.</p>
-<p>Порядок важен: сначала проверить token, потом принять соединение. Если token плохой, соединение закрывается до нормальной работы чата.</p>
-<p>Username берётся из JWT, а не из сообщения клиента. Это защищает от ситуации, где клиент просто пишет чужое имя.</p>
+                    <p>Socket.IO-соединения тоже нужно защищать. Иначе любой клиент сможет подключиться напрямую, минуя обычный login.</p>
+<p>Порядок важен: token проверяется в событии <code>connect</code>, до обработки любых пользовательских событий.</p>
+<p>Username берётся из JWT, а не из payload события. Это защищает от ситуации, где клиент просто пишет чужое имя.</p>
                     <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
                 </article>
 
@@ -52,7 +52,7 @@
                         <li>Откройте главный файл приложения и найдите код из вкладки <strong>Разбор кода</strong>. Не переписывайте его вслепую: сопоставьте каждую строку с объяснением.</li>
 <li>Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.</li>
 <li>Вернитесь на вкладку <strong>Практика</strong>, выполните лёгкое задание, затем среднее. Сложное задание можно оставить как самостоятельную мини-работу.</li>
-<li>Запустите тесты, связанные с главой: <code>tests/test_chapter11_authorized_websocket.py</code>. Если теста нет для конкретной главы, запустите общий <code>pytest</code>.</li>
+<li>Запустите тесты, связанные с главой: <code>tests/test_chapter11_authorized_socketio.py</code>. Если теста нет для конкретной главы, запустите общий <code>pytest</code>.</li>
                     </ol>
                 </article>
 
@@ -64,7 +64,7 @@
 <dt><code>chapter11/static/site.css</code></dt><dd>Общие стили страницы урока.</dd>
 <dt><code>chapter11/static/site.js</code></dt><dd>Переключение вкладок на странице урока.</dd>
 <dt><code>chapter11/Dockerfile</code></dt><dd>Инструкция сборки контейнера для этой главы.</dd>
-<dt><code>tests/test_chapter11_authorized_websocket.py</code></dt><dd>Автоматические проверки поведения главы. Их полезно читать как примеры использования API.</dd>
+<dt><code>tests/test_chapter11_authorized_socketio.py</code></dt><dd>Автоматические проверки поведения главы. Их полезно читать как примеры использования API.</dd>
 <dt><code>requirements.txt</code></dt><dd>Один общий набор Python-зависимостей для всего учебника.</dd>
                     </dl>
                 </article>
@@ -81,7 +81,7 @@ pip install -r requirements.txt{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Запустить только эту главу</h2><pre><code>{% raw %}uvicorn chapter11.app.main:app --reload --port 8011{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Открыть страницу и Swagger</h2><pre><code>{% raw %}open http://localhost:8011
 open http://localhost:8011/docs{% endraw %}</code></pre></article>
-<article class="info-box command-box"><h2>Запустить тесты этой темы</h2><pre><code>{% raw %}pytest tests/test_chapter11_authorized_websocket.py{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить тесты этой темы</h2><pre><code>{% raw %}pytest tests/test_chapter11_authorized_socketio.py{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Запустить все проверки проекта</h2><pre><code>{% raw %}./scripts/validate.sh{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Запустить все главы через Docker Compose</h2><pre><code>{% raw %}docker compose up --build{% endraw %}</code></pre></article>
                 </div>
@@ -103,11 +103,11 @@ open http://localhost:8011/docs{% endraw %}</code></pre></article>
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
                     <ul class="flow-list">
-                        <li><strong>access_token query</strong> - практичный способ передать token из браузерного WebSocket-клиента.</li>
-<li><strong>verify before accept</strong> - сервер проверяет token до <code>websocket.accept()</code>.</li>
-<li><strong>1008 Policy Violation</strong> - WebSocket close code для нарушения политики доступа.</li>
+                        <li><strong>Socket.IO auth</strong> - объект, который клиент передаёт при подключении: <code>{ access_token: token }</code>.</li>
+<li><strong>connect event</strong> - место, где сервер решает принять или отклонить подключение.</li>
+<li><strong>return False</strong> - способ отказать Socket.IO-клиенту при невалидном token-е.</li>
 <li><strong>JWT claims</strong> - username и роль можно брать из подписанного token-а.</li>
-<li><strong>Authorized broadcast</strong> - каждое сообщение содержит подтверждённого пользователя.</li>
+<li><strong>Authorized event</strong> - каждое сообщение содержит пользователя, которого подтвердил сервер.</li>
                     </ul>
                 </article>
 
@@ -115,11 +115,11 @@ open http://localhost:8011/docs{% endraw %}</code></pre></article>
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
                         <li>Клиент получает access token через <code>/api/auth/login</code>.</li>
-<li>Клиент открывает <code>/ws/authorized?access_token=...</code>.</li>
+<li>Клиент подключается к Socket.IO endpoint-у <code>/socket.io</code> и передаёт token в <code>auth</code>.</li>
 <li>Сервер декодирует JWT и проверяет подпись и срок действия.</li>
-<li>Если token плохой, сервер закрывает соединение кодом 1008.</li>
-<li>Если token валиден, сервер принимает WebSocket и отправляет событие connected.</li>
-<li>Сообщения в broadcast получают username из token-а, а не из клиентского текста.</li>
+<li>Если token плохой, обработчик <code>connect</code> возвращает <code>False</code>, и Socket.IO отказывает клиенту.</li>
+<li>Если token валиден, сервер сохраняет <code>sid -> username</code> и отправляет событие <code>authorized</code>.</li>
+<li>Событие <code>authorized_message</code> берёт username из серверного словаря, а не из клиентского payload.</li>
                     </ol>
                 </article>
 
@@ -127,7 +127,8 @@ open http://localhost:8011/docs{% endraw %}</code></pre></article>
                     <h2>Endpoint-ы для проверки</h2>
                     <div class="endpoint-grid">
                         <article class="endpoint-card"><strong><code>POST /api/auth/login</code></strong><span>Демо-выдача access token-а.</span></article>
-<article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=...</code></strong><span>Защищённый WebSocket-чат.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/socket/info</code></strong><span>Количество авторизованных Socket.IO-подключений.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO /socket.io</code></strong><span>Защищённые события <code>authorized</code> и <code>authorized_message</code>.</span></article>
                     </div>
                 </article>
 
@@ -140,9 +141,20 @@ open http://localhost:8011/docs{% endraw %}</code></pre></article>
                     <article class="info-box command-box"><h2>Получить access token</h2><pre><code>{% raw %}curl -X POST http://localhost:8011/api/auth/login \
   -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;username&quot;:&quot;demo&quot;,&quot;password&quot;:&quot;password&quot;}&#x27;{% endraw %}</code></pre></article>
-<article class="info-box command-box"><h2>Подключиться с token-ом</h2><pre><code>{% raw %}const token = &quot;PASTE_ACCESS_TOKEN&quot;;
-const ws = new WebSocket(`ws://localhost:8011/ws/authorized?access_token=${token}`);
-ws.onmessage = event =&gt; console.log(event.data);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Подключиться через Socket.IO с token-ом</h2><pre><code>{% raw %}const script = document.createElement(&quot;script&quot;);
+script.src = &quot;https://cdn.socket.io/4.7.5/socket.io.min.js&quot;;
+script.onload = () =&gt; {
+  const token = &quot;PASTE_ACCESS_TOKEN&quot;;
+  const socket = io(&quot;http://localhost:8011&quot;, {
+    path: &quot;/socket.io&quot;,
+    auth: { access_token: token }
+  });
+  socket.on(&quot;authorized&quot;, data =&gt; console.log(&quot;authorized&quot;, data));
+  socket.on(&quot;authorized_message&quot;, data =&gt; console.log(&quot;message&quot;, data));
+  window.socket = socket;
+};
+document.head.append(script);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Отправить авторизованное сообщение</h2><pre><code>{% raw %}socket.emit(&quot;authorized_message&quot;, { message: &quot;Привет из защищённого Socket.IO&quot; });{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -151,55 +163,61 @@ ws.onmessage = event =&gt; console.log(event.data);{% endraw %}</code></pre></ar
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}@app.websocket(&quot;/ws/authorized&quot;)
-async def authorized_socket(websocket: WebSocket, access_token: str | None = Query(default=None)):
-    if not access_token:
-        await websocket.close(code=1008)
-        return
+                    <pre><code>{% raw %}def authorize_socketio(auth: dict | None) -&gt; str | None:
+    token = (auth or {}).get(&quot;access_token&quot;) or (auth or {}).get(&quot;token&quot;)
+    if not token:
+        return None
     try:
-        username = verify_token(access_token)
+        return verify_token(str(token))
     except HTTPException:
-        await websocket.close(code=1008)
-        return{% endraw %}</code></pre>
+        return None
+
+
+@sio.event
+async def connect(sid, environ, auth):
+    username = authorize_socketio(auth)
+    if username is None:
+        return False
+    authorized_clients[sid] = username
+    await sio.emit(&quot;authorized&quot;, {&quot;sid&quot;: sid, &quot;username&quot;: username}, to=sid){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
-                    <p>WebSocket тоже нужно защищать. Иначе любой сможет подключиться к чату.</p>
-<p>Перед <code>accept()</code> сервер проверяет token. Если token плохой, соединение закрывается.</p>
-<p>Username берётся из JWT, чтобы клиент не мог притвориться другим человеком.</p>
+                    <p>Socket.IO-подключение тоже нужно защищать. Иначе любой клиент сможет отправлять события в чат.</p>
+<p>Token передаётся при подключении в объекте <code>auth</code>. Сервер проверяет token прямо в событии <code>connect</code>.</p>
+<p>Username берётся из JWT и хранится на сервере по <code>sid</code>, чтобы клиент не мог притвориться другим пользователем.</p>
                 </article>
 
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>@app.websocket("/ws/authorized")</code></dt><dd>Регистрируем защищённый WebSocket endpoint.</dd>
-<dt><code>access_token: str | None = Query(default=None)</code></dt><dd>Читаем token из query string. Он может отсутствовать, поэтому тип включает <code>None</code>.</dd>
-<dt><code>if not access_token:</code></dt><dd>Если token не передали, подключение нельзя принимать.</dd>
-<dt><code>await websocket.close(code=1008)</code></dt><dd>Закрываем соединение кодом 'нарушение политики'.</dd>
-<dt><code>return</code></dt><dd>Останавливаем функцию, чтобы дальше код не выполнялся.</dd>
-<dt><code>try:</code></dt><dd>Пробуем проверить token.</dd>
-<dt><code>username = verify_token(access_token)</code></dt><dd>Если token валиден, получаем username.</dd>
-<dt><code>except HTTPException:</code></dt><dd>Если проверка token-а упала, закрываем WebSocket.</dd>
-<dt><code>await manager.connect(...)</code></dt><dd>Только после успешной проверки принимаем соединение.</dd>
+                        <dt><code>def authorize_socketio(auth)</code></dt><dd>Helper получает auth payload от Socket.IO клиента и возвращает username или <code>None</code>.</dd>
+<dt><code>(auth or {}).get("access_token")</code></dt><dd>Безопасно читаем token, даже если клиент вообще не передал auth.</dd>
+<dt><code>verify_token(str(token))</code></dt><dd>Проверяем подпись JWT и достаём username.</dd>
+<dt><code>@sio.event</code></dt><dd>Регистрируем Socket.IO событие.</dd>
+<dt><code>async def connect(sid, environ, auth)</code></dt><dd>Socket.IO вызывает эту функцию при попытке подключения.</dd>
+<dt><code>if username is None: return False</code></dt><dd>Отказываем клиенту в подключении, если token отсутствует или невалиден.</dd>
+<dt><code>authorized_clients[sid] = username</code></dt><dd>Запоминаем, какой подтверждённый пользователь стоит за этим подключением.</dd>
+<dt><code>await sio.emit("authorized", ...)</code></dt><dd>Отправляем подтверждение только текущему клиенту.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
-                        <li>Важно проверять token до <code>accept()</code>, чтобы не считать соединение авторизованным даже на короткое время.</li>
+                        <li>Важно проверять token в <code>connect</code>, до обработки любых пользовательских событий.</li>
 <li>Клиенту нельзя доверять username из сообщения: он должен быть взят из JWT.</li>
-<li>В production query token может попасть в логи, поэтому часто применяют короткий срок жизни и HTTPS.</li>
+<li>Token передаётся в Socket.IO auth payload, а не в query string raw WebSocket URL.</li>
                     </ul>
                 </article>
 
                 <article class="info-box">
                     <h2>Типичные ошибки новичков</h2>
                     <ul class="flow-list">
-                        <li>Сначала вызвать <code>accept()</code>, а потом проверять token.</li>
-<li>Брать username из сообщения клиента вместо token-а.</li>
-<li>Не закрывать соединение явным кодом, из-за чего клиенту труднее понять причину отказа.</li>
+                        <li>Передавать token в query string raw WebSocket URL, хотя в этой главе используется Socket.IO auth payload.</li>
+<li>Брать username из события клиента вместо JWT.</li>
+<li>Проверять token только на первом HTTP login, но не проверять его при real-time подключении.</li>
                     </ul>
                 </article>
 
@@ -214,26 +232,26 @@ async def authorized_socket(websocket: WebSocket, access_token: str | None = Que
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Главная практическая задача</h2>
-                    <p>Добавьте claim <code>role</code> в token и запретите подключение к admin-комнате всем, кроме admin.</p>
+                    <p>Добавьте claim <code>role</code> в token и запретите событие <code>admin_message</code> всем, кроме admin.</p>
                     <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Практика по уровням</h2>
                     <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте сообщение приветствия с username после успешного подключения.</dd>
-<dt>Средний уровень</dt><dd>Запретите отправку пустых сообщений через защищённый WebSocket.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте роли в JWT и отдельную группу только для admin-подключений.</dd>
+                        <dt>Лёгкий уровень</dt><dd>Добавьте событие <code>whoami</code>, которое возвращает username текущего <code>sid</code>.</dd>
+<dt>Средний уровень</dt><dd>Запретите отправку пустых сообщений через событие <code>authorized_message</code>.</dd>
+<dt>Сложный уровень</dt><dd>Добавьте роли в JWT и событие <code>admin_message</code> только для admin.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
                     <ol class="flow-list">
-                        <li>Почему token проверяется до <code>accept()</code>?</li>
-<li>Почему username нельзя брать из первого сообщения клиента?</li>
-<li>Что означает закрытие WebSocket с code 1008?</li>
-<li>Как HTTP login связан с WebSocket-подключением?</li>
+                        <li>Почему token нужно проверять в Socket.IO событии <code>connect</code>?</li>
+<li>Почему username нельзя брать из payload события клиента?</li>
+<li>Что означает <code>return False</code> внутри Socket.IO connect handler?</li>
+<li>Как HTTP login связан с Socket.IO-подключением?</li>
                     </ol>
                 </article>
             </div>
@@ -247,19 +265,20 @@ async def authorized_socket(websocket: WebSocket, access_token: str | None = Que
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
-<p>Нужно добавить роль в JWT и проверить эту роль перед подключением к admin-комнате.</p>
+<p>Нужно добавить роль в JWT и проверять её в Socket.IO событии, которое доступно только admin.</p>
 <ul class="flow-list"><li>Добавить claim <code>role</code> при создании access token-а.</li>
-<li>Вернуть из <code>verify_token</code> username и role.</li>
-<li>В WebSocket endpoint принять параметр <code>room</code>.</li>
-<li>Если <code>room == 'admin'</code> и role не admin, закрыть соединение кодом 1008.</li></ul>
+<li>Вернуть из helper-а проверки token-а username и role.</li>
+<li>Сохранить данные пользователя в словаре <code>authorized_clients</code> при Socket.IO connect.</li>
+<li>Добавить событие <code>admin_message</code>.</li>
+<li>Если роль текущего <code>sid</code> не admin, отправить событие <code>forbidden</code> только этому клиенту.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код token payload и проверки комнаты</h2>
+<article class="info-box"><h2>2. Полный код token payload и admin-события</h2>
 <pre><code>{% raw %}def create_access_token(username: str, role: str = &quot;user&quot;) -&gt; str:
     expires = datetime.now(timezone.utc) + timedelta(minutes=30)
     return jwt.encode({&quot;sub&quot;: username, &quot;role&quot;: role, &quot;exp&quot;: expires}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def verify_token(token: str) -&gt; dict:
+def verify_user_token(token: str) -&gt; dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return {&quot;username&quot;: str(payload[&quot;sub&quot;]), &quot;role&quot;: str(payload.get(&quot;role&quot;, &quot;user&quot;))}
@@ -267,43 +286,35 @@ def verify_token(token: str) -&gt; dict:
         raise HTTPException(status_code=401, detail=&quot;Invalid token&quot;) from error
 
 
-@app.websocket(&quot;/ws/authorized&quot;)
-async def authorized_socket(
-    websocket: WebSocket,
-    access_token: str | None = Query(default=None),
-    room: str = &quot;general&quot;,
-):
-    if not access_token:
-        await websocket.close(code=1008)
+@sio.event
+async def admin_message(sid, data):
+    user = authorized_clients.get(sid)
+    if user is None or user[&quot;role&quot;] != &quot;admin&quot;:
+        await sio.emit(&quot;forbidden&quot;, {&quot;reason&quot;: &quot;admin role required&quot;}, to=sid)
         return
-    try:
-        user = verify_token(access_token)
-    except HTTPException:
-        await websocket.close(code=1008)
-        return
-    if room == &quot;admin&quot; and user[&quot;role&quot;] != &quot;admin&quot;:
-        await websocket.close(code=1008)
-        return{% endraw %}</code></pre>
+    await sio.emit(&quot;admin_message&quot;, {
+        &quot;from&quot;: user[&quot;username&quot;],
+        &quot;message&quot;: data.get(&quot;message&quot;, &quot;&quot;),
+    }, room=&quot;admins&quot;){% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=...&amp;room=general</code></strong><span>Обычный пользователь подключается.</span></article>
-<article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=...&amp;room=admin</code></strong><span>Обычный пользователь получает close 1008.</span></article>
-<article class="endpoint-card"><strong><code>WS /ws/authorized?access_token=ADMIN_TOKEN&amp;room=admin</code></strong><span>Admin подключается.</span></article></div>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Обычный пользователь подключается с <code>auth: { access_token }</code>.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO admin_message</code></strong><span>Обычный пользователь получает событие <code>forbidden</code>.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO admin_message</code></strong><span>Admin получает событие <code>admin_message</code>.</span></article></div>
 </article>
 
                 <article class="info-box">
                     <h2>Короткая версия решения</h2>
                     <pre><code>{% raw %}payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 role = payload.get(&quot;role&quot;)
-if room == &quot;admin&quot; and role != &quot;admin&quot;:
-    await websocket.close(code=1008)
+if role != &quot;admin&quot;:
     return{% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>
                     <ul class="flow-list">
-                        <li>Authorization для WebSocket - это не только проверка token-а, но и проверка доступа к конкретной комнате или действию.</li>
+                        <li>Authorization для Socket.IO - это не только проверка token-а при connect, но и проверка доступа к конкретному событию.</li>
 <li>Для сложных правил лучше вынести проверку в отдельную функцию.</li>
                     </ul>
                 </article>

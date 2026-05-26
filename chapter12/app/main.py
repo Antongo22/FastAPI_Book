@@ -4,27 +4,29 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import socketio
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-app = FastAPI(
-    title="Глава 12: Тестирование",
-    description="API, service layer, in-memory DB",
+fastapi_app = FastAPI(
+    title="Глава 12: Socket.IO и тестирование",
+    description="API, service layer, Socket.IO, in-memory DB",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+fastapi_app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 
 
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@fastapi_app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
-@app.get("/swagger", include_in_schema=False)
+@fastapi_app.get("/swagger", include_in_schema=False)
 async def swagger():
     return RedirectResponse(url="/docs")
 
@@ -153,21 +155,102 @@ def get_chat_service(db: Session = Depends(get_db)) -> ChatService:
 init_db()
 
 
-@app.post("/api/chat/messages", response_model=MessageDto)
+@fastapi_app.post("/api/chat/messages", response_model=MessageDto)
 async def send_message(request: SendMessageRequest, service: ChatService = Depends(get_chat_service)):
     return service.send_message(request.text, request.sender, request.group_id)
 
 
-@app.get("/api/chat/messages", response_model=list[MessageDto])
+@fastapi_app.get("/api/chat/messages", response_model=list[MessageDto])
 async def get_messages(group_id: int | None = None, service: ChatService = Depends(get_chat_service)):
     return service.get_messages(group_id)
 
 
-@app.post("/api/chat/groups", response_model=ChatGroupDto)
+@fastapi_app.post("/api/chat/groups", response_model=ChatGroupDto)
 async def create_group(request: CreateGroupRequest, service: ChatService = Depends(get_chat_service)):
     return service.create_group(request.name)
 
 
-@app.get("/api/chat/groups", response_model=list[ChatGroupDto])
+@fastapi_app.get("/api/chat/groups", response_model=list[ChatGroupDto])
 async def get_groups(service: ChatService = Depends(get_chat_service)):
     return service.get_groups()
+
+
+socketio_clients: dict[str, str] = {}
+
+
+def message_to_dict(message: Message) -> dict:
+    return {
+        "id": message.id,
+        "text": message.text,
+        "sender": message.sender,
+        "group_id": message.group_id,
+        "created_at": message.created_at.isoformat(),
+    }
+
+
+@fastapi_app.get("/api/chat/realtime")
+async def realtime_info():
+    return {
+        "socketio_path": "/socket.io",
+        "events": ["set_name", "join_group", "chat_message", "list_messages"],
+        "connections": len(socketio_clients),
+    }
+
+
+@sio.event
+async def connect(sid, environ):
+    socketio_clients[sid] = "anonymous"
+    await sio.enter_room(sid, "global")
+    await sio.emit("connected", {"sid": sid}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None)
+
+
+@sio.event
+async def set_name(sid, data):
+    username = data.get("username", "anonymous")
+    socketio_clients[sid] = username
+    await sio.emit("name_set", {"sid": sid, "username": username}, to=sid)
+
+
+@sio.event
+async def join_group(sid, data):
+    group_id = data.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
+    room = f"group:{group_id}" if group_id is not None else "global"
+    await sio.enter_room(sid, room)
+    await sio.emit("joined_group", {"room": room, "group_id": group_id}, to=sid)
+
+
+@sio.event
+async def chat_message(sid, data):
+    sender = data.get("sender") or socketio_clients.get(sid, "anonymous")
+    text = data.get("text") or data.get("message", "")
+    group_id = data.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        message = service.send_message(text=text, sender=sender, group_id=group_id)
+        payload = {"event": "chat_message", "message": message_to_dict(message)}
+    room = f"group:{group_id}" if group_id is not None else "global"
+    await sio.emit("chat_message", payload, room=room)
+
+
+@sio.event
+async def list_messages(sid, data):
+    group_id = data.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        messages = [message_to_dict(message) for message in service.get_messages(group_id)]
+    await sio.emit("messages", {"group_id": group_id, "items": messages}, to=sid)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")
+app.dependency_overrides = fastapi_app.dependency_overrides

@@ -24,3 +24,11 @@ def test_chat_groups_and_messages():
         assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+def test_chat_realtime_info_documents_socketio_events():
+    response = TestClient(app).get("/api/chat/realtime")
+
+    assert response.status_code == 200
+    assert response.json()["socketio_path"] == "/socket.io"
+    assert "chat_message" in response.json()["events"]

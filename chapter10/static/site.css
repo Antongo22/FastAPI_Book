@@ -267,6 +267,83 @@ button[type="submit"] {
     font-weight: 700;
 }
 
+.socket-tester {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.8fr) minmax(360px, 1.2fr);
+    gap: 16px;
+}
+
+.tester-controls form {
+    max-width: none;
+}
+
+.segmented-control {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 6px;
+    margin-bottom: 16px;
+    width: min(100%, 360px);
+}
+
+.segmented-control button,
+.button-row button {
+    border: 1px solid #cbd3df;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #20242c;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    min-height: 38px;
+    padding: 0 14px;
+}
+
+.segmented-control button.active,
+.button-row button:not(.secondary-action) {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #ffffff;
+}
+
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.button-row button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.button-row .secondary-action {
+    background: #ffffff;
+}
+
+.socket-status {
+    border-radius: 6px;
+    display: inline-flex;
+    font-weight: 700;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+}
+
+.socket-status.connected {
+    background: #f0faf4;
+    color: #1d6b3d;
+}
+
+.socket-status.disconnected {
+    background: #fff6f6;
+    color: #a23a3a;
+}
+
+.socket-log {
+    min-height: 520px;
+    max-height: 620px;
+    white-space: pre-wrap;
+}
+
 .success {
     border-color: #78b892;
     background: #f0faf4;
@@ -289,5 +366,9 @@ button[type="submit"] {
 
     .hero h1 {
         font-size: 28px;
+    }
+
+    .socket-tester {
+        grid-template-columns: 1fr;
     }
 }

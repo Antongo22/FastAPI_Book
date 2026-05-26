@@ -4,36 +4,37 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import socketio
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-app = FastAPI(
-    title="Глава 11: Auth WebSockets",
-    description="JWT protected WebSocket",
+fastapi_app = FastAPI(
+    title="Глава 11: Auth Socket.IO",
+    description="JWT protected Socket.IO",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+fastapi_app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 
 
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@fastapi_app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
-@app.get("/swagger", include_in_schema=False)
+@fastapi_app.get("/swagger", include_in_schema=False)
 async def swagger():
     return RedirectResponse(url="/docs")
 
 
 import os
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
-from fastapi import HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
@@ -60,49 +61,56 @@ def verify_token(token: str) -> str:
         raise HTTPException(status_code=401, detail="Invalid token") from error
 
 
-class AuthorizedManager:
-    def __init__(self):
-        self.connections: dict[str, WebSocket] = {}
-
-    async def connect(self, websocket: WebSocket, username: str) -> str:
-        await websocket.accept()
-        connection_id = str(uuid4())
-        self.connections[connection_id] = websocket
-        await websocket.send_json({"event": "connected", "connection_id": connection_id, "username": username})
-        return connection_id
-
-    def disconnect(self, connection_id: str) -> None:
-        self.connections.pop(connection_id, None)
-
-    async def broadcast(self, payload: dict) -> None:
-        for websocket in list(self.connections.values()):
-            await websocket.send_json(payload)
+def authorize_socketio(auth: dict | None) -> str | None:
+    token = (auth or {}).get("access_token") or (auth or {}).get("token")
+    if not token:
+        return None
+    try:
+        return verify_token(str(token))
+    except HTTPException:
+        return None
 
 
-manager = AuthorizedManager()
+authorized_clients: dict[str, str] = {}
 
 
-@app.post("/api/auth/login")
+@fastapi_app.post("/api/auth/login")
 async def login(request: LoginRequest):
     if not request.username or not request.password:
         raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
     return {"access_token": create_access_token(request.username), "token_type": "bearer", "username": request.username}
 
 
-@app.websocket("/ws/authorized")
-async def authorized_socket(websocket: WebSocket, access_token: str | None = Query(default=None)):
-    if not access_token:
-        await websocket.close(code=1008)
+@fastapi_app.get("/api/socket/info")
+async def socket_info():
+    return {"authorized_connections": len(authorized_clients), "users": list(authorized_clients.values())}
+
+
+@sio.event
+async def connect(sid, environ, auth):
+    username = authorize_socketio(auth)
+    if username is None:
+        return False
+    authorized_clients[sid] = username
+    await sio.emit("authorized", {"sid": sid, "username": username}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    authorized_clients.pop(sid, None)
+
+
+@sio.event
+async def authorized_message(sid, data):
+    username = authorized_clients.get(sid)
+    if username is None:
         return
-    try:
-        username = verify_token(access_token)
-    except HTTPException:
-        await websocket.close(code=1008)
-        return
-    connection_id = await manager.connect(websocket, username)
-    try:
-        while True:
-            message = await websocket.receive_text()
-            await manager.broadcast({"event": "message", "connection_id": connection_id, "username": username, "message": message})
-    except WebSocketDisconnect:
-        manager.disconnect(connection_id)
+    await sio.emit("authorized_message", {
+        "event": "authorized_message",
+        "sid": sid,
+        "username": username,
+        "message": data.get("message", ""),
+    })
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")

@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Тест сокетов</title>
+    <link rel="stylesheet" href="/static/site.css">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация тестера">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="/">К главе 10</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+                <a class="nav-link light" href="/redoc">ReDoc</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Тест сокетов</h1>
+            <p>Страница для ручной проверки Socket.IO и обычных WebSocket-сервисов.</p>
+            <div class="lesson-meta">
+                <span><strong>Socket.IO по умолчанию:</strong> <code>http://localhost:8010</code></span>
+                <span><strong>Path:</strong> <code>/socket.io</code></span>
+                <span><strong>Raw WebSocket:</strong> <code>ws://localhost:8010/ws/chat?group=general</code></span>
+            </div>
+        </section>
+
+        <section class="tab-panel active">
+            <div class="socket-tester">
+                <article class="info-box tester-controls">
+                    <h2>Подключение</h2>
+                    <div class="segmented-control" aria-label="Тип сокета">
+                        <button class="active" type="button" data-mode="socketio">Socket.IO</button>
+                        <button type="button" data-mode="websocket">WebSocket</button>
+                    </div>
+
+                    <form id="socket-form">
+                        <label>URL
+                            <input id="socket-url" name="socket_url" value="http://localhost:8010" autocomplete="off">
+                        </label>
+                        <label class="socketio-only">Socket.IO path
+                            <input id="socket-path" name="socket_path" value="/socket.io" autocomplete="off">
+                        </label>
+                        <label class="socketio-only">Имя пользователя
+                            <input id="socket-username" name="socket_username" value="student" autocomplete="off">
+                        </label>
+                        <label class="socketio-only">Комната
+                            <input id="socket-room" name="socket_room" value="python" autocomplete="off">
+                        </label>
+                        <label class="socketio-only">Событие
+                            <select id="socket-event" name="socket_event">
+                                <option value="chat_message">chat_message</option>
+                                <option value="join_room">join_room</option>
+                                <option value="leave_room">leave_room</option>
+                                <option value="set_name">set_name</option>
+                                <option value="direct_message">direct_message</option>
+                            </select>
+                        </label>
+                        <label>Сообщение / payload
+                            <textarea id="socket-message" name="socket_message" rows="8">{"room":"python","message":"Привет из тестера"}</textarea>
+                        </label>
+                        <div class="button-row">
+                            <button type="button" id="connect-button">Подключиться</button>
+                            <button type="button" id="disconnect-button" class="secondary-action" disabled>Отключиться</button>
+                            <button type="button" id="send-button" disabled>Отправить</button>
+                            <button type="button" id="clear-button" class="secondary-action">Очистить лог</button>
+                        </div>
+                    </form>
+                </article>
+
+                <article class="info-box">
+                    <h2>Лог обмена</h2>
+                    <div id="socket-status" class="socket-status disconnected">Отключено</div>
+                    <pre class="socket-log" id="socket-log" aria-live="polite"></pre>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const state = {
+            mode: "socketio",
+            socketio: null,
+            websocket: null,
+        };
+
+        const defaults = {
+            socketio: {
+                url: "http://localhost:8010",
+                message: '{"room":"python","message":"Привет из тестера"}',
+            },
+            websocket: {
+                url: "ws://localhost:8010/ws/chat?group=general",
+                message: '{"action":"send_to_group","group":"python","user":"student","message":"Привет из тестера"}',
+            },
+        };
+
+        const modeButtons = document.querySelectorAll("[data-mode]");
+        const socketUrl = document.querySelector("#socket-url");
+        const socketPath = document.querySelector("#socket-path");
+        const username = document.querySelector("#socket-username");
+        const room = document.querySelector("#socket-room");
+        const eventName = document.querySelector("#socket-event");
+        const message = document.querySelector("#socket-message");
+        const connectButton = document.querySelector("#connect-button");
+        const disconnectButton = document.querySelector("#disconnect-button");
+        const sendButton = document.querySelector("#send-button");
+        const clearButton = document.querySelector("#clear-button");
+        const logBox = document.querySelector("#socket-log");
+        const statusBox = document.querySelector("#socket-status");
+
+        function log(kind, value) {
+            const time = new Date().toLocaleTimeString();
+            const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+            logBox.textContent += `[${time}] ${kind}\n${text}\n\n`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function setStatus(text, connected) {
+            statusBox.textContent = text;
+            statusBox.classList.toggle("connected", connected);
+            statusBox.classList.toggle("disconnected", !connected);
+            connectButton.disabled = connected;
+            disconnectButton.disabled = !connected;
+            sendButton.disabled = !connected;
+        }
+
+        function parsePayload() {
+            const value = message.value.trim();
+            if (!value) {
+                return {};
+            }
+            try {
+                return JSON.parse(value);
+            } catch (error) {
+                return value;
+            }
+        }
+
+        function applyMode(mode) {
+            state.mode = mode;
+            modeButtons.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
+            document.querySelectorAll(".socketio-only").forEach((item) => {
+                item.hidden = mode !== "socketio";
+            });
+            socketUrl.value = defaults[mode].url;
+            message.value = defaults[mode].message;
+            disconnect();
+            log("mode", mode === "socketio" ? "Socket.IO" : "WebSocket");
+        }
+
+        function connectSocketIO() {
+            if (typeof io === "undefined") {
+                log("error", "Socket.IO client script не загрузился. Проверьте интернет или CDN.");
+                return;
+            }
+            const socket = io(socketUrl.value.trim(), {
+                path: socketPath.value.trim() || "/socket.io",
+                transports: ["websocket", "polling"],
+            });
+            state.socketio = socket;
+
+            socket.on("connect", () => {
+                setStatus(`Socket.IO подключено: ${socket.id}`, true);
+                log("connect", { id: socket.id });
+                socket.emit("set_name", { username: username.value.trim() || "student" });
+                socket.emit("join_room", { room: room.value.trim() || "python" });
+            });
+
+            socket.onAny((event, payload) => {
+                log(`event:${event}`, payload);
+            });
+
+            socket.on("connect_error", (error) => {
+                setStatus("Ошибка Socket.IO подключения", false);
+                log("connect_error", error.message);
+            });
+
+            socket.on("disconnect", (reason) => {
+                setStatus("Socket.IO отключено", false);
+                log("disconnect", reason);
+            });
+        }
+
+        function connectWebSocket() {
+            const socket = new WebSocket(socketUrl.value.trim());
+            state.websocket = socket;
+
+            socket.addEventListener("open", () => {
+                setStatus("WebSocket подключено", true);
+                log("open", socketUrl.value.trim());
+            });
+
+            socket.addEventListener("message", (event) => {
+                try {
+                    log("message", JSON.parse(event.data));
+                } catch {
+                    log("message", event.data);
+                }
+            });
+
+            socket.addEventListener("error", () => {
+                log("error", "WebSocket ошибка. Проверьте URL, протокол ws/wss и CORS/доступность сервера.");
+            });
+
+            socket.addEventListener("close", (event) => {
+                setStatus("WebSocket отключено", false);
+                log("close", { code: event.code, reason: event.reason });
+            });
+        }
+
+        function connect() {
+            disconnect();
+            log("connect", { mode: state.mode, url: socketUrl.value.trim() });
+            if (state.mode === "socketio") {
+                connectSocketIO();
+            } else {
+                connectWebSocket();
+            }
+        }
+
+        function disconnect() {
+            if (state.socketio) {
+                state.socketio.disconnect();
+                state.socketio = null;
+            }
+            if (state.websocket) {
+                state.websocket.close();
+                state.websocket = null;
+            }
+            setStatus("Отключено", false);
+        }
+
+        function send() {
+            const payload = parsePayload();
+            if (state.mode === "socketio" && state.socketio) {
+                state.socketio.emit(eventName.value, payload);
+                log(`emit:${eventName.value}`, payload);
+            }
+            if (state.mode === "websocket" && state.websocket) {
+                const text = typeof payload === "string" ? payload : JSON.stringify(payload);
+                state.websocket.send(text);
+                log("send", text);
+            }
+        }
+
+        modeButtons.forEach((button) => {
+            button.addEventListener("click", () => applyMode(button.dataset.mode));
+        });
+
+        connectButton.addEventListener("click", connect);
+        disconnectButton.addEventListener("click", disconnect);
+        sendButton.addEventListener("click", send);
+        document.querySelector("#socket-form").addEventListener("submit", (event) => {
+            event.preventDefault();
+        });
+        clearButton.addEventListener("click", () => {
+            logBox.textContent = "";
+        });
+
+        applyMode("socketio");
+    </script>
+</body>
+</html>
