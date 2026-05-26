@@ -4,13 +4,40 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Учебник по Python FastAPI</title>
-    <link rel="stylesheet" href="/static/site.css">
+    <link rel="stylesheet" href="/static/site.css?v=2">
 </head>
 <body>
     <main class="chapter-shell">
         <section class="hero">
             <h1>Учебник по Python FastAPI</h1>
             <p>Полное руководство для начинающих разработчиков: от REST API до JWT, WebSockets, SQLAlchemy и тестирования.</p>
+        </section>
+
+        <section class="tool-section" aria-label="Инструменты">
+            <div class="tool-section__header">
+                <span class="section-eyebrow">Инструменты</span>
+                <h2>Проверка real-time примеров</h2>
+                <p>Отдельные страницы для ручной проверки учебных сервисов без Postman и лишней настройки.</p>
+            </div>
+            <div class="tool-grid">
+                {% for tool in tools %}
+                <article class="tool-card">
+                    <div class="tool-card__badge" aria-hidden="true">{{ tool.badge }}</div>
+                    <div class="tool-card__content">
+                        <div>
+                            <h3>{{ tool.title }}</h3>
+                            <p>{{ tool.text }}</p>
+                        </div>
+                        <div class="tool-card__tags" aria-label="Что можно тестировать">
+                            {% for tag in tool.tags %}
+                            <span>{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <a class="button-link" href="{{ tool.url }}">{{ tool.label }}</a>
+                </article>
+                {% endfor %}
+            </div>
         </section>
 
         <section class="chapter-grid">

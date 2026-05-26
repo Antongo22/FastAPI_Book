@@ -219,6 +219,97 @@ code {
     gap: 16px;
 }
 
+.tool-section {
+    display: grid;
+    gap: 16px;
+    border: 1px solid #d3deea;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 22px;
+    margin-bottom: 24px;
+    box-shadow: 0 12px 32px rgba(25, 38, 59, 0.06);
+}
+
+.tool-section__header,
+.tool-card__content,
+.tool-card__content > div:first-child {
+    display: grid;
+    gap: 6px;
+}
+
+.section-eyebrow {
+    width: fit-content;
+    border: 1px solid #b9d6f6;
+    border-radius: 6px;
+    background: #eef6ff;
+    color: #15529a;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 5px 8px;
+}
+
+.tool-section__header h2,
+.tool-section__header p,
+.tool-card h3,
+.tool-card p {
+    margin: 0;
+}
+
+.tool-section__header h2 {
+    font-size: 24px;
+    line-height: 1.2;
+}
+
+.tool-section__header p,
+.tool-card p {
+    color: #5a6473;
+}
+
+.tool-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.tool-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid #cddcec;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f6fbff 0%, #ffffff 58%, #f4fbf7 100%);
+    padding: 16px;
+}
+
+.tool-card__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 8px;
+    background: #102133;
+    color: #ffffff;
+    font-weight: 900;
+    letter-spacing: 0;
+}
+
+.tool-card__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tool-card__tags span {
+    border: 1px solid #cbd3df;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #3f4856;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 5px 8px;
+}
+
 .chapter-card {
     background: #ffffff;
     border: 1px solid #d8dee8;
@@ -285,6 +376,16 @@ button[type="submit"] {
 
     .top-nav__links {
         display: grid;
+    }
+
+    .tool-card {
+        align-items: stretch;
+        grid-template-columns: 1fr;
+    }
+
+    .tool-card__badge {
+        width: 44px;
+        height: 44px;
     }
 
     .hero h1 {

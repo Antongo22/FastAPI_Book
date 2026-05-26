@@ -27,7 +27,18 @@ CHAPTERS = [
     {"number": 12, "port": 8012, "title": "Socket.IO и тесты", "text": "Чат API, real-time события, сервисный слой и БД."},
 ]
 
+TOOLS = [
+    {
+        "title": "Тест сокетов",
+        "text": "Ручная проверка Socket.IO и обычных WebSocket-сервисов: подключение, отправка сообщений и просмотр ответов.",
+        "url": "http://localhost:8010/socket-tester",
+        "label": "Открыть тестер",
+        "badge": "IO",
+        "tags": ["Socket.IO", "WebSocket", "localhost:8010"],
+    }
+]
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"request": request, "chapters": CHAPTERS})
+    return templates.TemplateResponse(request, "index.html", {"request": request, "chapters": CHAPTERS, "tools": TOOLS})

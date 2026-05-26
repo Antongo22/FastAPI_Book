@@ -35,6 +35,8 @@ def test_gateway_page_renders_chapter_cards():
     response = TestClient(gateway_app).get("/")
     assert response.status_code == 200
     assert "Учебник по Python FastAPI" in response.text
+    assert "Тест сокетов" in response.text
+    assert "http://localhost:8010/socket-tester" in response.text
     assert response.text.count("chapter-card") == 12
 
 
