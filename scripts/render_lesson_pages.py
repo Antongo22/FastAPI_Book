@@ -54,6 +54,24 @@ def render_solution_sections(sections: list[dict[str, object]]) -> str:
     return "\n".join(rendered)
 
 
+def render_extra_sections(sections: list[dict[str, object]]) -> str:
+    rendered = []
+    for section in sections:
+        block = [f'<article class="info-box"><h2>{section["title"]}</h2>']
+        body = section.get("body")
+        items = section.get("items")
+        code = section.get("code")
+        if body:
+            block.append(paragraphs([body] if isinstance(body, str) else list(body)))
+        if items:
+            block.append(f'<ul class="flow-list">{list_items([items] if isinstance(items, str) else list(items))}</ul>')
+        if code:
+            block.append(code_block(str(code)))
+        block.append("</article>")
+        rendered.append("\n".join(block))
+    return "\n".join(rendered)
+
+
 def titled_code_blocks(items: list[tuple[str, str]]) -> str:
     return "\n".join(
         f'<article class="info-box command-box"><h2>{title}</h2>{code_block(code)}</article>'
@@ -72,33 +90,159 @@ LESSONS = {
         "number": 1,
         "port": 8001,
         "title": "Глава 1: Начало работы с FastAPI",
-        "subtitle": "Создание приложения, middleware, REST API, Pydantic-модели и автоматическая OpenAPI-документация.",
-        "outcome": "После главы вы понимаете путь HTTP-запроса от браузера до endpoint-функции и умеете собрать простой API.",
+        "subtitle": "Как работает REST API, зачем нужен Uvicorn, как FastAPI принимает JSON-запрос и возвращает JSON-ответ.",
+        "outcome": "После главы вы понимаете полный путь REST-запроса, умеете запустить FastAPI через Uvicorn и прочитать учебный main.py без подсказок из исходников.",
         "concepts": [
+            "<strong>REST</strong> - стиль построения API, где клиент обращается к понятным URL, использует HTTP-методы и получает ответ со status code.",
+            "<strong>HTTP request</strong> - запрос клиента: method, path, headers и иногда body. Например: <code>POST /api/calculator/add</code> с JSON-телом.",
+            "<strong>HTTP response</strong> - ответ сервера: status code, headers и body. Например: <code>200 OK</code> и JSON <code>{\"result\": 15}</code>.",
+            "<strong>HTTP method</strong> - действие запроса. <code>GET</code> обычно читает данные, <code>POST</code> отправляет данные на сервер.",
+            "<strong>Path</strong> - адрес внутри сайта или API. В <code>http://localhost:8001/api/calculator/add</code> path - это <code>/api/calculator/add</code>.",
+            "<strong>JSON body</strong> - данные, которые клиент отправляет серверу. В этой главе body выглядит так: <code>{\"a\": 10, \"b\": 5}</code>.",
+            "<strong>Header</strong> - строка служебной информации в request или response. Header не является основными данными, но помогает клиенту и серверу договориться о формате, авторизации, кеше и других деталях.",
+            "<strong>Status code</strong> - короткий числовой итог запроса: <code>200</code> успех, <code>400</code> плохие данные клиента, <code>422</code> ошибка валидации, <code>500</code> ошибка сервера.",
             "<strong>FastAPI app</strong> - объект приложения, который хранит маршруты, middleware и настройки документации.",
-            "<strong>Path operation</strong> - функция с декоратором <code>@app.get</code>, <code>@app.post</code> и так далее.",
-            "<strong>Pydantic model</strong> - контракт входного JSON: типы, обязательные поля и автоматическая валидация.",
+            "<strong>Path operation</strong> - Python-функция с декоратором <code>@app.get</code>, <code>@app.post</code> и так далее.",
+            "<strong>Pydantic model</strong> - контракт входного JSON: какие поля обязательны и каких типов они должны быть.",
             "<strong>Middleware</strong> - код вокруг каждого запроса. Он может логировать, добавлять заголовки или измерять время.",
+            "<strong>ASGI</strong> - интерфейс, по которому Uvicorn передаёт HTTP-запросы в FastAPI-приложение.",
+            "<strong>Uvicorn</strong> - сервер, который слушает порт, принимает HTTP-запросы из браузера или curl и передаёт их объекту <code>app</code>.",
             "<strong>OpenAPI</strong> - схема API, из которой FastAPI строит Swagger UI на <code>/docs</code>.",
         ],
+        "theory_blocks": [
+            {
+                "title": "REST без магии",
+                "body": [
+                    "REST API можно представить как набор адресов, куда клиент отправляет запросы. У каждого запроса есть действие: прочитать, создать, изменить или удалить данные.",
+                    "В этой главе мы не создаём сложные ресурсы вроде users или orders, а делаем калькулятор. Но принцип тот же: у нас есть понятные URL, HTTP-метод <code>POST</code>, JSON-вход и JSON-ответ.",
+                    "Важно: REST - это не библиотека и не отдельный сервер. Это способ договориться, как клиент и backend общаются через обычный HTTP.",
+                ],
+            },
+            {
+                "title": "Из чего состоит HTTP request",
+                "items": [
+                    "<strong>Method</strong>: что клиент хочет сделать. В примере это <code>POST</code>, потому что клиент отправляет данные для вычисления.",
+                    "<strong>URL</strong>: полный адрес, например <code>http://localhost:8001/api/calculator/add</code>.",
+                    "<strong>Path</strong>: часть URL без домена и порта, например <code>/api/calculator/add</code>.",
+                    "<strong>Headers</strong>: служебные подсказки. Header <code>Content-Type: application/json</code> говорит серверу, что body написан в JSON.",
+                    "<strong>Body</strong> и <strong>headers</strong> - разные вещи. Body несёт данные калькулятора, headers объясняют, как эти данные читать.",
+                    "<strong>Body</strong>: данные запроса. Для сложения это <code>{\"a\": 10, \"b\": 5}</code>.",
+                ],
+            },
+            {
+                "title": "Из чего состоит HTTP response",
+                "items": [
+                    "<strong>Status code</strong>: короткий результат запроса. <code>200</code> значит успех, <code>400</code> - ошибка в данных клиента, <code>422</code> - JSON не прошёл проверку Pydantic.",
+                    "<strong>Headers</strong>: служебная информация ответа. В главе middleware добавляет header <code>X-FastAPI-Book-Chapter: 01</code>.",
+                    "<strong>Body</strong>: полезные данные ответа. В успешном калькуляторе это JSON <code>{\"result\": 15, \"operation\": \"add\"}</code>.",
+                ],
+            },
+            {
+                "title": "Headers подробнее",
+                "body": [
+                    "Header - это пара <code>name: value</code>. Например: <code>Content-Type: application/json</code>. Имя header-а говорит, о какой настройке речь, а значение даёт конкретную информацию.",
+                    "Request headers отправляет клиент. В этой главе клиент отправляет <code>Content-Type</code>, а браузер или curl также могут отправить <code>User-Agent</code>.",
+                    "Response headers отправляет сервер. Uvicorn добавляет технический header <code>server: uvicorn</code>, FastAPI добавляет <code>content-type: application/json</code>, а наш middleware добавляет <code>x-fastapi-book-chapter: 01</code>.",
+                    "Headers часто не видны на странице, потому что браузер показывает body. Чтобы увидеть их руками, используйте <code>curl -i</code>: он печатает status line, headers и body.",
+                ],
+                "items": [
+                    "<code>Content-Type</code> - формат body. Для JSON обычно <code>application/json</code>.",
+                    "<code>Accept</code> - какой формат ответа клиент хотел бы получить.",
+                    "<code>Authorization</code> - header для token-а. Он подробно появится в главах про JWT.",
+                    "<code>User-Agent</code> - кто делает запрос: браузер, curl, мобильное приложение или другой клиент.",
+                    "<code>X-...</code> - часто так называют свои custom headers, например <code>X-Demo-Client</code> или <code>X-FastAPI-Book-Chapter</code>.",
+                ],
+            },
+            {
+                "title": "Зачем нужен Uvicorn",
+                "body": [
+                    "FastAPI - это framework для описания приложения: какие есть endpoint-ы, какие модели данных, какая документация и какая логика выполняется.",
+                    "Но объект <code>app = FastAPI()</code> сам не открывает порт и не принимает сетевые запросы. Для этого нужен ASGI-сервер. В нашем проекте это Uvicorn.",
+                    "Когда вы запускаете <code>uvicorn chapter01.app.main:app --reload --port 8001</code>, Uvicorn импортирует Python-модуль, берёт переменную <code>app</code>, слушает порт <code>8001</code> и передаёт запросы в FastAPI.",
+                    "Если совсем коротко: Uvicorn - это дверь с улицы в ваше FastAPI-приложение.",
+                ],
+            },
+        ],
         "flow": [
-            "Клиент отправляет <code>POST /api/calculator/add</code> с JSON-телом.",
-            "FastAPI выбирает endpoint по методу и пути.",
-            "Pydantic проверяет, что в теле есть числа <code>a</code> и <code>b</code>.",
-            "Endpoint получает уже разобранный объект <code>CalculationRequest</code>.",
-            "Middleware добавляет заголовок <code>X-FastAPI-Book-Chapter</code> в ответ.",
-            "FastAPI сериализует словарь Python в JSON и возвращает HTTP 200.",
+            "Вы запускаете сервер командой <code>uvicorn chapter01.app.main:app --reload --port 8001</code>.",
+            "Uvicorn импортирует модуль <code>chapter01.app.main</code> и находит в нём переменную <code>app</code>.",
+            "Uvicorn начинает слушать порт <code>8001</code>. Это значит: он ждёт HTTP-запросы на <code>http://localhost:8001</code>.",
+            "Клиент отправляет <code>POST /api/calculator/add</code> с header <code>Content-Type: application/json</code> и body <code>{\"a\": 10, \"b\": 5}</code>.",
+            "Uvicorn принимает сетевой запрос и передаёт его FastAPI-приложению через ASGI.",
+            "FastAPI смотрит на method <code>POST</code> и path <code>/api/calculator/add</code>, затем выбирает функцию <code>add</code>.",
+            "Перед вызовом функции FastAPI читает JSON body и просит Pydantic собрать <code>CalculationRequest</code>.",
+            "Pydantic проверяет, что поля <code>a</code> и <code>b</code> есть и являются числами. Если нет - FastAPI вернёт <code>422</code>, не заходя в endpoint.",
+            "Endpoint получает готовый объект <code>request</code> и возвращает обычный Python-словарь.",
+            "Middleware добавляет заголовок <code>X-FastAPI-Book-Chapter: 01</code> в ответ.",
+            "FastAPI превращает словарь в JSON, выставляет status code <code>200</code>, а Uvicorn отправляет ответ клиенту.",
         ],
         "endpoints": [
             ("POST /api/calculator/add", "Сложение двух чисел."),
             ("POST /api/calculator/subtract", "Вычитание второго числа из первого."),
             ("POST /api/calculator/multiply", "Умножение двух чисел."),
             ("POST /api/calculator/divide", "Деление с ручной проверкой деления на ноль."),
+            ("GET /api/headers/demo", "Показывает, как FastAPI читает request headers и как middleware добавляет response header."),
         ],
+        "code_title": "Полный учебный код приложения",
         "code": '''
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app = FastAPI(
+    title="Глава 1: FastAPI basics",
+    description="Middleware, REST API, OpenAPI",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index(request: Request):
+    return templates.TemplateResponse(request, "index.html", {"request": request})
+
+
+@app.get("/swagger", include_in_schema=False)
+async def swagger():
+    return RedirectResponse(url="/docs")
+
+
 class CalculationRequest(BaseModel):
     a: float
     b: float
+
+
+@app.middleware("http")
+async def add_lesson_header(request, call_next):
+    response = await call_next(request)
+    response.headers["X-FastAPI-Book-Chapter"] = "01"
+    return response
+
+
+@app.post("/api/calculator/add")
+async def add(request: CalculationRequest):
+    return {"result": request.a + request.b, "operation": "add"}
+
+
+@app.post("/api/calculator/subtract")
+async def subtract(request: CalculationRequest):
+    return {"result": request.a - request.b, "operation": "subtract"}
+
+
+@app.post("/api/calculator/multiply")
+async def multiply(request: CalculationRequest):
+    return {"result": request.a * request.b, "operation": "multiply"}
 
 
 @app.post("/api/calculator/divide")
@@ -106,11 +250,33 @@ async def divide(request: CalculationRequest):
     if request.b == 0:
         raise HTTPException(status_code=400, detail="Деление на ноль невозможно")
     return {"result": request.a / request.b, "operation": "divide"}
+
+
+@app.get("/api/headers/demo")
+async def headers_demo(
+    user_agent: Annotated[str | None, Header()] = None,
+    x_demo_client: Annotated[str | None, Header()] = None,
+):
+    return {
+        "user_agent": user_agent,
+        "x_demo_client": x_demo_client,
+        "note": "Response header X-FastAPI-Book-Chapter добавляет middleware.",
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("chapter01.app.main:app", host="127.0.0.1", port=8001, reload=True)
         ''',
         "code_notes": [
-            "<code>BaseModel</code> говорит FastAPI читать тело запроса как JSON.",
-            "Если поле отсутствует или тип не подходит, endpoint даже не будет вызван: FastAPI вернет validation error.",
-            "<code>HTTPException</code> используется для ожидаемых бизнес-ошибок, где вы сами выбираете status code.",
+            "Сам FastAPI-объект <code>app</code> не слушает порт. Порт слушает Uvicorn, а FastAPI описывает, что делать с запросами.",
+            "Строка <code>chapter01.app.main:app</code> читается так: импортируй модуль <code>chapter01.app.main</code> и возьми из него переменную <code>app</code>.",
+            "<code>BaseModel</code> говорит FastAPI читать тело запроса как JSON и проверять его до вызова endpoint-а.",
+            "<code>Header()</code> говорит FastAPI взять значение не из JSON body, а из HTTP headers.",
+            "Если поле отсутствует или тип не подходит, endpoint даже не будет вызван: FastAPI вернёт validation error.",
+            "<code>HTTPException</code> используется для ожидаемых ошибок клиента, где вы сами выбираете status code.",
+            "<code>--reload</code> нужен только для разработки: Uvicorn перезапускает приложение после изменения файлов.",
         ],
         "task": "Добавьте endpoint <code>POST /api/calculator/power</code>, который возводит <code>a</code> в степень <code>b</code>. Он должен возвращать тот же формат ответа: <code>result</code> и <code>operation</code>.",
         "answer": '''
@@ -121,6 +287,7 @@ async def power(request: CalculationRequest):
         "answer_notes": [
             "Новая операция использует уже существующую модель, потому что входной контракт такой же.",
             "Swagger UI автоматически покажет новый endpoint после перезапуска приложения.",
+            "Uvicorn-команда не меняется, потому что мы не создавали новый файл и не переименовывали переменную <code>app</code>.",
         ],
     },
     "chapter02": {
@@ -799,12 +966,52 @@ FULL_SOLUTIONS = {
             ],
         },
         {
-            "title": "Полный фрагмент калькулятора после изменения",
-            "body": "Ниже не одна функция, а весь логический блок калькулятора. Так проще увидеть, что новая операция использует тот же request model и тот же стиль ответа.",
+            "title": "Полный файл приложения после изменения",
+            "body": "Ниже не одна функция, а весь учебный <code>main.py</code> целиком. Новая операция <code>power</code> добавлена рядом с остальными endpoint-ами, а код запуска через Uvicorn остаётся внизу файла.",
             "code": '''
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app = FastAPI(
+    title="Глава 1: FastAPI basics",
+    description="Middleware, REST API, OpenAPI",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index(request: Request):
+    return templates.TemplateResponse(request, "index.html", {"request": request})
+
+
+@app.get("/swagger", include_in_schema=False)
+async def swagger():
+    return RedirectResponse(url="/docs")
+
+
 class CalculationRequest(BaseModel):
     a: float
     b: float
+
+
+@app.middleware("http")
+async def add_lesson_header(request, call_next):
+    response = await call_next(request)
+    response.headers["X-FastAPI-Book-Chapter"] = "01"
+    return response
 
 
 @app.post("/api/calculator/add")
@@ -829,9 +1036,27 @@ async def divide(request: CalculationRequest):
     return {"result": request.a / request.b, "operation": "divide"}
 
 
+@app.get("/api/headers/demo")
+async def headers_demo(
+    user_agent: Annotated[str | None, Header()] = None,
+    x_demo_client: Annotated[str | None, Header()] = None,
+):
+    return {
+        "user_agent": user_agent,
+        "x_demo_client": x_demo_client,
+        "note": "Response header X-FastAPI-Book-Chapter добавляет middleware.",
+    }
+
+
 @app.post("/api/calculator/power")
 async def power(request: CalculationRequest):
     return {"result": request.a ** request.b, "operation": "power"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("chapter01.app.main:app", host="127.0.0.1", port=8001, reload=True)
             ''',
         },
         {
@@ -1448,27 +1673,56 @@ def test_delete_group_removes_group_messages():
 BEGINNER_GUIDES = {
     "chapter01": {
         "plain": [
-            "Код в этой главе делает маленький калькулятор. Пользователь отправляет два числа, сервер считает результат и возвращает JSON.",
-            "Главная идея: FastAPI сам читает JSON, сам проверяет типы, сам вызывает нужную функцию и сам превращает словарь Python в HTTP-ответ.",
+            "Эта глава показывает не только endpoint-ы, а весь минимальный backend-сервис: файл приложения, объект <code>app</code>, сервер Uvicorn, REST-запросы, JSON и ответы.",
+            "Представьте обычный сайт: браузер просит HTML-страницу. REST API работает похоже, но вместо HTML чаще возвращает JSON, чтобы данные мог читать frontend, мобильное приложение или другой backend.",
+            "FastAPI не запускается сам по себе как отдельная программа. FastAPI описывает приложение, а Uvicorn поднимает сервер, слушает порт и передаёт запросы в FastAPI.",
+            "Главная цепочка этой главы: клиент отправил HTTP request → Uvicorn принял запрос → FastAPI нашёл endpoint → Pydantic проверил JSON → функция вернула словарь → клиент получил HTTP response.",
             "Если вы только начинаете Python: двоеточие <code>:</code> открывает блок кода, а отступы показывают, какие строки относятся к классу, функции или условию.",
         ],
         "line_by_line": [
-            ("<code>class CalculationRequest(BaseModel):</code>", "Создаём класс-описание входных данных. Это не обычный калькулятор, а схема: какие поля пользователь должен прислать в JSON."),
-            ("<code>BaseModel</code>", "Базовый класс Pydantic. Благодаря ему FastAPI понимает, что нужно проверить тело запроса."),
+            ("<code>from typing import Annotated</code>", "Импортируем способ добавить к типу Python подсказку FastAPI. Ниже он нужен для чтения headers."),
+            ("<code>from fastapi import FastAPI, Header, HTTPException, Request</code>", "Импортируем основные инструменты FastAPI: само приложение, чтение header-ов, ошибку HTTP и объект запроса для HTML-страницы."),
+            ("<code>from pydantic import BaseModel</code>", "Импортируем базовый класс Pydantic. Он нужен, чтобы описывать и проверять JSON от клиента."),
+            ("<code>BASE_DIR = Path(__file__).resolve().parent.parent</code>", "Находим папку главы. Это нужно для подключения шаблонов и static-файлов, чтобы страница урока открывалась в браузере."),
+            ("<code>app = FastAPI(...)</code>", "Создаём объект приложения. Именно его Uvicorn будет запускать и именно в нём FastAPI хранит маршруты."),
+            ("<code>docs_url=\"/docs\"</code>", "Говорим FastAPI, где показать Swagger UI. Swagger позволяет руками отправлять запросы без отдельной программы."),
+            ("<code>redoc_url=\"/redoc\"</code>", "Говорим FastAPI, где показать ReDoc. Это более спокойная страница документации для чтения схемы API."),
+            ("<code>app.mount(\"/static\", ...)</code>", "Подключаем CSS и JS для HTML-страницы урока. К REST endpoint-ам калькулятора это не относится, но нужно для сайта урока."),
+            ("<code>templates = Jinja2Templates(...)</code>", "Готовим шаблоны, чтобы endpoint <code>/</code> мог вернуть HTML-страницу, а не JSON."),
+            ("<code>@app.get(\"/\")</code>", "Регистрируем обычную HTML-страницу урока. Когда браузер открывает корень сайта, FastAPI вызывает функцию <code>index</code>."),
+            ("<code>@app.get(\"/swagger\")</code>", "Делаем короткий redirect на <code>/docs</code>, чтобы ссылка Swagger была привычной."),
+            ("<code>class CalculationRequest(BaseModel):</code>", "Создаём класс-описание входных данных. Это не вычисление, а схема: какие поля пользователь должен прислать в JSON."),
+            ("<code>BaseModel</code>", "Базовый класс Pydantic. Благодаря ему FastAPI понимает, что тело запроса нужно проверить."),
             ("<code>a: float</code>", "Поле <code>a</code> обязательно. <code>float</code> значит число с дробной частью или без неё: <code>10</code>, <code>10.5</code>, <code>0</code>."),
             ("<code>b: float</code>", "Второе обязательное число. Если пользователь пришлёт строку, которую нельзя превратить в число, FastAPI вернёт ошибку валидации."),
+            ("<code>@app.middleware(\"http\")</code>", "Регистрируем функцию, которая оборачивает каждый HTTP-запрос. Она срабатывает и для HTML-страницы, и для REST endpoint-ов."),
+            ("<code>response = await call_next(request)</code>", "Передаём запрос дальше в FastAPI. Без этой строки endpoint не выполнится, потому что middleware остановит цепочку."),
+            ("<code>response.headers[\"X-FastAPI-Book-Chapter\"] = \"01\"</code>", "Добавляем учебный HTTP header в ответ. Так видно, что middleware действительно прошёл после endpoint-а."),
+            ("<code>@app.post(\"/api/calculator/add\")</code>", "Связываем HTTP method <code>POST</code> и path <code>/api/calculator/add</code> с функцией <code>add</code>."),
             ("<code>@app.post(\"/api/calculator/divide\")</code>", "Декоратор. Он говорит FastAPI: когда придёт POST-запрос на этот адрес, вызови функцию ниже."),
             ("<code>async def divide(...):</code>", "Объявляем асинхронную функцию endpoint-а. <code>async</code> нужно, чтобы FastAPI мог эффективно обслуживать много запросов."),
             ("<code>request: CalculationRequest</code>", "Параметр функции. FastAPI создаст объект <code>CalculationRequest</code> из JSON-тела запроса и положит его в переменную <code>request</code>."),
             ("<code>if request.b == 0:</code>", "Обычная проверка Python: если второе число равно нулю, делить нельзя."),
             ("<code>raise HTTPException(...)</code>", "Останавливаем выполнение функции и возвращаем клиенту ошибку HTTP 400. Это лучше, чем дать Python упасть с делением на ноль."),
             ("<code>return {\"result\": ...}</code>", "Возвращаем словарь. FastAPI сам превратит его в JSON-ответ."),
+            ("<code>@app.get(\"/api/headers/demo\")</code>", "Учебный endpoint для просмотра request headers. Его удобно открыть в Swagger и попробовать разные значения."),
+            ("<code>user_agent: Annotated[str | None, Header()]</code>", "Просим FastAPI взять header <code>User-Agent</code>. Если header отсутствует, значение будет <code>None</code>."),
+            ("<code>x_demo_client: Annotated[str | None, Header()]</code>", "Просим FastAPI взять custom header <code>X-Demo-Client</code>. В параметре Python используется underscore, а в HTTP header - дефис."),
+            ("<code>\"note\": \"Response header ...\"</code>", "Напоминаем, что тело ответа и headers ответа - разные места. Это поле находится в JSON body, а <code>X-FastAPI-Book-Chapter</code> находится в response headers."),
+            ("<code>if __name__ == \"__main__\":</code>", "Этот блок запускается только если файл стартует напрямую командой <code>python chapter01/app/main.py</code>. При обычном импорте для тестов он не выполняется."),
+            ("<code>uvicorn.run(...)</code>", "Программный способ запустить тот же сервер, который обычно запускают командой <code>uvicorn ...</code>."),
         ],
         "mistakes": [
             "Забыть двоеточие после <code>class</code>, <code>def</code> или <code>if</code>.",
             "Сделать неправильный отступ: в Python отступы заменяют фигурные скобки.",
             "Написать <code>request[\"b\"]</code> вместо <code>request.b</code>. Pydantic-модель здесь используется как объект с полями.",
             "Не проверить деление на ноль и получить внутреннюю ошибку сервера вместо понятного ответа 400.",
+            "Думать, что <code>app = FastAPI()</code> само открывает порт. Порт открывает Uvicorn.",
+            "Писать <code>uvicorn app</code> вместо полного пути <code>uvicorn chapter01.app.main:app</code>. Uvicorn должен знать, откуда импортировать объект приложения.",
+            "Отправлять JSON без header <code>Content-Type: application/json</code> в ручных curl-запросах.",
+            "Искать request headers внутри JSON body. Headers и body приходят в разных частях HTTP-запроса.",
+            "Писать в Python параметр <code>x-demo-client</code>. В Python нельзя дефисы в имени переменной, поэтому пишем <code>x_demo_client</code>, а FastAPI сопоставляет это с header-ом <code>X-Demo-Client</code>.",
+            "Путать path <code>/api/calculator/add</code> и полный URL <code>http://localhost:8001/api/calculator/add</code>. Path - это только часть после домена и порта.",
         ],
     },
     "chapter02": {
@@ -1730,9 +1984,10 @@ BEGINNER_GUIDES = {
 
 CHAPTER_STUDY_NOTES = {
     "chapter01": [
-        "Эта глава показывает самый маленький полезный FastAPI-сервис: есть приложение, маршруты, входная модель, ручная бизнес-проверка и JSON-ответ.",
-        "Не пытайтесь сразу запомнить все декораторы. Сначала поймите цепочку: HTTP method плюс path выбирают функцию, Pydantic проверяет вход, функция возвращает словарь.",
-        "После этой главы вы должны спокойно открыть <code>chapter01/app/main.py</code>, найти endpoint и объяснить, какой JSON он ждёт и какой JSON возвращает.",
+        "Эта глава показывает самый маленький полезный FastAPI-сервис целиком: приложение, запуск через Uvicorn, маршруты, входную модель, middleware, ручную бизнес-проверку и JSON-ответ.",
+        "REST API - это договор между клиентом и сервером. Клиент говорит: method, path, headers, body. Сервер отвечает: status code, headers, body.",
+        "Не пытайтесь сразу запомнить все декораторы. Сначала поймите цепочку: Uvicorn принимает HTTP-запрос, FastAPI выбирает функцию по method и path, Pydantic проверяет JSON, функция возвращает словарь.",
+        "После этой главы вы должны уметь прочитать показанный на странице <code>main.py</code> сверху вниз и объяснить, зачем нужна каждая часть: импорты, <code>app</code>, Uvicorn, модель, middleware и endpoint-ы.",
     ],
     "chapter02": [
         "Эта глава нужна, чтобы endpoint-ы не превращались в склад создания объектов. Сервисы готовятся отдельно, а endpoint только просит их через <code>Depends</code>.",
@@ -1796,6 +2051,10 @@ REQUEST_EXAMPLES = {
     "chapter01": [
         ("Сложение через REST", 'curl -X POST http://localhost:8001/api/calculator/add \\\n  -H "Content-Type: application/json" \\\n  -d \'{"a": 10, "b": 5}\''),
         ("Ошибка деления на ноль", 'curl -X POST http://localhost:8001/api/calculator/divide \\\n  -H "Content-Type: application/json" \\\n  -d \'{"a": 10, "b": 0}\''),
+        ("Посмотреть status code и headers", 'curl -i -X POST http://localhost:8001/api/calculator/multiply \\\n  -H "Content-Type: application/json" \\\n  -d \'{"a": 3, "b": 4}\''),
+        ("Передать custom request header", 'curl -i http://localhost:8001/api/headers/demo \\\n  -H "User-Agent: FastAPI-Book-Student" \\\n  -H "X-Demo-Client: lesson-01"'),
+        ("Показать только response headers", 'curl -s -D - -o /dev/null http://localhost:8001/api/headers/demo \\\n  -H "X-Demo-Client: headers-only"'),
+        ("Увидеть ошибку валидации 422", 'curl -i -X POST http://localhost:8001/api/calculator/add \\\n  -H "Content-Type: application/json" \\\n  -d \'{"a": "hello", "b": 5}\''),
     ],
     "chapter02": [
         ("Проверка lifetime-ов", "curl http://localhost:8002/api/dependency-injection/lifetimes"),
@@ -1848,8 +2107,15 @@ REQUEST_EXAMPLES = {
 
 CONTROL_QUESTIONS = {
     "chapter01": [
+        "Что именно делает Uvicorn, если <code>app = FastAPI()</code> уже создан?",
+        "Из каких основных частей состоит HTTP request?",
+        "Из каких основных частей состоит HTTP response?",
+        "Чем request headers отличаются от response headers?",
+        "Зачем нужен header <code>Content-Type: application/json</code>?",
+        "Где в ответе искать <code>X-FastAPI-Book-Chapter</code>: в JSON body или в response headers?",
         "Какая строка связывает URL <code>/api/calculator/divide</code> с Python-функцией?",
         "Почему при неправильном JSON FastAPI не заходит внутрь endpoint-а?",
+        "Чем status code <code>400</code> отличается от <code>422</code> в этой главе?",
         "Чем <code>HTTPException(status_code=400)</code> лучше обычного падения Python?",
         "Где в браузере можно увидеть автоматически созданную схему запроса?",
     ],
@@ -2000,6 +2266,15 @@ TEST_FILES = {
 
 
 def lesson_plan(service: str, data: dict) -> list[str]:
+    if service == "chapter01":
+        return [
+            "На вкладке <strong>Разбор кода</strong> прочитайте полный учебный <code>main.py</code> сверху вниз: от импортов до запуска Uvicorn.",
+            "На вкладке <strong>Теория</strong> сопоставьте REST-термины с реальным запросом: method, path, headers, body, status code и response body.",
+            "Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.",
+            "Выполните curl-примеры с <code>-i</code>, чтобы увидеть не только JSON, но и HTTP status code с headers.",
+            "Вернитесь на вкладку <strong>Практика</strong>, выполните лёгкое задание, затем среднее. Сложное задание можно оставить как самостоятельную мини-работу.",
+            f"Запустите тесты этой темы: <code>{TEST_FILES.get(service, 'pytest')}</code>.",
+        ]
     return [
         "Откройте главный файл приложения и найдите код из вкладки <strong>Разбор кода</strong>. Не переписывайте его вслепую: сопоставьте каждую строку с объяснением.",
         "Откройте Swagger UI и выполните все endpoint-ы из блока проверки. У каждого запроса поменяйте входные данные минимум два раза.",
@@ -2038,9 +2313,24 @@ def run_commands(service: str, data: dict) -> list[tuple[str, str]]:
         ("Открыть страницу и Swagger", f"open http://localhost:{data['port']}\nopen http://localhost:{data['port']}/docs"),
         ("Запустить все проверки проекта", "./scripts/validate.sh"),
     ]
+    if service == "chapter01":
+        commands.insert(2, (
+            "Что означает команда Uvicorn",
+            "uvicorn chapter01.app.main:app --reload --port 8001\n\n"
+            "# uvicorn                 - запускает ASGI-сервер\n"
+            "# chapter01.app.main      - Python-модуль, где лежит приложение\n"
+            "# :app                    - переменная FastAPI() внутри этого модуля\n"
+            "# --reload                - перезапуск при изменении файлов\n"
+            "# --port 8001             - порт, на котором будет доступен сайт",
+        ))
+        commands.insert(3, (
+            "Запустить эту же главу как Python-файл",
+            "python chapter01/app/main.py",
+        ))
     test_file = TEST_FILES.get(service)
     if test_file:
-        commands.insert(3, ("Запустить тесты этой темы", f"pytest {test_file}"))
+        insert_at = 5 if service == "chapter01" else 3
+        commands.insert(insert_at, ("Запустить тесты этой темы", f"pytest {test_file}"))
     if service == "chapter06":
         commands.append(("Пример Alembic-команды", "cd chapter06\nalembic upgrade head"))
     if service.startswith("chapter0") or service in {"chapter10", "chapter11", "chapter12"}:
@@ -2158,6 +2448,8 @@ def render_lesson(service: str, data: dict) -> str:
                     </ul>
                 </article>
 
+                {render_extra_sections(data.get("theory_blocks", []))}
+
                 <article class="info-box">
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
@@ -2186,7 +2478,7 @@ def render_lesson(service: str, data: dict) -> str:
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>Ключевой фрагмент</h2>
+                    <h2>{data.get("code_title", "Ключевой фрагмент")}</h2>
                     {code_block(data["code"])}
                 </article>
 

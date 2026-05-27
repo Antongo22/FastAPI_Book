@@ -1,9 +1,11 @@
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,10 +29,6 @@ async def index(request: Request):
 @app.get("/swagger", include_in_schema=False)
 async def swagger():
     return RedirectResponse(url="/docs")
-
-
-from fastapi import HTTPException
-from pydantic import BaseModel
 
 
 class CalculationRequest(BaseModel):
@@ -65,3 +63,21 @@ async def divide(request: CalculationRequest):
     if request.b == 0:
         raise HTTPException(status_code=400, detail="Деление на ноль невозможно")
     return {"result": request.a / request.b, "operation": "divide"}
+
+
+@app.get("/api/headers/demo")
+async def headers_demo(
+    user_agent: Annotated[str | None, Header()] = None,
+    x_demo_client: Annotated[str | None, Header()] = None,
+):
+    return {
+        "user_agent": user_agent,
+        "x_demo_client": x_demo_client,
+        "note": "Response header X-FastAPI-Book-Chapter добавляет middleware.",
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("chapter01.app.main:app", host="127.0.0.1", port=8001, reload=True)

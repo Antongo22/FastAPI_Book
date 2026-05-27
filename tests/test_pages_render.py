@@ -61,6 +61,14 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         assert "Короткая версия решения" in response.text
 
 
+def test_chapter01_page_explains_headers():
+    response = TestClient(chapter01_app).get("/")
+    assert response.status_code == 200
+    assert "Headers подробнее" in response.text
+    assert "Content-Type" in response.text
+    assert "/api/headers/demo" in response.text
+
+
 def test_chapter_form_render():
     response = TestClient(chapter05_app).get("/contact")
     assert response.status_code == 200
