@@ -207,20 +207,30 @@ open http://localhost:8003/docs{% endraw %}</code></pre></article>
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте метод и endpoint для получения комментариев поста: <code>GET /api/http-client/post/{post_id}/comments</code>.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте метод и endpoint для получения комментариев поста: <code>GET /api/http-client/post/{post_id}/comments</code>.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте endpoint для получения пользователя JSONPlaceholder по id.</dd>
-<dt>Средний уровень</dt><dd>Соберите post и комментарии в один общий JSON-ответ.</dd>
-<dt>Сложный уровень</dt><dd>Обработайте недоступность внешнего API и верните понятный ответ 503.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Добавить метод <code>get_post_comments</code> в <code>ExternalApiService</code>.</li>
+<li>Добавить route <code>GET /api/http-client/post/{post_id}/comments</code>.</li>
+<li>Использовать тот же <code>map_http_error</code>, что и в остальных методах.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Возвращается список комментариев внешнего API.</span></article>
+<article class="endpoint-card"><strong><code>Service layer</code></strong><span>Endpoint вызывает метод <code>ExternalApiService.get_post_comments</code>.</span></article>
+<article class="endpoint-card"><strong><code>Ошибки</code></strong><span>HTTP-ошибки внешнего API проходят через общий <code>map_http_error</code>.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -238,7 +248,7 @@ open http://localhost:8003/docs{% endraw %}</code></pre></article>
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что добавляем</h2>
@@ -273,15 +283,6 @@ async def get_post_comments(
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Вернётся список комментариев к посту 1.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/http-client/post/999999/comments</code></strong><span>Внешний API может вернуть пустой список или ошибку, это зависит от сервиса.</span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}async def get_post_comments(self, post_id: int) -&gt; list[dict]:
-    async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
-        response = await client.get(f&quot;/posts/{post_id}/comments&quot;)
-        response.raise_for_status()
-        return response.json(){% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

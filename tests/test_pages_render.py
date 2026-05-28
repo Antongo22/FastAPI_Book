@@ -55,10 +55,16 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         assert "Если совсем по-простому" in response.text
         assert "Построчный разбор" in response.text
         assert "Типичные ошибки новичков" in response.text
-        assert "Практика по уровням" in response.text
+        assert ">Задача<" in response.text
+        assert "Порядок работы" in response.text
+        assert "Критерии готовности" in response.text
+        assert "Практика по уровням" not in response.text
         assert "Контрольные вопросы" in response.text
         assert "Полное решение задачи" in response.text
-        assert "Короткая версия решения" in response.text
+        assert "Единственная" not in response.text
+        assert "единственной" not in response.text
+        assert "Короткая версия решения" not in response.text
+        assert "Разбор решения" in response.text
 
 
 def test_chapter01_page_explains_headers():
@@ -67,6 +73,17 @@ def test_chapter01_page_explains_headers():
     assert "Headers подробнее" in response.text
     assert "Content-Type" in response.text
     assert "/api/headers/demo" in response.text
+
+
+def test_chapter01_answers_skip_template_setup_noise():
+    response = TestClient(chapter01_app).get("/")
+    assert response.status_code == 200
+    answers = response.text.split('<section id="answers"', maxsplit=1)[1]
+
+    assert "Полный API-код после изменения" in answers
+    assert "StaticFiles" not in answers
+    assert "Jinja2Templates" not in answers
+    assert "app.mount" not in answers
 
 
 def test_chapter_form_render():

@@ -215,20 +215,31 @@ refresh_token, refresh_expires = create_refresh_token(db, user){% endraw %}</cod
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте поле <code>revoked_at</code>, чтобы видеть, когда token был отозван.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте поле <code>revoked_at</code>, чтобы видеть, когда token был отозван.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте endpoint проверки активных refresh token-ов пользователя.</dd>
-<dt>Средний уровень</dt><dd>Сделайте logout со всеми refresh token-ами текущего пользователя.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте хранение user agent или device name для каждого refresh token-а.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Добавить поле <code>revoked_at</code> в модель <code>RefreshToken</code>.</li>
+<li>Заполнять <code>revoked_at</code> в <code>/refresh</code>, когда старый token отзывается.</li>
+<li>Заполнять <code>revoked_at</code> в <code>/revoke</code>.</li>
+<li>Для logout обновлять все активные token-ы пользователя.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>Refresh rotation</code></strong><span>Старый refresh token получает <code>revoked=True</code> и заполненный <code>revoked_at</code>.</span></article>
+<article class="endpoint-card"><strong><code>Revoke endpoint</code></strong><span>При ручном revoke также заполняется <code>revoked_at</code>.</span></article>
+<article class="endpoint-card"><strong><code>Logout</code></strong><span>Все активные refresh token-ы пользователя получают время отзыва.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -246,7 +257,7 @@ refresh_token, refresh_expires = create_refresh_token(db, user){% endraw %}</cod
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
@@ -286,15 +297,6 @@ if stored is not None and not stored.revoked:
     revoke_token(stored)
     db.commit(){% endraw %}</code></pre>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-
-stored.revoked = True
-stored.revoked_at = datetime.utcnow(){% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

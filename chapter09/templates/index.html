@@ -215,20 +215,31 @@ async def websocket_endpoint(websocket: WebSocket):
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте команду <code>/who</code>, которая отправляет текущему клиенту количество активных подключений.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте команду <code>/who</code>, которая отправляет текущему клиенту количество активных подключений.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте системное сообщение при подключении нового клиента.</dd>
-<dt>Средний уровень</dt><dd>Добавьте имя пользователя в query string и включайте его в broadcast.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте ограничение длины сообщения и отправку ошибки только отправителю.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Внутри цикла получить текст сообщения.</li>
+<li>Проверить, равно ли сообщение <code>/who</code>.</li>
+<li>Если да, отправить ответ только текущему WebSocket.</li>
+<li>Если нет, оставить обычный broadcast.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Сообщение <code>/who</code> возвращает текущему клиенту количество подключений.</span></article>
+<article class="endpoint-card"><strong><code>Нет broadcast</code></strong><span><code>/who</code> не рассылается всем клиентам как обычное сообщение.</span></article>
+<article class="endpoint-card"><strong><code>Обычный текст</code></strong><span>Обычное сообщение по-прежнему уходит в broadcast.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -246,7 +257,7 @@ async def websocket_endpoint(websocket: WebSocket):
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
@@ -284,17 +295,6 @@ async def websocket_endpoint(websocket: WebSocket):
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Отправьте <code>/who</code> и получите count только в текущем клиенте.</span></article>
 <article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Отправьте обычный текст и получите broadcast у всех клиентов.</span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}if message == &quot;/who&quot;:
-    await websocket.send_json({
-        &quot;event&quot;: &quot;connections&quot;,
-        &quot;count&quot;: len(manager.active_connections),
-    })
-else:
-    await manager.broadcast(...){% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

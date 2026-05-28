@@ -232,20 +232,32 @@ async def connect(sid, environ, auth):
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте claim <code>role</code> в token и запретите событие <code>admin_message</code> всем, кроме admin.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте claim <code>role</code> в token и запретите событие <code>admin_message</code> всем, кроме admin.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте событие <code>whoami</code>, которое возвращает username текущего <code>sid</code>.</dd>
-<dt>Средний уровень</dt><dd>Запретите отправку пустых сообщений через событие <code>authorized_message</code>.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте роли в JWT и событие <code>admin_message</code> только для admin.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Добавить claim <code>role</code> при создании access token-а.</li>
+<li>Вернуть из helper-а проверки token-а username и role.</li>
+<li>Сохранить данные пользователя в словаре <code>authorized_clients</code> при Socket.IO connect.</li>
+<li>Добавить событие <code>admin_message</code>.</li>
+<li>Если роль текущего <code>sid</code> не admin, отправить событие <code>forbidden</code> только этому клиенту.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Пользователь подключается с <code>auth: { access_token }</code>.</span></article>
+<article class="endpoint-card"><strong><code>admin_message</code></strong><span>Обычный пользователь получает событие <code>forbidden</code>.</span></article>
+<article class="endpoint-card"><strong><code>admin_message</code></strong><span>Admin-пользователь получает событие <code>admin_message</code>.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -263,7 +275,7 @@ async def connect(sid, environ, auth):
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
@@ -304,14 +316,6 @@ async def admin_message(sid, data):
 <article class="endpoint-card"><strong><code>Socket.IO admin_message</code></strong><span>Обычный пользователь получает событие <code>forbidden</code>.</span></article>
 <article class="endpoint-card"><strong><code>Socket.IO admin_message</code></strong><span>Admin получает событие <code>admin_message</code>.</span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-role = payload.get(&quot;role&quot;)
-if role != &quot;admin&quot;:
-    return{% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

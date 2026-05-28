@@ -212,20 +212,30 @@ async def submit_contact(
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте поле <code>subject</code> в форму и отобразите его после отправки.</dd>
-<dt>Средний уровень</dt><dd>Покажите ошибки валидации рядом с каждым полем, не очищая форму.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте список отправленных сообщений в памяти и страницу просмотра.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Добавить модель <code>RegistrationForm</code> в <code>chapter05/app/main.py</code>.</li>
+<li>Добавить <code>GET /register</code> и <code>POST /register</code>.</li>
+<li>Создать шаблон <code>chapter05/templates/register.html</code>.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /register</code></strong><span>Открывается HTML-форма регистрации.</span></article>
+<article class="endpoint-card"><strong><code>POST /register</code></strong><span>Пароль короче 6 символов возвращает страницу с ошибкой.</span></article>
+<article class="endpoint-card"><strong><code>POST /register</code></strong><span>Валидные данные показывают успешную регистрацию.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -243,7 +253,7 @@ async def submit_contact(
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что добавляем</h2>
@@ -330,21 +340,6 @@ async def submit_register(
     &lt;button type=&quot;submit&quot;&gt;Зарегистрироваться&lt;/button&gt;
 &lt;/form&gt;{% endraw %}</code></pre>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}class RegistrationForm(BaseModel):
-    username: str
-    email: str
-    password: str
-
-    @field_validator(&quot;password&quot;)
-    @classmethod
-    def password_is_long_enough(cls, value: str) -&gt; str:
-        if len(value) &lt; 6:
-            raise ValueError(&quot;Пароль должен быть не короче 6 символов&quot;)
-        return value{% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

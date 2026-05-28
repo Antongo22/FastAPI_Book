@@ -212,20 +212,31 @@ async def lifetimes(
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Создайте dependency <code>get_request_id()</code>, которая возвращает UUID запроса, и endpoint <code>/api/dependency-injection/request-id</code>.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Создайте dependency <code>get_request_id()</code>, которая возвращает UUID запроса, и endpoint <code>/api/dependency-injection/request-id</code>.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте dependency, которая возвращает текущий timestamp запроса.</dd>
-<dt>Средний уровень</dt><dd>Добавьте сервис счётчика запросов и покажите разницу между scoped и singleton поведением.</dd>
-<dt>Сложный уровень</dt><dd>Сделайте dependency, которая читает request header и передаёт correlation id в логирующий сервис.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>В файле <code>chapter02/app/main.py</code> уже импортирован <code>uuid4</code>.</li>
+<li>Создаём функцию <code>get_request_id</code> рядом с другими dependency.</li>
+<li>Создаём endpoint <code>GET /api/dependency-injection/request-id</code>.</li>
+<li>Передаём dependency в endpoint через <code>Depends</code>, а не вызываем вручную.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/dependency-injection/request-id</code></strong><span>Ответ содержит поле <code>request_id</code>.</span></article>
+<article class="endpoint-card"><strong><code>Повторный запрос</code></strong><span>Второй HTTP-запрос возвращает другой UUID.</span></article>
+<article class="endpoint-card"><strong><code>Depends</code></strong><span>Endpoint получает request id через dependency, а не вызывает её вручную внутри тела функции.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -243,7 +254,7 @@ async def lifetimes(
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что создаём</h2>
@@ -270,17 +281,6 @@ async def request_id(value: str = Depends(get_request_id)):
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/dependency-injection/request-id</code></strong><span>Ответ содержит поле <code>request_id</code>.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/dependency-injection/request-id</code></strong><span>Повторный запрос возвращает другой UUID.</span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}def get_request_id() -&gt; str:
-    return str(uuid4())
-
-
-@app.get(&quot;/api/dependency-injection/request-id&quot;)
-async def request_id(value: str = Depends(get_request_id)):
-    return {&quot;request_id&quot;: value}{% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

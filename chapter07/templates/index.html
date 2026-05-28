@@ -212,20 +212,30 @@ open http://localhost:8007/docs{% endraw %}</code></pre></article>
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте endpoint <code>GET /api/admin</code>, доступный только пользователю с ролью <code>admin</code>.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте endpoint <code>GET /api/admin</code>, доступный только пользователю с ролью <code>admin</code>.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте endpoint <code>/api/protected/profile</code>, который возвращает текущего пользователя.</dd>
-<dt>Средний уровень</dt><dd>Добавьте роль <code>admin</code> и protected endpoint только для admin.</dd>
-<dt>Сложный уровень</dt><dd>Сделайте смену пароля с проверкой старого пароля и перевыпуском token-а.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Добавить dependency <code>require_admin</code>.</li>
+<li>Добавить endpoint <code>GET /api/admin</code>.</li>
+<li>Для учебной проверки можно назначать role <code>admin</code> пользователю с username <code>admin</code>.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/admin</code></strong><span>Обычный пользователь получает HTTP 403.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/admin</code></strong><span>Admin-пользователь получает HTTP 200.</span></article>
+<article class="endpoint-card"><strong><code>Token</code></strong><span>Роль берётся из проверенного пользователя/token-а, а не из произвольного JSON клиента.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -243,7 +253,7 @@ open http://localhost:8007/docs{% endraw %}</code></pre></article>
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
@@ -282,19 +292,6 @@ token, expires = create_access_token(request.username, role){% endraw %}</code><
 <article class="endpoint-card"><strong><code>GET /api/admin</code></strong><span>С admin token вернётся 200.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/admin</code></strong><span>С token обычного пользователя вернётся 403.</span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}def require_admin(user: dict = Depends(get_current_user)) -&gt; dict:
-    if user[&quot;role&quot;] != &quot;admin&quot;:
-        raise HTTPException(status_code=403, detail=&quot;Admin role required&quot;)
-    return user
-
-
-@app.get(&quot;/api/admin&quot;)
-async def admin(user: dict = Depends(require_admin)):
-    return {&quot;message&quot;: &quot;admin area&quot;}{% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

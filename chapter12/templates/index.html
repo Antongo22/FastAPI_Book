@@ -223,20 +223,32 @@ async def chat_message(sid, data):
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте Socket.IO событие <code>delete_group</code>, которое вызывает service method удаления группы и отправляет событие <code>group_deleted</code>.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте удаление группы чата: метод <code>ChatService.delete_group</code>, endpoint <code>DELETE /api/chat/groups/{group_id}</code>, Socket.IO событие <code>delete_group</code> и тест, который доказывает, что сообщения удалённой группы больше не возвращаются.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте событие <code>typing</code>, которое отправляет в комнату имя печатающего пользователя.</dd>
-<dt>Средний уровень</dt><dd>Добавьте событие <code>delete_group</code> и покройте удаление тестом service layer.</dd>
-<dt>Сложный уровень</dt><dd>Проверьте сценарий: Socket.IO сохраняет сообщение, REST API возвращает это сообщение из БД.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
+<li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
+<li>Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.</li>
+<li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
+<li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>DELETE /api/chat/groups/{group_id}</code></strong><span>Удаление существующей группы возвращает HTTP 204.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/chat/messages</code></strong><span>После удаления группы сообщения этой группы больше не возвращаются.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO delete_group</code></strong><span>Событие вызывает тот же <code>ChatService.delete_group</code> и отправляет <code>group_deleted</code>.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -254,14 +266,15 @@ async def chat_message(sid, data):
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
-<p>Задача про удаление группы должна быть решена на всех уровнях: service method, endpoint и тест.</p>
+<p>Задача про удаление группы должна быть решена на всех уровнях: service method, REST endpoint, Socket.IO событие и тест.</p>
 <ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
 <li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
 <li>Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.</li>
+<li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
 <li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
 </article>
 <article class="info-box"><h2>2. Полный service method и endpoint</h2>
@@ -280,7 +293,16 @@ async def chat_message(sid, data):
 async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
     service.delete_group(group_id){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Полный тест</h2>
+<article class="info-box"><h2>3. Полное Socket.IO событие</h2>
+<pre><code>{% raw %}@sio.event
+async def delete_group(sid, data):
+    group_id = int(data[&quot;group_id&quot;])
+    with SessionLocal() as db:
+        service = ChatService(db)
+        service.delete_group(group_id)
+    await sio.emit(&quot;group_deleted&quot;, {&quot;group_id&quot;: group_id}){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>4. Полный тест</h2>
 <pre><code>{% raw %}def test_delete_group_removes_group_messages():
     _, override = make_sqlite_override(Base, get_db)
     app.dependency_overrides[get_db] = override
@@ -299,17 +321,6 @@ async def delete_group(group_id: int, service: ChatService = Depends(get_chat_se
     finally:
         app.dependency_overrides.clear(){% endraw %}</code></pre>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}@sio.event
-async def delete_group(sid, data):
-    group_id = int(data[&quot;group_id&quot;])
-    with SessionLocal() as db:
-        service = ChatService(db)
-        service.delete_group(group_id)
-    await sio.emit(&quot;group_deleted&quot;, {&quot;group_id&quot;: group_id}){% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

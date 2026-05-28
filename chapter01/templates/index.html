@@ -396,20 +396,31 @@ if __name__ == &quot;__main__&quot;:
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Добавьте endpoint <code>POST /api/calculator/power</code>, который возводит <code>a</code> в степень <code>b</code>. Он должен возвращать тот же формат ответа: <code>result</code> и <code>operation</code>.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Добавьте endpoint <code>POST /api/calculator/power</code>, который возводит <code>a</code> в степень <code>b</code>. Он должен возвращать тот же формат ответа: <code>result</code> и <code>operation</code>.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте endpoint <code>/api/calculator/modulo</code> и проверьте остаток от деления.</dd>
-<dt>Средний уровень</dt><dd>Сделайте проверку деления на ноль общей для <code>divide</code> и <code>modulo</code>.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте историю последних операций в памяти приложения и endpoint для её просмотра.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Открыть файл <code>chapter01/app/main.py</code>.</li>
+<li>Найти блок endpoint-ов калькулятора.</li>
+<li>Добавить новый endpoint рядом с остальными операциями.</li>
+<li>Проверить через Swagger, что endpoint появился в группе calculator.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 2, "b": 3}</code> -> <code>{"result": 8, "operation": "power"}</code>.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 5, "b": 0}</code> -> <code>{"result": 1, "operation": "power"}</code>.</span></article>
+<article class="endpoint-card"><strong><code>Swagger</code></strong><span>Новый endpoint виден в документации после перезапуска приложения.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -434,7 +445,7 @@ if __name__ == &quot;__main__&quot;:
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
@@ -444,19 +455,13 @@ if __name__ == &quot;__main__&quot;:
 <li>Добавить новый endpoint рядом с остальными операциями.</li>
 <li>Проверить через Swagger, что endpoint появился в группе calculator.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный файл приложения после изменения</h2>
-<p>Ниже не одна функция, а весь учебный <code>main.py</code> целиком. Новая операция <code>power</code> добавлена рядом с остальными endpoint-ами, а код запуска через Uvicorn остаётся внизу файла.</p>
-<pre><code>{% raw %}from pathlib import Path
-from typing import Annotated
+<article class="info-box"><h2>2. Полный API-код после изменения</h2>
+<p>Ниже не одна функция, а полный учебный API-файл без HTML-шаблонов и static-файлов. Для задачи калькулятора они не нужны, поэтому в ответе оставляем только FastAPI app, модели, middleware, endpoint-ы и запуск через Uvicorn.</p>
+<pre><code>{% raw %}from typing import Annotated
 
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title=&quot;Глава 1: FastAPI basics&quot;,
@@ -465,18 +470,6 @@ app = FastAPI(
     docs_url=&quot;/docs&quot;,
     redoc_url=&quot;/redoc&quot;,
 )
-app.mount(&quot;/static&quot;, StaticFiles(directory=str(BASE_DIR / &quot;static&quot;)), name=&quot;static&quot;)
-templates = Jinja2Templates(directory=str(BASE_DIR / &quot;templates&quot;))
-
-
-@app.get(&quot;/&quot;, response_class=HTMLResponse, include_in_schema=False)
-async def index(request: Request):
-    return templates.TemplateResponse(request, &quot;index.html&quot;, {&quot;request&quot;: request})
-
-
-@app.get(&quot;/swagger&quot;, include_in_schema=False)
-async def swagger():
-    return RedirectResponse(url=&quot;/docs&quot;)
 
 
 class CalculationRequest(BaseModel):
@@ -540,13 +533,6 @@ if __name__ == &quot;__main__&quot;:
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 2, "b": 3}</code> → <code>{"result": 8, "operation": "power"}</code></span></article>
 <article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 5, "b": 0}</code> → <code>{"result": 1, "operation": "power"}</code></span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}@app.post(&quot;/api/calculator/power&quot;)
-async def power(request: CalculationRequest):
-    return {&quot;result&quot;: request.a ** request.b, &quot;operation&quot;: &quot;power&quot;}{% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

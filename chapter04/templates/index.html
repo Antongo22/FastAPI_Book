@@ -208,20 +208,30 @@ async def demo_error_handler(request, exc: DemoError):
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
+                
                 <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>Создайте исключение <code>NotReadyError</code> и handler, который возвращает HTTP 503 с сообщением <code>Сервис временно недоступен</code>.</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">Создайте исключение <code>NotReadyError</code> и handler, который возвращает HTTP 503 с сообщением <code>Сервис временно недоступен</code>.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        <dt>Лёгкий уровень</dt><dd>Добавьте новый custom exception для ситуации <code>Item not found</code>.</dd>
-<dt>Средний уровень</dt><dd>Сделайте единый формат ошибки с полями <code>error</code>, <code>path</code>, <code>status_code</code>.</dd>
-<dt>Сложный уровень</dt><dd>Добавьте request id в middleware и возвращайте его в каждом ошибочном ответе.</dd>
-                    </dl>
+                    <h2>Порядок работы</h2>
+                    <ul class="flow-list"><li>Создать класс <code>NotReadyError</code>.</li>
+<li>Зарегистрировать <code>@app.exception_handler(NotReadyError)</code>.</li>
+<li>Добавить endpoint, который бросает эту ошибку для проверки.</li></ul>
                 </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        <article class="endpoint-card"><strong><code>GET /api/error-demo/not-ready</code></strong><span>Возвращается HTTP 503.</span></article>
+<article class="endpoint-card"><strong><code>JSON ошибки</code></strong><span>Ответ содержит сообщение <code>Сервис временно недоступен</code> и path запроса.</span></article>
+<article class="endpoint-card"><strong><code>Остальные endpoint-ы</code></strong><span>Успешные endpoint-ы продолжают возвращать HTTP 200.</span></article>
+                    </div>
+                </article>
+
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -239,7 +249,7 @@ async def demo_error_handler(request, exc: DemoError):
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 <article class="info-box"><h2>1. Что создаём</h2>
@@ -272,17 +282,6 @@ async def not_ready():
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/error-demo/not-ready</code></strong><span>HTTP 503 и JSON с <code>error</code>.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/error-demo/success</code></strong><span>HTTP 200, чтобы убедиться, что приложение в целом работает.</span></article></div>
 </article>
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    <pre><code>{% raw %}class NotReadyError(Exception):
-    pass
-
-
-@app.exception_handler(NotReadyError)
-async def not_ready_handler(request, exc: NotReadyError):
-    return JSONResponse(status_code=503, content={&quot;error&quot;: &quot;Сервис временно недоступен&quot;}){% endraw %}</code></pre>
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>

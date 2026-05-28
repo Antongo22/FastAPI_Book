@@ -72,6 +72,51 @@ def render_extra_sections(sections: list[dict[str, object]]) -> str:
     return "\n".join(rendered)
 
 
+def task_check_cards(service: str) -> str:
+    criteria = TASK_CRITERIA.get(service)
+    if criteria:
+        return endpoint_cards(criteria)
+
+    checks: list[tuple[str, str]] = []
+    for section in FULL_SOLUTIONS[service]:
+        section_checks = section.get("checks")
+        if section_checks:
+            checks.extend(section_checks)  # type: ignore[arg-type]
+    if not checks:
+        checks = [
+            ("Код добавлен", "Изменения внесены в файлы, перечисленные в задаче."),
+            ("Ручная проверка", "Сценарий из полного ответа выполняется без ошибки."),
+            ("Тесты", "Проверки проекта проходят после изменения."),
+        ]
+    return endpoint_cards(checks)
+
+
+def render_single_task(service: str, data: dict) -> str:
+    first_solution = FULL_SOLUTIONS[service][0]
+    plan_items = first_solution.get("items", [])
+    plan_html = f'<ul class="flow-list">{list_items(plan_items)}</ul>' if plan_items else ""
+    return f"""
+                <article class="info-box">
+                    <h2>Задача</h2>
+                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <div class="callout">{data["task"]}</div>
+                </article>
+
+                <article class="info-box">
+                    <h2>Порядок работы</h2>
+                    {plan_html}
+                </article>
+
+                <article class="info-box">
+                    <h2>Критерии готовности</h2>
+                    <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
+                    <div class="endpoint-grid">
+                        {task_check_cards(service)}
+                    </div>
+                </article>
+"""
+
+
 def titled_code_blocks(items: list[tuple[str, str]]) -> str:
     return "\n".join(
         f'<article class="info-box command-box"><h2>{title}</h2>{code_block(code)}</article>'
@@ -935,7 +980,7 @@ async def chat_message(sid, data):
             "Для каждого Socket.IO события открывается короткая Session и закрывается после сохранения сообщения.",
             "REST API и Socket.IO смотрят на одну таблицу, поэтому сообщение, отправленное через событие, видно через <code>GET /api/chat/messages</code>.",
         ],
-        "task": "Добавьте Socket.IO событие <code>delete_group</code>, которое вызывает service method удаления группы и отправляет событие <code>group_deleted</code>.",
+        "task": "Добавьте удаление группы чата: метод <code>ChatService.delete_group</code>, endpoint <code>DELETE /api/chat/groups/{group_id}</code>, Socket.IO событие <code>delete_group</code> и тест, который доказывает, что сообщения удалённой группы больше не возвращаются.",
         "answer": '''
 @sio.event
 async def delete_group(sid, data):
@@ -966,20 +1011,14 @@ FULL_SOLUTIONS = {
             ],
         },
         {
-            "title": "Полный файл приложения после изменения",
-            "body": "Ниже не одна функция, а весь учебный <code>main.py</code> целиком. Новая операция <code>power</code> добавлена рядом с остальными endpoint-ами, а код запуска через Uvicorn остаётся внизу файла.",
+            "title": "Полный API-код после изменения",
+            "body": "Ниже не одна функция, а полный учебный API-файл без HTML-шаблонов и static-файлов. Для задачи калькулятора они не нужны, поэтому в ответе оставляем только FastAPI app, модели, middleware, endpoint-ы и запуск через Uvicorn.",
             "code": '''
-from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title="Глава 1: FastAPI basics",
@@ -988,18 +1027,6 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
-
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"request": request})
-
-
-@app.get("/swagger", include_in_schema=False)
-async def swagger():
-    return RedirectResponse(url="/docs")
 
 
 class CalculationRequest(BaseModel):
@@ -1617,11 +1644,12 @@ async def admin_message(sid, data):
     "chapter12": [
         {
             "title": "Что меняем",
-            "body": "Задача про удаление группы должна быть решена на всех уровнях: service method, endpoint и тест.",
+            "body": "Задача про удаление группы должна быть решена на всех уровнях: service method, REST endpoint, Socket.IO событие и тест.",
             "items": [
                 "Добавить метод <code>delete_group</code> в <code>ChatService</code>.",
                 "Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.",
                 "Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.",
+                "Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.",
                 "Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.",
             ],
         },
@@ -1642,6 +1670,18 @@ class ChatService:
 @app.delete("/api/chat/groups/{group_id}", status_code=204)
 async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
     service.delete_group(group_id)
+            ''',
+        },
+        {
+            "title": "Полное Socket.IO событие",
+            "code": '''
+@sio.event
+async def delete_group(sid, data):
+    group_id = int(data["group_id"])
+    with SessionLocal() as db:
+        service = ChatService(db)
+        service.delete_group(group_id)
+    await sio.emit("group_deleted", {"group_id": group_id})
             ''',
         },
         {
@@ -1666,6 +1706,70 @@ def test_delete_group_removes_group_messages():
         app.dependency_overrides.clear()
             ''',
         },
+    ],
+}
+
+
+TASK_CRITERIA = {
+    "chapter01": [
+        ("POST /api/calculator/power", 'Body: <code>{"a": 2, "b": 3}</code> -> <code>{"result": 8, "operation": "power"}</code>.'),
+        ("POST /api/calculator/power", 'Body: <code>{"a": 5, "b": 0}</code> -> <code>{"result": 1, "operation": "power"}</code>.'),
+        ("Swagger", "Новый endpoint виден в документации после перезапуска приложения."),
+    ],
+    "chapter02": [
+        ("GET /api/dependency-injection/request-id", "Ответ содержит поле <code>request_id</code>."),
+        ("Повторный запрос", "Второй HTTP-запрос возвращает другой UUID."),
+        ("Depends", "Endpoint получает request id через dependency, а не вызывает её вручную внутри тела функции."),
+    ],
+    "chapter03": [
+        ("GET /api/http-client/post/1/comments", "Возвращается список комментариев внешнего API."),
+        ("Service layer", "Endpoint вызывает метод <code>ExternalApiService.get_post_comments</code>."),
+        ("Ошибки", "HTTP-ошибки внешнего API проходят через общий <code>map_http_error</code>."),
+    ],
+    "chapter04": [
+        ("GET /api/error-demo/not-ready", "Возвращается HTTP 503."),
+        ("JSON ошибки", "Ответ содержит сообщение <code>Сервис временно недоступен</code> и path запроса."),
+        ("Остальные endpoint-ы", "Успешные endpoint-ы продолжают возвращать HTTP 200."),
+    ],
+    "chapter05": [
+        ("GET /register", "Открывается HTML-форма регистрации."),
+        ("POST /register", "Пароль короче 6 символов возвращает страницу с ошибкой."),
+        ("POST /register", "Валидные данные показывают успешную регистрацию."),
+    ],
+    "chapter06": [
+        ("POST /api/products", "Можно создать продукт с полем <code>category</code>."),
+        ("GET /api/products", "Ответ возвращает <code>category</code> у каждого продукта."),
+        ("Alembic", "Миграция добавляет колонку <code>category</code> и умеет откатываться."),
+    ],
+    "chapter07": [
+        ("GET /api/admin", "Обычный пользователь получает HTTP 403."),
+        ("GET /api/admin", "Admin-пользователь получает HTTP 200."),
+        ("Token", "Роль берётся из проверенного пользователя/token-а, а не из произвольного JSON клиента."),
+    ],
+    "chapter08": [
+        ("Refresh rotation", "Старый refresh token получает <code>revoked=True</code> и заполненный <code>revoked_at</code>."),
+        ("Revoke endpoint", "При ручном revoke также заполняется <code>revoked_at</code>."),
+        ("Logout", "Все активные refresh token-ы пользователя получают время отзыва."),
+    ],
+    "chapter09": [
+        ("WS /ws", "Сообщение <code>/who</code> возвращает текущему клиенту количество подключений."),
+        ("Нет broadcast", "<code>/who</code> не рассылается всем клиентам как обычное сообщение."),
+        ("Обычный текст", "Обычное сообщение по-прежнему уходит в broadcast."),
+    ],
+    "chapter10": [
+        ("Socket.IO join_room", "Клиент отправляет <code>{ room: \"python\" }</code> и получает <code>joined_room</code>."),
+        ("Socket.IO leave_room", "Клиент отправляет <code>{ room: \"python\" }</code> и получает <code>left_room</code>."),
+        ("Room state", "После выхода sid удаляется из учебного словаря комнат."),
+    ],
+    "chapter11": [
+        ("Socket.IO connect", "Пользователь подключается с <code>auth: { access_token }</code>."),
+        ("admin_message", "Обычный пользователь получает событие <code>forbidden</code>."),
+        ("admin_message", "Admin-пользователь получает событие <code>admin_message</code>."),
+    ],
+    "chapter12": [
+        ("DELETE /api/chat/groups/{group_id}", "Удаление существующей группы возвращает HTTP 204."),
+        ("GET /api/chat/messages", "После удаления группы сообщения этой группы больше не возвращаются."),
+        ("Socket.IO delete_group", "Событие вызывает тот же <code>ChatService.delete_group</code> и отправляет <code>group_deleted</code>."),
     ],
 }
 
@@ -2517,18 +2621,7 @@ def render_lesson(service: str, data: dict) -> str:
 
         <section id="task" class="tab-panel">
             <div class="section-grid">
-                <article class="info-box">
-                    <h2>Главная практическая задача</h2>
-                    <p>{data["task"]}</p>
-                    <div class="callout">Сначала выполните задачу самостоятельно, затем откройте вкладку “Ответы” и сравните не только код, но и причину такого решения.</div>
-                </article>
-
-                <article class="info-box">
-                    <h2>Практика по уровням</h2>
-                    <dl class="line-breakdown">
-                        {definition_items(PRACTICE_LEVELS[service])}
-                    </dl>
-                </article>
+                {render_single_task(service, data)}
 
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
@@ -2543,15 +2636,10 @@ def render_lesson(service: str, data: dict) -> str:
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Полное решение задачи</h2>
-                    <p>Здесь решение показано как в большом учебнике: что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
+                    <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
                 {render_solution_sections(FULL_SOLUTIONS[service])}
-
-                <article class="info-box">
-                    <h2>Короткая версия решения</h2>
-                    {code_block(data["answer"])}
-                </article>
 
                 <article class="info-box">
                     <h2>Разбор решения</h2>
