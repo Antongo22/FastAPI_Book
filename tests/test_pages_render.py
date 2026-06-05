@@ -30,6 +30,25 @@ CHAPTER_APPS = [
     chapter12_app,
 ]
 
+TASK_ANSWER_MARKERS = [
+    ("chapter01", chapter01_app, ["power"]),
+    ("chapter02", chapter02_app, ["request-id", "get_request_id"]),
+    ("chapter03", chapter03_app, ["get_post_comments", "/comments"]),
+    ("chapter04", chapter04_app, ["NotReadyError", "not-ready"]),
+    ("chapter05", chapter05_app, ["RegistrationForm", "/register", "register.html"]),
+    ("chapter06", chapter06_app, ["category"]),
+    ("chapter07", chapter07_app, ["require_admin", "admin_area"]),
+    ("chapter08", chapter08_app, ["revoked_at"]),
+    ("chapter09", chapter09_app, ["/who"]),
+    ("chapter10", chapter10_app, ["leave_room", "left_room"]),
+    ("chapter11", chapter11_app, ["admin_message"]),
+    ("chapter12", chapter12_app, ["delete_group", "group_deleted"]),
+]
+
+
+def html_section(text: str, start_marker: str, end_marker: str) -> str:
+    return text.split(start_marker, maxsplit=1)[1].split(end_marker, maxsplit=1)[0]
+
 
 def test_gateway_page_renders_chapter_cards():
     response = TestClient(gateway_app).get("/")
@@ -55,6 +74,7 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         assert "Если совсем по-простому" in response.text
         assert "Построчный разбор" in response.text
         assert "Типичные ошибки новичков" in response.text
+        assert "Код урока, не ответ" in response.text
         assert ">Задача<" in response.text
         assert "Порядок работы" in response.text
         assert "Критерии готовности" in response.text
@@ -65,6 +85,16 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         assert "единственной" not in response.text
         assert "Короткая версия решения" not in response.text
         assert "Разбор решения" in response.text
+
+
+def test_code_tab_does_not_show_task_answers():
+    for service, app, markers in TASK_ANSWER_MARKERS:
+        response = TestClient(app).get("/")
+        assert response.status_code == 200
+        code_tab = html_section(response.text, '<section id="code"', '<section id="task"')
+
+        for marker in markers:
+            assert marker not in code_tab, f"{service} leaks task answer marker into code tab: {marker}"
 
 
 def test_chapter01_page_explains_headers():
@@ -78,12 +108,46 @@ def test_chapter01_page_explains_headers():
 def test_chapter01_answers_skip_template_setup_noise():
     response = TestClient(chapter01_app).get("/")
     assert response.status_code == 200
-    answers = response.text.split('<section id="answers"', maxsplit=1)[1]
+    answers = html_section(response.text, '<section id="answers"', "</body>")
 
     assert "Полный API-код после изменения" in answers
     assert "StaticFiles" not in answers
     assert "Jinja2Templates" not in answers
     assert "app.mount" not in answers
+
+
+def test_chapter01_code_tab_is_api_lesson_not_page_shell():
+    response = TestClient(chapter01_app).get("/")
+    assert response.status_code == 200
+    code_tab = html_section(response.text, '<section id="code"', '<section id="task"')
+
+    assert "Ключевые фрагменты API без решения задачи" in code_tab
+    assert "Полный учебный код приложения" not in code_tab
+    assert "StaticFiles" not in code_tab
+    assert "Jinja2Templates" not in code_tab
+    assert "BASE_DIR" not in code_tab
+    assert "app.mount" not in code_tab
+
+
+def test_socket_code_tabs_do_not_repeat_full_answer_blocks():
+    chapter09_response = TestClient(chapter09_app).get("/")
+    chapter10_response = TestClient(chapter10_app).get("/")
+
+    assert chapter09_response.status_code == 200
+    assert chapter10_response.status_code == 200
+
+    chapter09_code = html_section(chapter09_response.text, '<section id="code"', '<section id="task"')
+    chapter10_code = html_section(chapter10_response.text, '<section id="code"', '<section id="task"')
+
+    assert "Полный receive loop после изменения" not in chapter09_code
+    assert "async def websocket_endpoint" not in chapter09_code
+    assert "while True" not in chapter09_code
+    assert "receive_text" not in chapter09_code
+
+    assert "Полный блок Socket.IO событий для комнат" not in chapter10_code
+    assert "async def leave_room" not in chapter10_code
+    assert "async def join_room" not in chapter10_code
+    assert "async def chat_message" not in chapter10_code
 
 
 def test_chapter_form_render():

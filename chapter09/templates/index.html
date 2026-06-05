@@ -150,20 +150,32 @@ ws.onopen = () =&gt; ws.send(&quot;hello&quot;);{% endraw %}</code></pre></artic
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}@app.websocket(&quot;/ws&quot;)
-async def websocket_endpoint(websocket: WebSocket):
-    connection_id = await manager.connect(websocket)
-    try:
-        while True:
-            message = await websocket.receive_text()
-            await manager.broadcast({
-                &quot;event&quot;: &quot;message&quot;,
-                &quot;connection_id&quot;: connection_id,
-                &quot;message&quot;: message,
-            })
-    except WebSocketDisconnect:
-        manager.disconnect(connection_id){% endraw %}</code></pre>
+                    <h2>Код урока, не ответ</h2>
+                    <p>В этом разделе разбирается только код, который нужен для понимания темы главы. Код решения задачи из вкладки “Практика” здесь специально не показывается: он находится только во вкладке “Ответы”.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>ConnectionManager для WebSocket-чата</h2>
+                    <pre><code>{% raw %}class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket) -&gt; str:
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.active_connections[connection_id] = websocket
+        await websocket.send_json({
+            &quot;event&quot;: &quot;connected&quot;,
+            &quot;connection_id&quot;: connection_id,
+        })
+        return connection_id
+
+    def disconnect(self, connection_id: str) -&gt; None:
+        self.active_connections.pop(connection_id, None)
+
+    async def broadcast(self, payload: dict) -&gt; None:
+        for websocket in list(self.active_connections.values()):
+            await websocket.send_json(payload){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
@@ -176,15 +188,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>@app.websocket("/ws")</code></dt><dd>Регистрируем не HTTP endpoint, а WebSocket endpoint.</dd>
-<dt><code>websocket: WebSocket</code></dt><dd>Объект активного соединения. Через него принимаем и отправляем сообщения.</dd>
-<dt><code>await manager.connect(websocket)</code></dt><dd>Принимаем соединение и сохраняем его в manager-е.</dd>
-<dt><code>try:</code></dt><dd>Начинаем блок, где соединение считается открытым.</dd>
-<dt><code>while True:</code></dt><dd>Бесконечный цикл. Он работает, пока клиент не отключится.</dd>
-<dt><code>await websocket.receive_text()</code></dt><dd>Ждём следующее текстовое сообщение клиента.</dd>
-<dt><code>await manager.broadcast(...)</code></dt><dd>Рассылаем сообщение всем подключённым клиентам.</dd>
-<dt><code>except WebSocketDisconnect:</code></dt><dd>Если клиент закрыл вкладку или соединение оборвалось, попадаем сюда.</dd>
-<dt><code>manager.disconnect(connection_id)</code></dt><dd>Удаляем клиента из списка активных подключений.</dd>
+                        <dt><code>class ConnectionManager:</code></dt><dd>Создаём отдельный объект, который отвечает только за список подключений и отправку сообщений.</dd>
+<dt><code>self.active_connections</code></dt><dd>Словарь активных клиентов: ключ - id подключения, значение - объект <code>WebSocket</code>.</dd>
+<dt><code>async def connect(...)</code></dt><dd>Метод подключения. Он принимает WebSocket, сохраняет его и возвращает id клиента.</dd>
+<dt><code>await websocket.accept()</code></dt><dd>Сервер явно принимает WebSocket-соединение. Без этого обмен сообщениями не начнётся.</dd>
+<dt><code>connection_id = str(uuid4())</code></dt><dd>Создаём случайный id, чтобы отличать одно подключение от другого.</dd>
+<dt><code>await websocket.send_json(...)</code></dt><dd>Отправляем новому клиенту первое служебное сообщение: соединение принято, вот твой id.</dd>
+<dt><code>def disconnect(...)</code></dt><dd>Удаляем клиента из словаря, когда соединение закрыто.</dd>
+<dt><code>async def broadcast(...)</code></dt><dd>Проходим по всем активным клиентам и отправляем каждому одинаковый payload.</dd>
+<dt><code>list(self.active_connections.values())</code></dt><dd>Берём копию списка подключений, чтобы обход не ломался, если словарь изменится во время рассылки.</dd>
                     </dl>
                 </article>
 

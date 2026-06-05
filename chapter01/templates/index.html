@@ -226,18 +226,17 @@ open http://localhost:8001/docs{% endraw %}</code></pre></article>
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>Полный учебный код приложения</h2>
-                    <pre><code>{% raw %}from pathlib import Path
-from typing import Annotated
+                    <h2>Код урока, не ответ</h2>
+                    <p>В этом разделе разбирается только код, который нужен для понимания темы главы. Код решения задачи из вкладки “Практика” здесь специально не показывается: он находится только во вкладке “Ответы”.</p>
+                </article>
 
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+                <article class="info-box">
+                    <h2>Ключевые фрагменты API без решения задачи</h2>
+                    <pre><code>{% raw %}from typing import Annotated
+
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title=&quot;Глава 1: FastAPI basics&quot;,
@@ -246,18 +245,6 @@ app = FastAPI(
     docs_url=&quot;/docs&quot;,
     redoc_url=&quot;/redoc&quot;,
 )
-app.mount(&quot;/static&quot;, StaticFiles(directory=str(BASE_DIR / &quot;static&quot;)), name=&quot;static&quot;)
-templates = Jinja2Templates(directory=str(BASE_DIR / &quot;templates&quot;))
-
-
-@app.get(&quot;/&quot;, response_class=HTMLResponse, include_in_schema=False)
-async def index(request: Request):
-    return templates.TemplateResponse(request, &quot;index.html&quot;, {&quot;request&quot;: request})
-
-
-@app.get(&quot;/swagger&quot;, include_in_schema=False)
-async def swagger():
-    return RedirectResponse(url=&quot;/docs&quot;)
 
 
 class CalculationRequest(BaseModel):
@@ -275,16 +262,6 @@ async def add_lesson_header(request, call_next):
 @app.post(&quot;/api/calculator/add&quot;)
 async def add(request: CalculationRequest):
     return {&quot;result&quot;: request.a + request.b, &quot;operation&quot;: &quot;add&quot;}
-
-
-@app.post(&quot;/api/calculator/subtract&quot;)
-async def subtract(request: CalculationRequest):
-    return {&quot;result&quot;: request.a - request.b, &quot;operation&quot;: &quot;subtract&quot;}
-
-
-@app.post(&quot;/api/calculator/multiply&quot;)
-async def multiply(request: CalculationRequest):
-    return {&quot;result&quot;: request.a * request.b, &quot;operation&quot;: &quot;multiply&quot;}
 
 
 @app.post(&quot;/api/calculator/divide&quot;)
@@ -325,16 +302,11 @@ if __name__ == &quot;__main__&quot;:
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
                         <dt><code>from typing import Annotated</code></dt><dd>Импортируем способ добавить к типу Python подсказку FastAPI. Ниже он нужен для чтения headers.</dd>
-<dt><code>from fastapi import FastAPI, Header, HTTPException, Request</code></dt><dd>Импортируем основные инструменты FastAPI: само приложение, чтение header-ов, ошибку HTTP и объект запроса для HTML-страницы.</dd>
+<dt><code>from fastapi import FastAPI, Header, HTTPException</code></dt><dd>Импортируем основные инструменты FastAPI: само приложение, чтение header-ов и ошибку HTTP.</dd>
 <dt><code>from pydantic import BaseModel</code></dt><dd>Импортируем базовый класс Pydantic. Он нужен, чтобы описывать и проверять JSON от клиента.</dd>
-<dt><code>BASE_DIR = Path(__file__).resolve().parent.parent</code></dt><dd>Находим папку главы. Это нужно для подключения шаблонов и static-файлов, чтобы страница урока открывалась в браузере.</dd>
 <dt><code>app = FastAPI(...)</code></dt><dd>Создаём объект приложения. Именно его Uvicorn будет запускать и именно в нём FastAPI хранит маршруты.</dd>
 <dt><code>docs_url="/docs"</code></dt><dd>Говорим FastAPI, где показать Swagger UI. Swagger позволяет руками отправлять запросы без отдельной программы.</dd>
 <dt><code>redoc_url="/redoc"</code></dt><dd>Говорим FastAPI, где показать ReDoc. Это более спокойная страница документации для чтения схемы API.</dd>
-<dt><code>app.mount("/static", ...)</code></dt><dd>Подключаем CSS и JS для HTML-страницы урока. К REST endpoint-ам калькулятора это не относится, но нужно для сайта урока.</dd>
-<dt><code>templates = Jinja2Templates(...)</code></dt><dd>Готовим шаблоны, чтобы endpoint <code>/</code> мог вернуть HTML-страницу, а не JSON.</dd>
-<dt><code>@app.get("/")</code></dt><dd>Регистрируем обычную HTML-страницу урока. Когда браузер открывает корень сайта, FastAPI вызывает функцию <code>index</code>.</dd>
-<dt><code>@app.get("/swagger")</code></dt><dd>Делаем короткий redirect на <code>/docs</code>, чтобы ссылка Swagger была привычной.</dd>
 <dt><code>class CalculationRequest(BaseModel):</code></dt><dd>Создаём класс-описание входных данных. Это не вычисление, а схема: какие поля пользователь должен прислать в JSON.</dd>
 <dt><code>BaseModel</code></dt><dd>Базовый класс Pydantic. Благодаря ему FastAPI понимает, что тело запроса нужно проверить.</dd>
 <dt><code>a: float</code></dt><dd>Поле <code>a</code> обязательно. <code>float</code> значит число с дробной частью или без неё: <code>10</code>, <code>10.5</code>, <code>0</code>.</dd>
@@ -365,6 +337,8 @@ if __name__ == &quot;__main__&quot;:
 <li>Строка <code>chapter01.app.main:app</code> читается так: импортируй модуль <code>chapter01.app.main</code> и возьми из него переменную <code>app</code>.</li>
 <li><code>BaseModel</code> говорит FastAPI читать тело запроса как JSON и проверять его до вызова endpoint-а.</li>
 <li><code>Header()</code> говорит FastAPI взять значение не из JSON body, а из HTTP headers.</li>
+<li>HTML-страница урока в реальном файле использует шаблоны и static-файлы, но в разборе они не показаны, потому что к REST API калькулятора не относятся.</li>
+<li>Здесь показаны не все операции калькулятора, а повторяющийся принцип. Полный ответ к задаче находится только во вкладке <strong>Ответы</strong>.</li>
 <li>Если поле отсутствует или тип не подходит, endpoint даже не будет вызван: FastAPI вернёт validation error.</li>
 <li><code>HTTPException</code> используется для ожидаемых ошибок клиента, где вы сами выбираете status code.</li>
 <li><code>--reload</code> нужен только для разработки: Uvicorn перезапускает приложение после изменения файлов.</li>

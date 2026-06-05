@@ -158,28 +158,50 @@ socket.emit(&quot;chat_message&quot;, { room: &quot;python&quot;, message: &quot
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}@sio.event
-async def join_room(sid, data):
-    room = data.get(&quot;room&quot;, &quot;general&quot;)
-    await sio.enter_room(sid, room)
-    socketio_rooms[room].add(sid)
-    await sio.emit(&quot;joined_room&quot;, {&quot;room&quot;: room}, to=sid)
+                    <h2>Код урока, не ответ</h2>
+                    <p>В этом разделе разбирается только код, который нужен для понимания темы главы. Код решения задачи из вкладки “Практика” здесь специально не показывается: он находится только во вкладке “Ответы”.</p>
+                </article>
+
+                <article class="info-box">
+                    <h2>Базовые Socket.IO события урока</h2>
+                    <pre><code>{% raw %}sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+fastapi_app = FastAPI(title=&quot;Глава 10: Socket.IO chat&quot;)
+app = socketio.ASGIApp(
+    sio,
+    other_asgi_app=fastapi_app,
+    socketio_path=&quot;socket.io&quot;,
+)
+
+socketio_clients: dict[str, str] = {}
+
+@sio.event
+async def connect(sid, environ, auth):
+    socketio_clients[sid] = &quot;anonymous&quot;
+    await sio.emit(&quot;connected&quot;, {&quot;sid&quot;: sid}, to=sid)
 
 
 @sio.event
-async def chat_message(sid, data):
-    room = data.get(&quot;room&quot;)
+async def set_name(sid, data):
+    username = data.get(&quot;username&quot;) or &quot;anonymous&quot;
+    socketio_clients[sid] = username
+    await sio.emit(&quot;name_set&quot;, {&quot;username&quot;: username}, to=sid)
+
+
+@sio.event
+async def direct_message(sid, data):
+    target_sid = data.get(&quot;sid&quot;)
     payload = {
-        &quot;event&quot;: &quot;chat_message&quot;,
+        &quot;event&quot;: &quot;direct_message&quot;,
         &quot;from&quot;: socketio_clients.get(sid, &quot;anonymous&quot;),
         &quot;message&quot;: data.get(&quot;message&quot;, &quot;&quot;),
-        &quot;room&quot;: room,
     }
-    if room:
-        await sio.emit(&quot;chat_message&quot;, payload, room=room)
-    else:
-        await sio.emit(&quot;chat_message&quot;, payload){% endraw %}</code></pre>
+    if target_sid:
+        await sio.emit(&quot;direct_message&quot;, payload, to=target_sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
@@ -193,13 +215,19 @@ async def chat_message(sid, data):
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
                         <dt><code>sio = socketio.AsyncServer(...)</code></dt><dd>Создаём Socket.IO server, который умеет принимать асинхронные события.</dd>
+<dt><code>fastapi_app = FastAPI(...)</code></dt><dd>Создаём обычное FastAPI-приложение для HTTP endpoint-ов главы.</dd>
+<dt><code>socketio.ASGIApp(...)</code></dt><dd>Объединяем Socket.IO server и FastAPI-приложение в одно ASGI-приложение.</dd>
+<dt><code>socketio_path="socket.io"</code></dt><dd>Указываем путь Socket.IO внутри ASGI-приложения. В браузере этот путь обычно выглядит как <code>/socket.io</code>.</dd>
 <dt><code>@sio.event</code></dt><dd>Декоратор регистрирует функцию как обработчик события. Имя функции становится именем события.</dd>
-<dt><code>async def join_room(sid, data)</code></dt><dd>Когда клиент отправляет событие <code>join_room</code>, Socket.IO вызывает эту функцию.</dd>
+<dt><code>async def connect(sid, environ, auth)</code></dt><dd>Срабатывает при новом подключении клиента.</dd>
 <dt><code>sid</code></dt><dd>Уникальный id подключения. Его выдаёт Socket.IO server.</dd>
 <dt><code>data</code></dt><dd>Payload события. Обычно это обычный словарь с данными от клиента.</dd>
-<dt><code>await sio.enter_room(sid, room)</code></dt><dd>Добавляем текущее подключение в комнату.</dd>
-<dt><code>await sio.emit(..., to=sid)</code></dt><dd>Отправляем событие только одному клиенту.</dd>
-<dt><code>await sio.emit(..., room=room)</code></dt><dd>Отправляем событие всем клиентам выбранной комнаты.</dd>
+<dt><code>socketio_clients[sid] = "anonymous"</code></dt><dd>Сохраняем подключение с временным именем, пока пользователь не отправит своё имя.</dd>
+<dt><code>async def set_name(...)</code></dt><dd>Обрабатываем событие, которое меняет имя пользователя в учебном словаре.</dd>
+<dt><code>async def direct_message(...)</code></dt><dd>Обрабатываем событие личного сообщения.</dd>
+<dt><code>target_sid = data.get("sid")</code></dt><dd>Берём id клиента, которому нужно отправить личное сообщение.</dd>
+<dt><code>await sio.emit(..., to=target_sid)</code></dt><dd>Отправляем событие только выбранному клиенту.</dd>
+<dt><code>async def disconnect(sid)</code></dt><dd>Срабатывает при отключении клиента и очищает учебное состояние.</dd>
                     </dl>
                 </article>
 

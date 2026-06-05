@@ -228,19 +228,13 @@ LESSONS = {
             ("POST /api/calculator/divide", "Деление с ручной проверкой деления на ноль."),
             ("GET /api/headers/demo", "Показывает, как FastAPI читает request headers и как middleware добавляет response header."),
         ],
-        "code_title": "Полный учебный код приложения",
+        "code_title": "Ключевые фрагменты API без решения задачи",
         "code": '''
-from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title="Глава 1: FastAPI basics",
@@ -249,18 +243,6 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
-
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"request": request})
-
-
-@app.get("/swagger", include_in_schema=False)
-async def swagger():
-    return RedirectResponse(url="/docs")
 
 
 class CalculationRequest(BaseModel):
@@ -278,16 +260,6 @@ async def add_lesson_header(request, call_next):
 @app.post("/api/calculator/add")
 async def add(request: CalculationRequest):
     return {"result": request.a + request.b, "operation": "add"}
-
-
-@app.post("/api/calculator/subtract")
-async def subtract(request: CalculationRequest):
-    return {"result": request.a - request.b, "operation": "subtract"}
-
-
-@app.post("/api/calculator/multiply")
-async def multiply(request: CalculationRequest):
-    return {"result": request.a * request.b, "operation": "multiply"}
 
 
 @app.post("/api/calculator/divide")
@@ -319,6 +291,8 @@ if __name__ == "__main__":
             "Строка <code>chapter01.app.main:app</code> читается так: импортируй модуль <code>chapter01.app.main</code> и возьми из него переменную <code>app</code>.",
             "<code>BaseModel</code> говорит FastAPI читать тело запроса как JSON и проверять его до вызова endpoint-а.",
             "<code>Header()</code> говорит FastAPI взять значение не из JSON body, а из HTTP headers.",
+            "HTML-страница урока в реальном файле использует шаблоны и static-файлы, но в разборе они не показаны, потому что к REST API калькулятора не относятся.",
+            "Здесь показаны не все операции калькулятора, а повторяющийся принцип. Полный ответ к задаче находится только во вкладке <strong>Ответы</strong>.",
             "Если поле отсутствует или тип не подходит, endpoint даже не будет вызван: FastAPI вернёт validation error.",
             "<code>HTTPException</code> используется для ожидаемых ошибок клиента, где вы сами выбираете status code.",
             "<code>--reload</code> нужен только для разработки: Uvicorn перезапускает приложение после изменения файлов.",
@@ -768,20 +742,28 @@ stored.revoked_at = datetime.utcnow()
             ("GET /api/websocket/info", "Показывает endpoint и количество подключений."),
             ("WS /ws", "Простой broadcast-чат."),
         ],
+        "code_title": "ConnectionManager для WebSocket-чата",
         "code": '''
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    connection_id = await manager.connect(websocket)
-    try:
-        while True:
-            message = await websocket.receive_text()
-            await manager.broadcast({
-                "event": "message",
-                "connection_id": connection_id,
-                "message": message,
-            })
-    except WebSocketDisconnect:
-        manager.disconnect(connection_id)
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket) -> str:
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.active_connections[connection_id] = websocket
+        await websocket.send_json({
+            "event": "connected",
+            "connection_id": connection_id,
+        })
+        return connection_id
+
+    def disconnect(self, connection_id: str) -> None:
+        self.active_connections.pop(connection_id, None)
+
+    async def broadcast(self, payload: dict) -> None:
+        for websocket in list(self.active_connections.values()):
+            await websocket.send_json(payload)
         ''',
         "code_notes": [
             "WebSocket endpoint не возвращает HTTP response, он живёт пока открыто соединение.",
@@ -829,28 +811,46 @@ else:
             ("Socket.IO /socket.io", "Основной real-time endpoint для событий чата."),
             ("WS /ws/chat", "Низкоуровневый WebSocket endpoint для ручного JSON-протокола."),
         ],
+        "code_title": "Базовые Socket.IO события урока",
         "code": '''
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+fastapi_app = FastAPI(title="Глава 10: Socket.IO chat")
+app = socketio.ASGIApp(
+    sio,
+    other_asgi_app=fastapi_app,
+    socketio_path="socket.io",
+)
+
+socketio_clients: dict[str, str] = {}
+
 @sio.event
-async def join_room(sid, data):
-    room = data.get("room", "general")
-    await sio.enter_room(sid, room)
-    socketio_rooms[room].add(sid)
-    await sio.emit("joined_room", {"room": room}, to=sid)
+async def connect(sid, environ, auth):
+    socketio_clients[sid] = "anonymous"
+    await sio.emit("connected", {"sid": sid}, to=sid)
 
 
 @sio.event
-async def chat_message(sid, data):
-    room = data.get("room")
+async def set_name(sid, data):
+    username = data.get("username") or "anonymous"
+    socketio_clients[sid] = username
+    await sio.emit("name_set", {"username": username}, to=sid)
+
+
+@sio.event
+async def direct_message(sid, data):
+    target_sid = data.get("sid")
     payload = {
-        "event": "chat_message",
+        "event": "direct_message",
         "from": socketio_clients.get(sid, "anonymous"),
         "message": data.get("message", ""),
-        "room": room,
     }
-    if room:
-        await sio.emit("chat_message", payload, room=room)
-    else:
-        await sio.emit("chat_message", payload)
+    if target_sid:
+        await sio.emit("direct_message", payload, to=target_sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None)
         ''',
         "code_notes": [
             "Socket.IO работает событиями: клиент и сервер договариваются об именах событий и структуре payload.",
@@ -1785,16 +1785,11 @@ BEGINNER_GUIDES = {
         ],
         "line_by_line": [
             ("<code>from typing import Annotated</code>", "Импортируем способ добавить к типу Python подсказку FastAPI. Ниже он нужен для чтения headers."),
-            ("<code>from fastapi import FastAPI, Header, HTTPException, Request</code>", "Импортируем основные инструменты FastAPI: само приложение, чтение header-ов, ошибку HTTP и объект запроса для HTML-страницы."),
+            ("<code>from fastapi import FastAPI, Header, HTTPException</code>", "Импортируем основные инструменты FastAPI: само приложение, чтение header-ов и ошибку HTTP."),
             ("<code>from pydantic import BaseModel</code>", "Импортируем базовый класс Pydantic. Он нужен, чтобы описывать и проверять JSON от клиента."),
-            ("<code>BASE_DIR = Path(__file__).resolve().parent.parent</code>", "Находим папку главы. Это нужно для подключения шаблонов и static-файлов, чтобы страница урока открывалась в браузере."),
             ("<code>app = FastAPI(...)</code>", "Создаём объект приложения. Именно его Uvicorn будет запускать и именно в нём FastAPI хранит маршруты."),
             ("<code>docs_url=\"/docs\"</code>", "Говорим FastAPI, где показать Swagger UI. Swagger позволяет руками отправлять запросы без отдельной программы."),
             ("<code>redoc_url=\"/redoc\"</code>", "Говорим FastAPI, где показать ReDoc. Это более спокойная страница документации для чтения схемы API."),
-            ("<code>app.mount(\"/static\", ...)</code>", "Подключаем CSS и JS для HTML-страницы урока. К REST endpoint-ам калькулятора это не относится, но нужно для сайта урока."),
-            ("<code>templates = Jinja2Templates(...)</code>", "Готовим шаблоны, чтобы endpoint <code>/</code> мог вернуть HTML-страницу, а не JSON."),
-            ("<code>@app.get(\"/\")</code>", "Регистрируем обычную HTML-страницу урока. Когда браузер открывает корень сайта, FastAPI вызывает функцию <code>index</code>."),
-            ("<code>@app.get(\"/swagger\")</code>", "Делаем короткий redirect на <code>/docs</code>, чтобы ссылка Swagger была привычной."),
             ("<code>class CalculationRequest(BaseModel):</code>", "Создаём класс-описание входных данных. Это не вычисление, а схема: какие поля пользователь должен прислать в JSON."),
             ("<code>BaseModel</code>", "Базовый класс Pydantic. Благодаря ему FastAPI понимает, что тело запроса нужно проверить."),
             ("<code>a: float</code>", "Поле <code>a</code> обязательно. <code>float</code> значит число с дробной частью или без неё: <code>10</code>, <code>10.5</code>, <code>0</code>."),
@@ -2001,15 +1996,15 @@ BEGINNER_GUIDES = {
             "Для чата серверу нужно помнить, кто сейчас подключён.",
         ],
         "line_by_line": [
-            ("<code>@app.websocket(\"/ws\")</code>", "Регистрируем не HTTP endpoint, а WebSocket endpoint."),
-            ("<code>websocket: WebSocket</code>", "Объект активного соединения. Через него принимаем и отправляем сообщения."),
-            ("<code>await manager.connect(websocket)</code>", "Принимаем соединение и сохраняем его в manager-е."),
-            ("<code>try:</code>", "Начинаем блок, где соединение считается открытым."),
-            ("<code>while True:</code>", "Бесконечный цикл. Он работает, пока клиент не отключится."),
-            ("<code>await websocket.receive_text()</code>", "Ждём следующее текстовое сообщение клиента."),
-            ("<code>await manager.broadcast(...)</code>", "Рассылаем сообщение всем подключённым клиентам."),
-            ("<code>except WebSocketDisconnect:</code>", "Если клиент закрыл вкладку или соединение оборвалось, попадаем сюда."),
-            ("<code>manager.disconnect(connection_id)</code>", "Удаляем клиента из списка активных подключений."),
+            ("<code>class ConnectionManager:</code>", "Создаём отдельный объект, который отвечает только за список подключений и отправку сообщений."),
+            ("<code>self.active_connections</code>", "Словарь активных клиентов: ключ - id подключения, значение - объект <code>WebSocket</code>."),
+            ("<code>async def connect(...)</code>", "Метод подключения. Он принимает WebSocket, сохраняет его и возвращает id клиента."),
+            ("<code>await websocket.accept()</code>", "Сервер явно принимает WebSocket-соединение. Без этого обмен сообщениями не начнётся."),
+            ("<code>connection_id = str(uuid4())</code>", "Создаём случайный id, чтобы отличать одно подключение от другого."),
+            ("<code>await websocket.send_json(...)</code>", "Отправляем новому клиенту первое служебное сообщение: соединение принято, вот твой id."),
+            ("<code>def disconnect(...)</code>", "Удаляем клиента из словаря, когда соединение закрыто."),
+            ("<code>async def broadcast(...)</code>", "Проходим по всем активным клиентам и отправляем каждому одинаковый payload."),
+            ("<code>list(self.active_connections.values())</code>", "Берём копию списка подключений, чтобы обход не ломался, если словарь изменится во время рассылки."),
         ],
         "mistakes": [
             "Забыть <code>await websocket.accept()</code> внутри connect.",
@@ -2025,13 +2020,19 @@ BEGINNER_GUIDES = {
         ],
         "line_by_line": [
             ("<code>sio = socketio.AsyncServer(...)</code>", "Создаём Socket.IO server, который умеет принимать асинхронные события."),
+            ("<code>fastapi_app = FastAPI(...)</code>", "Создаём обычное FastAPI-приложение для HTTP endpoint-ов главы."),
+            ("<code>socketio.ASGIApp(...)</code>", "Объединяем Socket.IO server и FastAPI-приложение в одно ASGI-приложение."),
+            ("<code>socketio_path=\"socket.io\"</code>", "Указываем путь Socket.IO внутри ASGI-приложения. В браузере этот путь обычно выглядит как <code>/socket.io</code>."),
             ("<code>@sio.event</code>", "Декоратор регистрирует функцию как обработчик события. Имя функции становится именем события."),
-            ("<code>async def join_room(sid, data)</code>", "Когда клиент отправляет событие <code>join_room</code>, Socket.IO вызывает эту функцию."),
+            ("<code>async def connect(sid, environ, auth)</code>", "Срабатывает при новом подключении клиента."),
             ("<code>sid</code>", "Уникальный id подключения. Его выдаёт Socket.IO server."),
             ("<code>data</code>", "Payload события. Обычно это обычный словарь с данными от клиента."),
-            ("<code>await sio.enter_room(sid, room)</code>", "Добавляем текущее подключение в комнату."),
-            ("<code>await sio.emit(..., to=sid)</code>", "Отправляем событие только одному клиенту."),
-            ("<code>await sio.emit(..., room=room)</code>", "Отправляем событие всем клиентам выбранной комнаты."),
+            ("<code>socketio_clients[sid] = \"anonymous\"</code>", "Сохраняем подключение с временным именем, пока пользователь не отправит своё имя."),
+            ("<code>async def set_name(...)</code>", "Обрабатываем событие, которое меняет имя пользователя в учебном словаре."),
+            ("<code>async def direct_message(...)</code>", "Обрабатываем событие личного сообщения."),
+            ("<code>target_sid = data.get(\"sid\")</code>", "Берём id клиента, которому нужно отправить личное сообщение."),
+            ("<code>await sio.emit(..., to=target_sid)</code>", "Отправляем событие только выбранному клиенту."),
+            ("<code>async def disconnect(sid)</code>", "Срабатывает при отключении клиента и очищает учебное состояние."),
         ],
         "mistakes": [
             "Подключать Socket.IO клиент к raw WebSocket endpoint-у <code>/ws/chat</code>. Socket.IO использует свой протокол и path <code>/socket.io</code>.",
@@ -2581,6 +2582,11 @@ def render_lesson(service: str, data: dict) -> str:
 
         <section id="code" class="tab-panel">
             <div class="section-grid">
+                <article class="info-box">
+                    <h2>Код урока, не ответ</h2>
+                    <p>В этом разделе разбирается только код, который нужен для понимания темы главы. Код решения задачи из вкладки “Практика” здесь специально не показывается: он находится только во вкладке “Ответы”.</p>
+                </article>
+
                 <article class="info-box">
                     <h2>{data.get("code_title", "Ключевой фрагмент")}</h2>
                     {code_block(data["code"])}
