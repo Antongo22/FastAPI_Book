@@ -33,7 +33,7 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import Depends
+from fastapi import Depends, Query
 
 
 logger = logging.getLogger("chapter02")
@@ -45,7 +45,27 @@ class InstanceService:
     id: str
 
 
+@dataclass(frozen=True)
+class AppSettings:
+    app_name: str
+    environment: str
+
+
+@dataclass(frozen=True)
+class SingletonDiService:
+    id: str
+    name: str
+
+
+@dataclass
+class UserContext:
+    username: str
+    role: str
+
+
 singleton_service = InstanceService("singleton", str(uuid4()))
+app_settings = AppSettings(app_name="FastAPI Book Chapter 02", environment="development")
+singleton_di_service = SingletonDiService(id=str(uuid4()), name="created-once")
 
 
 def get_scoped_service() -> InstanceService:
@@ -58,6 +78,25 @@ def get_singleton_service() -> InstanceService:
 
 def get_transient_service() -> InstanceService:
     return InstanceService("transient", str(uuid4()))
+
+
+def get_settings() -> AppSettings:
+    return app_settings
+
+
+def get_singleton_di_service() -> SingletonDiService:
+    return singleton_di_service
+
+
+def get_logger() -> logging.Logger:
+    return logger
+
+
+def get_current_user(
+    username: str = Query("guest"),
+    role: str = Query("student"),
+) -> UserContext:
+    return UserContext(username=username, role=role)
 
 
 def shape(service: InstanceService) -> dict[str, str]:
@@ -92,8 +131,38 @@ async def lifetimes(
     }
 
 
+@app.get("/api/dependency-injection/singleton-demo")
+async def singleton_demo(service: SingletonDiService = Depends(get_singleton_di_service)):
+    return {
+        "id": service.id,
+        "name": service.name,
+        "explanation": "Один объект создан на уровне модуля, а dependency каждый раз возвращает ссылку на него.",
+    }
+
+
+@app.get("/api/dependency-injection/settings-demo")
+async def settings_demo(settings: AppSettings = Depends(get_settings)):
+    return {
+        "app_name": settings.app_name,
+        "environment": settings.environment,
+        "explanation": "Endpoint получил settings через Depends(get_settings).",
+    }
+
+
+@app.get("/api/dependency-injection/current-user")
+async def current_user(user: UserContext = Depends(get_current_user)):
+    return {
+        "username": user.username,
+        "role": user.role,
+        "explanation": "Dependency прочитала query-параметры и собрала UserContext.",
+    }
+
+
 @app.get("/api/dependency-injection/logger-demo")
-async def logger_demo(message: str = "Тестовое сообщение"):
-    logger.info("Получен запрос на логирование: %s", message)
-    logger.warning("Это предупреждение через logging")
+async def logger_demo(
+    message: str = "Тестовое сообщение",
+    app_logger: logging.Logger = Depends(get_logger),
+):
+    app_logger.info("Получен запрос на логирование: %s", message)
+    app_logger.warning("Это предупреждение через logging")
     return {"message": "Сообщения залогированы. Проверьте консоль.", "logged_message": message}

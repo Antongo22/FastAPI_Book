@@ -116,6 +116,22 @@ def test_chapter01_answers_skip_template_setup_noise():
     assert "app.mount" not in answers
 
 
+def test_chapter02_page_expands_dependency_injection_for_beginners():
+    response = TestClient(chapter02_app).get("/")
+    assert response.status_code == 200
+
+    assert "Зачем вообще нужен Dependency Injection" in response.text
+    assert "Без DI и с DI" in response.text
+    assert "Depends не вызывает функцию сразу" in response.text
+    assert "Как прописать singleton DI" in response.text
+    assert "Время жизни объектов простыми словами" in response.text
+    assert "/api/dependency-injection/singleton-demo" in response.text
+    assert "get_singleton_di_service" in response.text
+    assert "/api/dependency-injection/settings-demo" in response.text
+    assert "/api/dependency-injection/current-user" in response.text
+    assert "Query-параметры внутри dependency" in response.text
+
+
 def test_chapter01_code_tab_is_api_lesson_not_page_shell():
     response = TestClient(chapter01_app).get("/")
     assert response.status_code == 200

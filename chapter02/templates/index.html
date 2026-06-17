@@ -20,11 +20,11 @@
 
         <section class="hero">
             <h1>Глава 2: Dependency Injection</h1>
-            <p>Depends, dependency graph, кеширование зависимостей в рамках запроса и singleton-style сервисы.</p>
+            <p>Как FastAPI сам готовит сервисы для endpoint-а: Depends, dependency graph, request cache, query-параметры в dependency и singleton-style объекты.</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8002</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8002/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы умеете выносить подготовку сервисов из endpoint-ов и понимать, когда объект создаётся один раз, а когда на каждый вызов.</span>
+                <span><strong>Результат:</strong> После главы вы понимаете, зачем нужен Depends, почему dependency передают без скобок, как FastAPI вызывает зависимости и чем отличаются scoped, transient и singleton-style объекты.</span>
             </div>
         </section>
 
@@ -41,8 +41,11 @@
                 <article class="info-box">
                     <h2>Как пользоваться этой главой</h2>
                     <p>Эта глава нужна, чтобы endpoint-ы не превращались в склад создания объектов. Сервисы готовятся отдельно, а endpoint только просит их через <code>Depends</code>.</p>
-<p>Главная сложность для новичка - понять время жизни объекта. Один объект может создаваться на каждый запрос, на каждый параметр или жить всё время работы приложения.</p>
-<p>Читайте ответы этой главы особенно внимательно: там важно не просто получить JSON, а увидеть, какие id совпадают, а какие отличаются.</p>
+<p>Главная сложность для новичка - не синтаксис, а момент вызова. Вы пишете <code>Depends(get_service)</code> без скобок, потому что FastAPI должен вызвать функцию во время HTTP-запроса.</p>
+<p>Вторая сложность - время жизни объекта. Один объект может создаваться на каждый запрос, на каждый параметр или жить всё время работы приложения.</p>
+<p>Смотрите на id в endpoint-е <code>lifetimes</code>: совпавшие id показывают переиспользование объекта, разные id показывают создание нового объекта.</p>
+<p>Singleton DI в этой главе прописан отдельным рецептом: объект создаётся один раз на уровне модуля, provider возвращает этот объект, endpoint получает его через <code>Depends</code>.</p>
+<p>Endpoint <code>current-user</code> важен для понимания будущих глав: dependency может читать данные запроса и собирать объект, который endpoint потом использует как готовый контекст.</p>
                     <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
                 </article>
 
@@ -103,25 +106,121 @@ open http://localhost:8002/docs{% endraw %}</code></pre></article>
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
                     <ul class="flow-list">
-                        <li><strong>Dependency</strong> - функция, результат которой FastAPI передаёт в endpoint.</li>
-<li><strong>Depends</strong> - декларация зависимости прямо в параметрах функции.</li>
-<li><strong>Request cache</strong> - одинаковая dependency по умолчанию вызывается один раз за запрос.</li>
-<li><strong>use_cache=False</strong> - способ получить transient-поведение.</li>
-<li><strong>Singleton-style</strong> - обычный модульный объект Python, который живёт всё время процесса.</li>
+                        <li><strong>Dependency</strong> - обычная Python-функция, которая готовит значение для endpoint-а: сервис, настройки, логгер, пользователя, DB session или что-то ещё.</li>
+<li><strong>Depends</strong> - пометка в параметрах функции: “FastAPI, вызови вот эту dependency и положи результат сюда”.</li>
+<li><strong>Injection point</strong> - параметр endpoint-а, куда FastAPI подставляет результат dependency.</li>
+<li><strong>Dependency graph</strong> - цепочка зависимостей. Dependency может сама зависеть от других dependency.</li>
+<li><strong>Request cache</strong> - одинаковая dependency по умолчанию вызывается один раз за один HTTP-запрос и переиспользуется внутри этого запроса.</li>
+<li><strong>use_cache=False</strong> - отключает request cache для конкретной dependency и заставляет FastAPI вызвать её заново.</li>
+<li><strong>Singleton-style</strong> - обычный объект Python на уровне модуля. Он создаётся при импорте файла и живёт всё время процесса.</li>
+<li><strong>Singleton DI provider</strong> - dependency-функция, которая не создаёт новый объект, а возвращает заранее созданный singleton.</li>
+<li><strong>Query in dependency</strong> - dependency может принимать query-параметры так же, как endpoint.</li>
+<li><strong>Inversion of Control</strong> - endpoint не создаёт зависимость сам, а просит фреймворк подготовить её.</li>
                     </ul>
                 </article>
 
-                
+                <article class="info-box"><h2>Зачем вообще нужен Dependency Injection</h2>
+<p>Без DI endpoint быстро превращается в большую функцию: внутри создаётся логгер, читаются настройки, открывается база, проверяется пользователь, создаётся сервис и только потом выполняется бизнес-логика.</p>
+<p>С DI endpoint становится короче. Он объявляет, что ему нужно, а FastAPI готовит эти вещи до вызова endpoint-а.</p>
+<p>Это похоже на заказ в кафе: вы не идёте на кухню и не готовите ингредиенты сами. Вы говорите, что вам нужно, а кухня приносит готовое блюдо. В коде endpoint говорит: “мне нужен logger”, “мне нужен current user”, “мне нужны settings”.</p>
+<p>Главная польза для новичка: код легче читать. В endpoint-е видно входные данные и действие, а подготовка объектов лежит в отдельных маленьких функциях.</p>
+</article>
+<article class="info-box"><h2>Без DI и с DI</h2>
+<p>В маленьком примере разница кажется лишней. Но когда зависимостей становится больше, ручное создание объектов внутри endpoint-а начинает мешать.</p>
+<p>DI выносит подготовку объекта в отдельную функцию. Эту функцию можно переиспользовать в нескольких endpoint-ах и подменять в тестах.</p>
+<pre><code>{% raw %}# Плохо для роста проекта: endpoint сам решает, как создать сервис.
+@app.get(&quot;/without-di&quot;)
+async def without_di():
+    service = ReportService()
+    return service.build()
+
+
+# Лучше: endpoint просит готовый сервис.
+def get_report_service() -&gt; ReportService:
+    return ReportService()
+
+
+@app.get(&quot;/with-di&quot;)
+async def with_di(service: ReportService = Depends(get_report_service)):
+    return service.build(){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>Depends не вызывает функцию сразу</h2>
+<p>Запись <code>Depends(get_scoped_service)</code> выглядит непривычно, потому что после имени функции нет скобок.</p>
+<p>Это специально. Мы передаём FastAPI саму функцию, а не результат функции. FastAPI вызовет её позже, когда придёт HTTP-запрос.</p>
+<ul class="flow-list"><li><code>Depends(get_scoped_service)</code> - правильно: FastAPI сам вызовет dependency.</li>
+<li><code>Depends(get_scoped_service())</code> - почти всегда ошибка: функция вызовется сразу при загрузке приложения.</li>
+<li>Если dependency принимает параметры, FastAPI сам попробует взять их из query, path, headers, body или других dependency.</li></ul>
+</article>
+<article class="info-box"><h2>Как FastAPI вызывает зависимости</h2>
+<ul class="flow-list"><li>FastAPI получает HTTP-запрос.</li>
+<li>Смотрит, какой endpoint подходит по method и path.</li>
+<li>Читает параметры endpoint-а и видит <code>Depends(...)</code>.</li>
+<li>Строит dependency graph: какие функции нужно вызвать и в каком порядке.</li>
+<li>Вызывает dependency-функции, проверяет их параметры и кеширует результат, если кеш включён.</li>
+<li>Подставляет готовые объекты в параметры endpoint-а.</li>
+<li>Только после этого запускает тело endpoint-функции.</li></ul>
+</article>
+<article class="info-box"><h2>Время жизни объектов простыми словами</h2>
+<ul class="flow-list"><li><strong>Scoped в этой главе</strong>: dependency создаёт объект один раз за HTTP-запрос. Если один endpoint просит её два раза, FastAPI отдаёт один и тот же объект.</li>
+<li><strong>Transient в этой главе</strong>: dependency вызывается каждый раз заново через <code>use_cache=False</code>. Поэтому два параметра получают разные id.</li>
+<li><strong>Singleton-style в этой главе</strong>: объект создан заранее на уровне модуля. Все запросы получают ссылку на один и тот же объект.</li>
+<li>В FastAPI нет встроенных lifetime-ов в стиле больших DI-контейнеров. Здесь мы показываем поведение, которое чаще всего нужно новичку понимать на практике.</li></ul>
+</article>
+<article class="info-box"><h2>Как прописать singleton DI</h2>
+<p>В FastAPI singleton обычно не “регистрируют” отдельной командой. Его чаще делают обычным Python-кодом: создают объект один раз на уровне модуля, а dependency-функция возвращает этот объект.</p>
+<p>Главное правило: объект создаётся вне dependency. Если создать объект внутри dependency, это уже не singleton, потому что функция будет создавать новый объект при вызове.</p>
+<p>Такой подход хорошо подходит для неизменяемых настроек, клиентов, лёгких сервисов без опасного общего состояния. Если сервис хранит изменяемые данные, нужно понимать, что эти данные будут общими для всех запросов.</p>
+<pre><code>{% raw %}@dataclass(frozen=True)
+class SingletonDiService:
+    id: str
+    name: str
+
+
+# 1. Создаём объект один раз, когда Python импортирует файл.
+singleton_di_service = SingletonDiService(
+    id=str(uuid4()),
+    name=&quot;created-once&quot;,
+)
+
+
+# 2. Provider dependency возвращает уже готовый объект.
+def get_singleton_di_service() -&gt; SingletonDiService:
+    return singleton_di_service
+
+
+# 3. Endpoint просит singleton через Depends.
+@app.get(&quot;/api/dependency-injection/singleton-demo&quot;)
+async def singleton_demo(
+    service: SingletonDiService = Depends(get_singleton_di_service),
+):
+    return {&quot;id&quot;: service.id, &quot;name&quot;: service.name}{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>Что dependency может читать</h2>
+<p>Dependency - это не только создание класса. Она может принимать почти всё то же, что endpoint: query-параметры, path-параметры, headers, cookies, Request и результаты других dependency.</p>
+<ul class="flow-list"><li><code>get_current_user(username: str = Query("guest"))</code> читает query-параметр <code>?username=...</code>.</li>
+<li><code>get_logger()</code> возвращает общий logger, чтобы endpoint не создавал его вручную.</li>
+<li><code>get_settings()</code> возвращает настройки приложения.</li>
+<li>В следующих главах тот же принцип будет использоваться для базы данных, JWT и защищённых endpoint-ов.</li></ul>
+</article>
+<article class="info-box"><h2>Когда Depends не нужен</h2>
+<ul class="flow-list"><li>Если значение используется только в одной строке и не требует подготовки, обычный параметр endpoint-а проще.</li>
+<li>Если объект не нужно переиспользовать и не нужно подменять в тестах, отдельная dependency может быть лишней.</li>
+<li>Если логика стала большой, endpoint начал создавать много объектов или эту подготовку надо повторять в нескольких местах - это хороший кандидат на dependency.</li></ul>
+</article>
 
                 <article class="info-box">
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
                         <li>Клиент вызывает <code>GET /api/dependency-injection/lifetimes</code>.</li>
-<li>FastAPI строит дерево зависимостей по параметрам endpoint-а.</li>
-<li>Scoped dependency вызывается один раз и переиспользуется для двух параметров.</li>
-<li>Singleton возвращает один и тот же объект из модуля.</li>
-<li>Transient dependency помечена <code>use_cache=False</code>, поэтому создаётся дважды.</li>
-<li>Endpoint возвращает идентификаторы объектов, чтобы поведение было видно в Swagger.</li>
+<li>FastAPI находит endpoint <code>lifetimes</code> по method и path.</li>
+<li>Перед запуском функции FastAPI смотрит на параметры endpoint-а.</li>
+<li>В параметрах есть <code>Depends(get_scoped_service)</code>, <code>Depends(get_singleton_service)</code> и <code>Depends(get_transient_service, use_cache=False)</code>.</li>
+<li>FastAPI вызывает <code>get_scoped_service</code> один раз и кладёт один результат сразу в <code>scoped1</code> и <code>scoped2</code>.</li>
+<li>FastAPI вызывает <code>get_singleton_service</code>; функция возвращает заранее созданный объект <code>singleton_service</code>.</li>
+<li>FastAPI вызывает <code>get_transient_service</code> два раза, потому что для этих параметров стоит <code>use_cache=False</code>.</li>
+<li>Endpoint получает уже готовые объекты. Внутри endpoint-а мы не пишем <code>get_scoped_service()</code> вручную.</li>
+<li>Endpoint возвращает id объектов, чтобы в Swagger было видно, какие id совпали, а какие отличаются.</li>
+<li>На endpoint-е <code>current-user</code> dependency дополнительно читает query-параметры <code>username</code> и <code>role</code>.</li>
                     </ol>
                 </article>
 
@@ -129,7 +228,10 @@ open http://localhost:8002/docs{% endraw %}</code></pre></article>
                     <h2>Endpoint-ы для проверки</h2>
                     <div class="endpoint-grid">
                         <article class="endpoint-card"><strong><code>GET /api/dependency-injection/lifetimes</code></strong><span>Показывает scoped, singleton и transient идентификаторы.</span></article>
-<article class="endpoint-card"><strong><code>GET /api/dependency-injection/logger-demo</code></strong><span>Демонстрирует logging из endpoint-а.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/dependency-injection/singleton-demo</code></strong><span>Отдельный пример, как прописать singleton DI через объект на уровне модуля и provider-функцию.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/dependency-injection/settings-demo</code></strong><span>Показывает dependency, которая возвращает настройки приложения.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/dependency-injection/current-user</code></strong><span>Показывает dependency, которая читает query-параметры и собирает объект пользователя.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/dependency-injection/logger-demo</code></strong><span>Демонстрирует logging через dependency для логгера.</span></article>
                     </div>
                 </article>
 
@@ -140,7 +242,11 @@ open http://localhost:8002/docs{% endraw %}</code></pre></article>
 
                 <div class="section-grid">
                     <article class="info-box command-box"><h2>Проверка lifetime-ов</h2><pre><code>{% raw %}curl http://localhost:8002/api/dependency-injection/lifetimes{% endraw %}</code></pre></article>
-<article class="info-box command-box"><h2>Логирование через dependency</h2><pre><code>{% raw %}curl http://localhost:8002/api/dependency-injection/logging-demo{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверка singleton DI</h2><pre><code>{% raw %}curl http://localhost:8002/api/dependency-injection/singleton-demo
+curl http://localhost:8002/api/dependency-injection/singleton-demo{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Настройки через dependency</h2><pre><code>{% raw %}curl http://localhost:8002/api/dependency-injection/settings-demo{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Query-параметры внутри dependency</h2><pre><code>{% raw %}curl &#x27;http://localhost:8002/api/dependency-injection/current-user?username=anna&amp;role=admin&#x27;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Логирование через dependency</h2><pre><code>{% raw %}curl &#x27;http://localhost:8002/api/dependency-injection/logger-demo?message=hello&#x27;{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -153,49 +259,178 @@ open http://localhost:8002/docs{% endraw %}</code></pre></article>
                 </article>
 
                 <article class="info-box">
-                    <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}def get_scoped_service() -&gt; InstanceService:
+                    <h2>Основные DI-примеры без ответа задачи</h2>
+                    <pre><code>{% raw %}import logging
+from dataclasses import dataclass
+from uuid import uuid4
+
+from fastapi import Depends, Query
+
+
+logger = logging.getLogger(&quot;chapter02&quot;)
+
+
+@dataclass
+class InstanceService:
+    service_type: str
+    id: str
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    app_name: str
+    environment: str
+
+
+@dataclass(frozen=True)
+class SingletonDiService:
+    id: str
+    name: str
+
+
+@dataclass
+class UserContext:
+    username: str
+    role: str
+
+
+singleton_service = InstanceService(&quot;singleton&quot;, str(uuid4()))
+app_settings = AppSettings(app_name=&quot;FastAPI Book Chapter 02&quot;, environment=&quot;development&quot;)
+singleton_di_service = SingletonDiService(id=str(uuid4()), name=&quot;created-once&quot;)
+
+
+def get_scoped_service() -&gt; InstanceService:
     return InstanceService(&quot;scoped&quot;, str(uuid4()))
+
+
+def get_singleton_service() -&gt; InstanceService:
+    return singleton_service
+
+
+def get_transient_service() -&gt; InstanceService:
+    return InstanceService(&quot;transient&quot;, str(uuid4()))
+
+
+def get_settings() -&gt; AppSettings:
+    return app_settings
+
+
+def get_singleton_di_service() -&gt; SingletonDiService:
+    return singleton_di_service
+
+
+def get_logger() -&gt; logging.Logger:
+    return logger
+
+
+def get_current_user(
+    username: str = Query(&quot;guest&quot;),
+    role: str = Query(&quot;student&quot;),
+) -&gt; UserContext:
+    return UserContext(username=username, role=role)
 
 
 @app.get(&quot;/api/dependency-injection/lifetimes&quot;)
 async def lifetimes(
     scoped1: InstanceService = Depends(get_scoped_service),
     scoped2: InstanceService = Depends(get_scoped_service),
+    singleton1: InstanceService = Depends(get_singleton_service),
+    singleton2: InstanceService = Depends(get_singleton_service),
     transient1: InstanceService = Depends(get_transient_service, use_cache=False),
     transient2: InstanceService = Depends(get_transient_service, use_cache=False),
 ):
-    ...{% endraw %}</code></pre>
+    return {
+        &quot;scoped_same&quot;: scoped1.id == scoped2.id,
+        &quot;singleton_same&quot;: singleton1.id == singleton2.id,
+        &quot;transient_different&quot;: transient1.id != transient2.id,
+    }
+
+
+@app.get(&quot;/api/dependency-injection/singleton-demo&quot;)
+async def singleton_demo(service: SingletonDiService = Depends(get_singleton_di_service)):
+    return {&quot;id&quot;: service.id, &quot;name&quot;: service.name}
+
+
+@app.get(&quot;/api/dependency-injection/settings-demo&quot;)
+async def settings_demo(settings: AppSettings = Depends(get_settings)):
+    return {
+        &quot;app_name&quot;: settings.app_name,
+        &quot;environment&quot;: settings.environment,
+    }
+
+
+@app.get(&quot;/api/dependency-injection/current-user&quot;)
+async def current_user(user: UserContext = Depends(get_current_user)):
+    return {&quot;username&quot;: user.username, &quot;role&quot;: user.role}
+
+
+@app.get(&quot;/api/dependency-injection/logger-demo&quot;)
+async def logger_demo(
+    message: str = &quot;Тестовое сообщение&quot;,
+    app_logger: logging.Logger = Depends(get_logger),
+):
+    app_logger.info(&quot;Получен запрос на логирование: %s&quot;, message)
+    return {&quot;logged_message&quot;: message}{% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
-                    <p>Dependency Injection в FastAPI - это способ попросить фреймворк подготовить нужный объект за вас.</p>
-<p>Вместо того чтобы внутри endpoint-а вручную создавать сервис, вы пишете <code>Depends(...)</code>, а FastAPI вызывает нужную функцию сам.</p>
-<p>Для новичка это можно представить так: endpoint говорит 'мне нужен сервис', FastAPI приносит его перед запуском функции.</p>
+                    <p>Dependency Injection в FastAPI - это способ сказать: “мне для работы нужна вот эта штука, подготовь её за меня”.</p>
+<p>Endpoint не обязан сам создавать logger, settings, сервис, пользователя или подключение к базе. Он может попросить FastAPI сделать это через <code>Depends</code>.</p>
+<p>Самая важная мысль: dependency - обычная Python-функция. Магия только в том, что FastAPI вызывает её перед endpoint-ом и подставляет результат в параметр.</p>
+<p>Если видите <code>service: Service = Depends(get_service)</code>, читайте это так: “в переменную <code>service</code> положи результат функции <code>get_service</code>”.</p>
+<p>Скобки после <code>get_service</code> не ставятся, потому что функцию должен вызвать FastAPI во время запроса, а не Python при запуске файла.</p>
+<p>DI особенно полезен, когда одну и ту же подготовку надо использовать в нескольких endpoint-ах или подменить в тестах.</p>
                 </article>
 
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>def get_scoped_service()</code></dt><dd>Обычная функция Python. Её задача - создать и вернуть объект сервиса.</dd>
+                        <dt><code>import logging</code></dt><dd>Подключаем стандартный модуль логирования Python. Он нужен для примера с logger dependency.</dd>
+<dt><code>from dataclasses import dataclass</code></dt><dd>Импортируем удобный способ создавать простые классы-данные.</dd>
+<dt><code>from fastapi import Depends, Query</code></dt><dd>Берём <code>Depends</code> для DI и <code>Query</code> для чтения query-параметров внутри dependency.</dd>
+<dt><code>logger = logging.getLogger(...)</code></dt><dd>Создаём logger один раз на уровне модуля. Dependency потом будет возвращать этот объект.</dd>
+<dt><code>@dataclass</code></dt><dd>Просим Python автоматически сделать простой класс для хранения данных. Так не нужно вручную писать <code>__init__</code>.</dd>
+<dt><code>class InstanceService:</code></dt><dd>Учебный сервис с типом и id. По id удобно видеть, новый это объект или тот же самый.</dd>
+<dt><code>class AppSettings:</code></dt><dd>Учебные настройки приложения. Они показывают dependency, которая возвращает заранее созданный объект.</dd>
+<dt><code>class UserContext:</code></dt><dd>Учебный объект пользователя. В реальном проекте здесь могли бы быть id, email, роли и права.</dd>
+<dt><code>singleton_service = ...</code></dt><dd>Объект создаётся один раз при загрузке модуля. Потом dependency возвращает именно его.</dd>
+<dt><code>app_settings = ...</code></dt><dd>Настройки тоже создаются один раз. Это удобно, потому что они обычно не должны меняться во время запроса.</dd>
+<dt><code>def get_scoped_service()</code></dt><dd>Обычная функция Python. Её задача - создать и вернуть объект сервиса.</dd>
 <dt><code>-&gt; InstanceService</code></dt><dd>Подсказка типа. Она не создаёт объект сама, но помогает читать код и понимать, что функция возвращает.</dd>
 <dt><code>return InstanceService(...)</code></dt><dd>Создаём новый объект и сразу возвращаем его тому, кто вызвал функцию.</dd>
+<dt><code>def get_singleton_service()</code></dt><dd>Dependency не создаёт объект, а возвращает уже готовый <code>singleton_service</code>.</dd>
+<dt><code>def get_transient_service()</code></dt><dd>Создаёт новый объект каждый раз, когда FastAPI реально вызывает эту dependency.</dd>
+<dt><code>def get_settings()</code></dt><dd>Provider-функция для настроек. Endpoint не знает, где настройки созданы, он просто просит их через <code>Depends</code>.</dd>
+<dt><code>def get_logger()</code></dt><dd>Provider-функция для logger-а. Так endpoint не привязан к конкретному способу создания logger-а.</dd>
+<dt><code>Query("guest")</code></dt><dd>Говорит FastAPI взять значение из query string. Если параметра нет, использовать <code>guest</code>.</dd>
+<dt><code>get_current_user(...)</code></dt><dd>Dependency может сама принимать данные запроса и собрать из них удобный объект.</dd>
 <dt><code>@app.get(...)</code></dt><dd>Регистрируем GET endpoint. Браузер или Swagger может вызвать его обычным GET-запросом.</dd>
 <dt><code>async def lifetimes(...)</code></dt><dd>Endpoint принимает не только данные запроса, но и зависимости.</dd>
 <dt><code>Depends(get_scoped_service)</code></dt><dd>FastAPI вызовет <code>get_scoped_service</code> и подставит результат в параметр.</dd>
 <dt><code>scoped1</code> и <code>scoped2</code></dt><dd>Оба параметра используют одну dependency. FastAPI по умолчанию кеширует результат в рамках одного запроса.</dd>
+<dt><code>singleton1</code> и <code>singleton2</code></dt><dd>Оба параметра получают один и тот же объект, потому что dependency возвращает глобальный <code>singleton_service</code>.</dd>
 <dt><code>use_cache=False</code></dt><dd>Отключаем кеш. Поэтому transient-сервис создаётся заново для каждого параметра.</dd>
-<dt><code>shape(scoped1)</code></dt><dd>Вспомогательная функция превращает объект сервиса в простой словарь для JSON-ответа.</dd>
+<dt><code>scoped1.id == scoped2.id</code></dt><dd>Сравниваем id, чтобы увидеть request cache прямо в JSON-ответе.</dd>
+<dt><code>settings: AppSettings = Depends(get_settings)</code></dt><dd>Endpoint просит настройки. FastAPI вызывает <code>get_settings</code> и кладёт результат в <code>settings</code>.</dd>
+<dt><code>Depends(get_current_user)</code></dt><dd>FastAPI сначала вызовет <code>get_current_user</code>, а уже готовый объект положит в параметр <code>user</code>.</dd>
+<dt><code>app_logger: logging.Logger = Depends(get_logger)</code></dt><dd>Endpoint получает logger через DI и не создаёт его внутри функции.</dd>
+<dt><code>return {"username": ...}</code></dt><dd>Endpoint возвращает обычный JSON, но данные для него пришли через dependency.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
-                        <li>Одинаковый <code>Depends(get_scoped_service)</code> кешируется в рамках одного HTTP-запроса.</li>
+                        <li>Dependency - это обычная функция. В примере <code>get_scoped_service</code>, <code>get_singleton_service</code>, <code>get_transient_service</code> и <code>get_current_user</code> - обычные функции Python.</li>
+<li>Одинаковый <code>Depends(get_scoped_service)</code> кешируется в рамках одного HTTP-запроса, поэтому <code>scoped1</code> и <code>scoped2</code> получают один id.</li>
+<li><code>singleton_service</code> создан заранее на уровне модуля, поэтому все вызовы <code>get_singleton_service</code> возвращают один объект.</li>
+<li>Singleton DI записывается в три шага: создать объект вне dependency, написать provider, подключить provider через <code>Depends</code>.</li>
+<li>Если вызвать <code>/api/dependency-injection/singleton-demo</code> несколько раз, поле <code>id</code> останется тем же самым, пока приложение не перезапустится.</li>
 <li><code>use_cache=False</code> явно отключает кеш, поэтому transient получает разные id.</li>
-<li>В реальном проекте dependency часто возвращает репозиторий, DB session, настройки или текущего пользователя.</li>
+<li><code>get_current_user</code> показывает важный трюк: dependency может сама принимать query-параметры и собрать из них удобный объект.</li>
+<li>В реальном проекте dependency часто возвращает репозиторий, DB session, настройки, logger или текущего пользователя.</li>
+<li>Код практической задачи здесь специально не показан. Полное решение находится только во вкладке <strong>Ответы</strong>.</li>
                     </ul>
                 </article>
 
@@ -203,8 +438,13 @@ async def lifetimes(
                     <h2>Типичные ошибки новичков</h2>
                     <ul class="flow-list">
                         <li>Вызвать dependency самому: <code>Depends(get_service())</code>. Нужно передавать функцию без скобок: <code>Depends(get_service)</code>.</li>
+<li>Думать, что <code>Depends</code> нужен только для классов. Dependency может вернуть строку, словарь, dataclass, logger, настройки или любой Python-объект.</li>
 <li>Ожидать, что FastAPI создаст новый объект при каждом параметре, хотя кеширование включено.</li>
+<li>Не понимать, что кеширование работает только внутри одного HTTP-запроса. Следующий запрос снова запускает scoped dependency.</li>
 <li>Хранить изменяемое состояние в singleton без понимания, что оно общее для всех запросов.</li>
+<li>Делать слишком много логики в dependency. Dependency должна готовить данные или сервис, а не выполнять всю бизнес-задачу endpoint-а.</li>
+<li>Путать query-параметр и dependency. В примере <code>username</code> приходит из query, а <code>UserContext</code> создаёт dependency.</li>
+<li>Использовать <code>use_cache=False</code> везде подряд. Обычно кеш FastAPI полезен, а отключать его нужно только когда точно нужен новый объект при каждом обращении.</li>
                     </ul>
                 </article>
 
@@ -247,9 +487,16 @@ async def lifetimes(
                     <h2>Контрольные вопросы</h2>
                     <ol class="flow-list">
                         <li>Что делает <code>Depends</code> и почему dependency передаётся без скобок?</li>
+<li>Что изменится, если случайно написать <code>Depends(get_service())</code>?</li>
+<li>В какой момент FastAPI вызывает dependency-функции: при запуске приложения или при HTTP-запросе?</li>
+<li>Какие три шага нужны, чтобы прописать singleton DI в этой главе?</li>
+<li>Почему singleton-объект создаётся вне функции <code>get_singleton_di_service</code>?</li>
 <li>Почему два request-scoped параметра могут получить один и тот же объект?</li>
+<li>Что делает <code>use_cache=False</code>?</li>
 <li>Когда опасно хранить состояние в singleton-style сервисе?</li>
 <li>Как по JSON-ответу понять, что transient dependency создалась заново?</li>
+<li>Как dependency <code>get_current_user</code> получает <code>username</code> и <code>role</code>?</li>
+<li>Почему dependency удобно подменять в тестах?</li>
                     </ol>
                 </article>
             </div>
