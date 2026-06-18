@@ -32,7 +32,7 @@ CHAPTER_APPS = [
 
 TASK_ANSWER_MARKERS = [
     ("chapter01", chapter01_app, ["power"]),
-    ("chapter02", chapter02_app, ["request-id", "get_request_id"]),
+    ("chapter02", chapter02_app, ["pretty-log", "get_log_prefix"]),
     ("chapter03", chapter03_app, ["get_post_comments", "/comments"]),
     ("chapter04", chapter04_app, ["NotReadyError", "not-ready"]),
     ("chapter05", chapter05_app, ["RegistrationForm", "/register", "register.html"]),
@@ -130,6 +130,8 @@ def test_chapter02_page_expands_dependency_injection_for_beginners():
     assert "/api/dependency-injection/settings-demo" in response.text
     assert "/api/dependency-injection/current-user" in response.text
     assert "Query-параметры внутри dependency" in response.text
+    assert "get_request_id" not in response.text
+    assert "request-id" not in response.text
 
 
 def test_chapter01_code_tab_is_api_lesson_not_page_shell():

@@ -591,19 +591,26 @@ async def logger_demo(
             "В реальном проекте dependency часто возвращает репозиторий, DB session, настройки, logger или текущего пользователя.",
             "Код практической задачи здесь специально не показан. Полное решение находится только во вкладке <strong>Ответы</strong>.",
         ],
-        "task": "Создайте dependency <code>get_request_id()</code>, которая возвращает UUID запроса, и endpoint <code>/api/dependency-injection/request-id</code>.",
+        "task": "Создайте dependency <code>get_log_prefix()</code>, которая возвращает строку <code>[DI LOG]</code>, и endpoint <code>GET /api/dependency-injection/pretty-log</code>. Endpoint должен принять query-параметр <code>message</code>, собрать красивую строку для лога и вернуть её в JSON.",
         "answer": '''
-def get_request_id() -> str:
-    return str(uuid4())
+def get_log_prefix() -> str:
+    return "[DI LOG]"
 
 
-@app.get("/api/dependency-injection/request-id")
-async def request_id(value: str = Depends(get_request_id)):
-    return {"request_id": value}
+@app.get("/api/dependency-injection/pretty-log")
+async def pretty_log(
+    message: str = "hello",
+    prefix: str = Depends(get_log_prefix),
+    app_logger: logging.Logger = Depends(get_logger),
+):
+    formatted_message = f"{prefix} {message}"
+    app_logger.info(formatted_message)
+    return {"formatted_message": formatted_message}
         ''',
         "answer_notes": [
-            "Если один request id нужен в нескольких зависимостях, оставьте кеширование включённым.",
-            "Если нужен новый id на каждый вызов dependency, используйте <code>use_cache=False</code>.",
+            "Задача специально простая: dependency возвращает обычную строку, чтобы было видно, что DI работает не только с классами.",
+            "Endpoint получает prefix через <code>Depends(get_log_prefix)</code>, а logger через уже существующий <code>Depends(get_logger)</code>.",
+            "В ответе возвращается готовая строка, поэтому результат легко проверить в Swagger без чтения консоли.",
         ],
     },
     "chapter03": {
@@ -1336,35 +1343,40 @@ if __name__ == "__main__":
     "chapter02": [
         {
             "title": "Что создаём",
-            "body": "Нужно добавить отдельную dependency, которая генерирует request id, и endpoint, который показывает этот id клиенту.",
+            "body": "Нужно добавить маленькую dependency для префикса логов. Это проще, чем request id: dependency возвращает обычную строку, endpoint использует её для красивого сообщения.",
             "items": [
-                "В файле <code>chapter02/app/main.py</code> уже импортирован <code>uuid4</code>.",
-                "Создаём функцию <code>get_request_id</code> рядом с другими dependency.",
-                "Создаём endpoint <code>GET /api/dependency-injection/request-id</code>.",
-                "Передаём dependency в endpoint через <code>Depends</code>, а не вызываем вручную.",
+                "В файле <code>chapter02/app/main.py</code> уже есть <code>Depends</code>, <code>logging</code> и dependency <code>get_logger</code>.",
+                "Создаём функцию <code>get_log_prefix</code> рядом с другими dependency.",
+                "Функция просто возвращает строку <code>[DI LOG]</code>.",
+                "Создаём endpoint <code>GET /api/dependency-injection/pretty-log</code>.",
+                "Endpoint принимает query-параметр <code>message</code>, получает prefix через <code>Depends</code>, логирует готовую строку и возвращает её в JSON.",
             ],
         },
         {
             "title": "Полный код новой dependency и endpoint-а",
             "code": '''
-def get_request_id() -> str:
-    return str(uuid4())
+def get_log_prefix() -> str:
+    return "[DI LOG]"
 
 
-@app.get("/api/dependency-injection/request-id")
-async def request_id(value: str = Depends(get_request_id)):
-    return {
-        "request_id": value,
-        "explanation": "FastAPI вызвал get_request_id() и передал результат в endpoint.",
-    }
+@app.get("/api/dependency-injection/pretty-log")
+async def pretty_log(
+    message: str = "hello",
+    prefix: str = Depends(get_log_prefix),
+    app_logger: logging.Logger = Depends(get_logger),
+):
+    formatted_message = f"{prefix} {message}"
+    app_logger.info(formatted_message)
+    return {"formatted_message": formatted_message}
             ''',
         },
         {
             "title": "Как проверить",
-            "body": "Вызовите endpoint два раза подряд. Значение должно меняться, потому что каждый HTTP-запрос получает свой request id.",
+            "body": "Вызовите endpoint с разными сообщениями. В JSON должна вернуться строка с префиксом, а в консоли приложения должна появиться такая же запись лога.",
             "checks": [
-                ("GET /api/dependency-injection/request-id", "Ответ содержит поле <code>request_id</code>."),
-                ("GET /api/dependency-injection/request-id", "Повторный запрос возвращает другой UUID."),
+                ("GET /api/dependency-injection/pretty-log?message=hello", "Ответ содержит <code>{\"formatted_message\":\"[DI LOG] hello\"}</code>."),
+                ("GET /api/dependency-injection/pretty-log?message=FastAPI", "Сообщение меняется, а префикс остаётся тем же."),
+                ("Консоль", "В логах приложения видно готовую строку, которую собрал endpoint."),
             ],
         },
     ],
@@ -1955,9 +1967,9 @@ TASK_CRITERIA = {
         ("Swagger", "Новый endpoint виден в документации после перезапуска приложения."),
     ],
     "chapter02": [
-        ("GET /api/dependency-injection/request-id", "Ответ содержит поле <code>request_id</code>."),
-        ("Повторный запрос", "Второй HTTP-запрос возвращает другой UUID."),
-        ("Depends", "Endpoint получает request id через dependency, а не вызывает её вручную внутри тела функции."),
+        ("GET /api/dependency-injection/pretty-log?message=hello", "Ответ содержит <code>formatted_message</code> со значением <code>[DI LOG] hello</code>."),
+        ("Другой message", "При <code>message=FastAPI</code> endpoint возвращает <code>[DI LOG] FastAPI</code>."),
+        ("Depends", "Endpoint получает prefix через <code>Depends(get_log_prefix)</code>, а не пишет строку напрямую в теле функции."),
     ],
     "chapter03": [
         ("GET /api/http-client/post/1/comments", "Возвращается список комментариев внешнего API."),
