@@ -74,7 +74,8 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         assert "Если совсем по-простому" in response.text
         assert "Построчный разбор" in response.text
         assert "Типичные ошибки новичков" in response.text
-        assert "Код урока, не ответ" in response.text
+        removed_code_notice = "Код урока, " + "не ответ"
+        assert removed_code_notice not in response.text
         assert ">Задача<" in response.text
         assert "Порядок работы" in response.text
         assert "Критерии готовности" in response.text

@@ -2886,11 +2886,6 @@ def render_lesson(service: str, data: dict) -> str:
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>Код урока, не ответ</h2>
-                    <p>В этом разделе разбирается только код, который нужен для понимания темы главы. Код решения задачи из вкладки “Практика” здесь специально не показывается: он находится только во вкладке “Ответы”.</p>
-                </article>
-
-                <article class="info-box">
                     <h2>{data.get("code_title", "Ключевой фрагмент")}</h2>
                     {code_block(data["code"])}
                 </article>
