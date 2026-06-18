@@ -236,12 +236,12 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
                 
                 <article class="info-box">
                     <h2>Задача</h2>
-                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
                     <div class="callout">Добавьте поле <code>category</code> в продукт, DTO и Alembic-миграцию. Проверьте, что оно возвращается в <code>GET /api/products</code>.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Порядок работы</h2>
+                    <h2>Порядок работы без готового кода</h2>
                     <ul class="flow-list"><li>В <code>Product</code> добавить колонку <code>category</code>.</li>
 <li>В <code>ProductDto</code> добавить поле <code>category</code>.</li>
 <li>В <code>CreateProductDto</code> добавить обязательное или default-поле.</li>

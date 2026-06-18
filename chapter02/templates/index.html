@@ -460,17 +460,18 @@ async def logger_demo(
                 
                 <article class="info-box">
                     <h2>Задача</h2>
-                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
-                    <div class="callout">Создайте dependency <code>get_log_prefix()</code>, которая возвращает строку <code>[DI LOG]</code>, и endpoint <code>GET /api/dependency-injection/pretty-log</code>. Endpoint должен принять query-параметр <code>message</code>, собрать красивую строку для лога и вернуть её в JSON.</div>
+                    <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
+                    <div class="callout">Сделайте простой DI для красивого вывода логов. Новый endpoint <code>GET /api/dependency-injection/pretty-log</code> должен принять query-параметр <code>message</code> и вернуть JSON с полем <code>formatted_message</code> в формате <code>[DI LOG] текст_сообщения</code>. Префикс <code>[DI LOG]</code> должен прийти из dependency, а не быть написан прямо внутри endpoint-а.</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Порядок работы</h2>
-                    <ul class="flow-list"><li>В файле <code>chapter02/app/main.py</code> уже есть <code>Depends</code>, <code>logging</code> и dependency <code>get_logger</code>.</li>
-<li>Создаём функцию <code>get_log_prefix</code> рядом с другими dependency.</li>
-<li>Функция просто возвращает строку <code>[DI LOG]</code>.</li>
-<li>Создаём endpoint <code>GET /api/dependency-injection/pretty-log</code>.</li>
-<li>Endpoint принимает query-параметр <code>message</code>, получает prefix через <code>Depends</code>, логирует готовую строку и возвращает её в JSON.</li></ul>
+                    <h2>Порядок работы без готового кода</h2>
+                    <ul class="flow-list"><li>Откройте <code>chapter02/app/main.py</code> и найдите существующий endpoint <code>logger_demo</code>. Он показывает, как endpoint уже получает logger через <code>Depends</code>.</li>
+<li>Сделайте новую dependency максимально простой: она должна возвращать одну строку-префикс для логов.</li>
+<li>В новом endpoint-е примите обычный query-параметр <code>message</code>. Для проверки удобно дать ему значение по умолчанию.</li>
+<li>Не пишите префикс прямо внутри endpoint-а. Смысл задачи - получить этот префикс через DI.</li>
+<li>Верните готовую строку в поле <code>formatted_message</code>, чтобы результат было видно в Swagger без чтения консоли.</li>
+<li>После этого откройте Swagger и попробуйте два значения <code>message</code>: <code>hello</code> и <code>FastAPI</code>.</li></ul>
                 </article>
 
                 <article class="info-box">
@@ -479,7 +480,7 @@ async def logger_demo(
                     <div class="endpoint-grid">
                         <article class="endpoint-card"><strong><code>GET /api/dependency-injection/pretty-log?message=hello</code></strong><span>Ответ содержит <code>formatted_message</code> со значением <code>[DI LOG] hello</code>.</span></article>
 <article class="endpoint-card"><strong><code>Другой message</code></strong><span>При <code>message=FastAPI</code> endpoint возвращает <code>[DI LOG] FastAPI</code>.</span></article>
-<article class="endpoint-card"><strong><code>Depends</code></strong><span>Endpoint получает prefix через <code>Depends(get_log_prefix)</code>, а не пишет строку напрямую в теле функции.</span></article>
+<article class="endpoint-card"><strong><code>DI</code></strong><span>Префикс приходит через dependency, а не записан напрямую внутри endpoint-а.</span></article>
                     </div>
                 </article>
 
@@ -510,13 +511,12 @@ async def logger_demo(
                     <p>Это ответ именно к задаче из вкладки “Практика”. Здесь показано, что менять, какой код вставлять, где он должен находиться и как проверить результат. Это не только одна функция, а весь минимальный контекст, чтобы новичок не гадал, куда вставлять кусок кода.</p>
                 </article>
 
-                <article class="info-box"><h2>1. Что создаём</h2>
-<p>Нужно добавить маленькую dependency для префикса логов. Это проще, чем request id: dependency возвращает обычную строку, endpoint использует её для красивого сообщения.</p>
-<ul class="flow-list"><li>В файле <code>chapter02/app/main.py</code> уже есть <code>Depends</code>, <code>logging</code> и dependency <code>get_logger</code>.</li>
-<li>Создаём функцию <code>get_log_prefix</code> рядом с другими dependency.</li>
-<li>Функция просто возвращает строку <code>[DI LOG]</code>.</li>
-<li>Создаём endpoint <code>GET /api/dependency-injection/pretty-log</code>.</li>
-<li>Endpoint принимает query-параметр <code>message</code>, получает prefix через <code>Depends</code>, логирует готовую строку и возвращает её в JSON.</li></ul>
+                <article class="info-box"><h2>1. Где должен лежать код</h2>
+<p>Ниже показан точный вариант решения. Вставьте dependency рядом с другими provider-функциями, а endpoint - рядом с остальными route-ами главы.</p>
+<ul class="flow-list"><li>Новые импорты не нужны: <code>Depends</code> и <code>logging</code> уже есть в файле.</li>
+<li><code>get_log_prefix</code> можно поставить после <code>get_logger</code> или рядом с ним.</li>
+<li>Endpoint <code>pretty_log</code> можно поставить после <code>logger_demo</code> или рядом с другими endpoint-ами <code>/api/dependency-injection/*</code>.</li>
+<li>Важно: в endpoint-е префикс приходит из параметра <code>prefix</code>, а не создаётся внутри тела функции.</li></ul>
 </article>
 <article class="info-box"><h2>2. Полный код новой dependency и endpoint-а</h2>
 <pre><code>{% raw %}def get_log_prefix() -&gt; str:

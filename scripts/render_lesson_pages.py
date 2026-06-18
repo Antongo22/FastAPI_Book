@@ -93,17 +93,17 @@ def task_check_cards(service: str) -> str:
 
 def render_single_task(service: str, data: dict) -> str:
     first_solution = FULL_SOLUTIONS[service][0]
-    plan_items = first_solution.get("items", [])
+    plan_items = PRACTICE_STEPS.get(service, first_solution.get("items", []))
     plan_html = f'<ul class="flow-list">{list_items(plan_items)}</ul>' if plan_items else ""
     return f"""
                 <article class="info-box">
                     <h2>Задача</h2>
-                    <p>Сделайте этот сценарий полностью: внесите изменения, проверьте руками и сравните с полным ответом.</p>
+                    <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
                     <div class="callout">{data["task"]}</div>
                 </article>
 
                 <article class="info-box">
-                    <h2>Порядок работы</h2>
+                    <h2>Порядок работы без готового кода</h2>
                     {plan_html}
                 </article>
 
@@ -591,7 +591,7 @@ async def logger_demo(
             "В реальном проекте dependency часто возвращает репозиторий, DB session, настройки, logger или текущего пользователя.",
             "Код практической задачи здесь специально не показан. Полное решение находится только во вкладке <strong>Ответы</strong>.",
         ],
-        "task": "Создайте dependency <code>get_log_prefix()</code>, которая возвращает строку <code>[DI LOG]</code>, и endpoint <code>GET /api/dependency-injection/pretty-log</code>. Endpoint должен принять query-параметр <code>message</code>, собрать красивую строку для лога и вернуть её в JSON.",
+        "task": "Сделайте простой DI для красивого вывода логов. Новый endpoint <code>GET /api/dependency-injection/pretty-log</code> должен принять query-параметр <code>message</code> и вернуть JSON с полем <code>formatted_message</code> в формате <code>[DI LOG] текст_сообщения</code>. Префикс <code>[DI LOG]</code> должен прийти из dependency, а не быть написан прямо внутри endpoint-а.",
         "answer": '''
 def get_log_prefix() -> str:
     return "[DI LOG]"
@@ -1342,14 +1342,13 @@ if __name__ == "__main__":
     ],
     "chapter02": [
         {
-            "title": "Что создаём",
-            "body": "Нужно добавить маленькую dependency для префикса логов. Это проще, чем request id: dependency возвращает обычную строку, endpoint использует её для красивого сообщения.",
+            "title": "Где должен лежать код",
+            "body": "Ниже показан точный вариант решения. Вставьте dependency рядом с другими provider-функциями, а endpoint - рядом с остальными route-ами главы.",
             "items": [
-                "В файле <code>chapter02/app/main.py</code> уже есть <code>Depends</code>, <code>logging</code> и dependency <code>get_logger</code>.",
-                "Создаём функцию <code>get_log_prefix</code> рядом с другими dependency.",
-                "Функция просто возвращает строку <code>[DI LOG]</code>.",
-                "Создаём endpoint <code>GET /api/dependency-injection/pretty-log</code>.",
-                "Endpoint принимает query-параметр <code>message</code>, получает prefix через <code>Depends</code>, логирует готовую строку и возвращает её в JSON.",
+                "Новые импорты не нужны: <code>Depends</code> и <code>logging</code> уже есть в файле.",
+                "<code>get_log_prefix</code> можно поставить после <code>get_logger</code> или рядом с ним.",
+                "Endpoint <code>pretty_log</code> можно поставить после <code>logger_demo</code> или рядом с другими endpoint-ами <code>/api/dependency-injection/*</code>.",
+                "Важно: в endpoint-е префикс приходит из параметра <code>prefix</code>, а не создаётся внутри тела функции.",
             ],
         },
         {
@@ -1960,6 +1959,18 @@ def test_delete_group_removes_group_messages():
 }
 
 
+PRACTICE_STEPS = {
+    "chapter02": [
+        "Откройте <code>chapter02/app/main.py</code> и найдите существующий endpoint <code>logger_demo</code>. Он показывает, как endpoint уже получает logger через <code>Depends</code>.",
+        "Сделайте новую dependency максимально простой: она должна возвращать одну строку-префикс для логов.",
+        "В новом endpoint-е примите обычный query-параметр <code>message</code>. Для проверки удобно дать ему значение по умолчанию.",
+        "Не пишите префикс прямо внутри endpoint-а. Смысл задачи - получить этот префикс через DI.",
+        "Верните готовую строку в поле <code>formatted_message</code>, чтобы результат было видно в Swagger без чтения консоли.",
+        "После этого откройте Swagger и попробуйте два значения <code>message</code>: <code>hello</code> и <code>FastAPI</code>.",
+    ],
+}
+
+
 TASK_CRITERIA = {
     "chapter01": [
         ("POST /api/calculator/power", 'Body: <code>{"a": 2, "b": 3}</code> -> <code>{"result": 8, "operation": "power"}</code>.'),
@@ -1969,7 +1980,7 @@ TASK_CRITERIA = {
     "chapter02": [
         ("GET /api/dependency-injection/pretty-log?message=hello", "Ответ содержит <code>formatted_message</code> со значением <code>[DI LOG] hello</code>."),
         ("Другой message", "При <code>message=FastAPI</code> endpoint возвращает <code>[DI LOG] FastAPI</code>."),
-        ("Depends", "Endpoint получает prefix через <code>Depends(get_log_prefix)</code>, а не пишет строку напрямую в теле функции."),
+        ("DI", "Префикс приходит через dependency, а не записан напрямую внутри endpoint-а."),
     ],
     "chapter03": [
         ("GET /api/http-client/post/1/comments", "Возвращается список комментариев внешнего API."),

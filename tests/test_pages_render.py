@@ -134,6 +134,24 @@ def test_chapter02_page_expands_dependency_injection_for_beginners():
     assert "request-id" not in response.text
 
 
+def test_chapter02_practice_and_answers_are_distinct():
+    response = TestClient(chapter02_app).get("/")
+    assert response.status_code == 200
+
+    practice = html_section(response.text, '<section id="task"', '<section id="answers"')
+    answers = html_section(response.text, '<section id="answers"', "</body>")
+
+    assert "Порядок работы без готового кода" in practice
+    assert "Сделайте простой DI для красивого вывода логов" in practice
+    assert "def get_log_prefix" not in practice
+    assert "formatted_message = f" not in practice
+    assert "Где должен лежать код" not in practice
+
+    assert "Где должен лежать код" in answers
+    assert "def get_log_prefix" in answers
+    assert "formatted_message = f" in answers
+
+
 def test_chapter01_code_tab_is_api_lesson_not_page_shell():
     response = TestClient(chapter01_app).get("/")
     assert response.status_code == 200
