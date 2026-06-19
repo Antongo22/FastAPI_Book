@@ -305,8 +305,124 @@ async def disconnect(sid):
 <li>Взять имя комнаты из payload или использовать <code>general</code>.</li>
 <li>Вызвать <code>sio.leave_room</code> и отправить событие <code>left_room</code> текущему клиенту.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный блок Socket.IO событий для комнат</h2>
-<pre><code>{% raw %}@sio.event
+<article class="info-box"><h2>2. Полный Socket.IO API-код после изменения</h2>
+<pre><code>{% raw %}from collections import defaultdict
+from uuid import uuid4
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import socketio
+
+
+fastapi_app = FastAPI(
+    title=&quot;Глава 10: Socket.IO чат&quot;,
+    description=&quot;Groups and direct messages&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+
+
+class ChatManager:
+    def __init__(self):
+        self.connections: dict[str, WebSocket] = {}
+        self.groups: dict[str, set[str]] = defaultdict(set)
+
+    async def connect(self, websocket: WebSocket, group: str) -&gt; str:
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.connections[connection_id] = websocket
+        self.groups[group].add(connection_id)
+        await websocket.send_json({&quot;event&quot;: &quot;connected&quot;, &quot;connection_id&quot;: connection_id, &quot;group&quot;: group})
+        return connection_id
+
+    def disconnect(self, connection_id: str) -&gt; None:
+        self.connections.pop(connection_id, None)
+        for members in self.groups.values():
+            members.discard(connection_id)
+
+    async def send_to_connection(self, connection_id: str, payload: dict) -&gt; bool:
+        websocket = self.connections.get(connection_id)
+        if websocket is None:
+            return False
+        await websocket.send_json(payload)
+        return True
+
+    async def broadcast(self, payload: dict, exclude: str | None = None) -&gt; None:
+        for connection_id in list(self.connections):
+            if connection_id != exclude:
+                await self.send_to_connection(connection_id, payload)
+
+    async def send_to_group(self, group: str, payload: dict) -&gt; None:
+        for connection_id in list(self.groups[group]):
+            await self.send_to_connection(connection_id, payload)
+
+
+manager = ChatManager()
+socketio_clients: dict[str, str] = {}
+socketio_rooms: dict[str, set[str]] = defaultdict(set)
+
+
+@fastapi_app.get(&quot;/api/chat/info&quot;)
+async def chat_info():
+    return {
+        &quot;raw_websocket_connections&quot;: len(manager.connections),
+        &quot;socketio_connections&quot;: len(socketio_clients),
+        &quot;groups&quot;: {name: len(members) for name, members in manager.groups.items()},
+        &quot;socketio_rooms&quot;: {name: len(members) for name, members in socketio_rooms.items()},
+    }
+
+
+@fastapi_app.websocket(&quot;/ws/chat&quot;)
+async def chat_socket(websocket: WebSocket, group: str = &quot;general&quot;):
+    connection_id = await manager.connect(websocket, group)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get(&quot;action&quot;, &quot;broadcast&quot;)
+            payload = {
+                &quot;event&quot;: &quot;message&quot;,
+                &quot;from&quot;: connection_id,
+                &quot;user&quot;: data.get(&quot;user&quot;, &quot;anonymous&quot;),
+                &quot;message&quot;: data.get(&quot;message&quot;, &quot;&quot;),
+            }
+            if action == &quot;send_to_connection&quot;:
+                await manager.send_to_connection(data[&quot;connection_id&quot;], payload)
+            elif action == &quot;send_to_group&quot;:
+                await manager.send_to_group(data.get(&quot;group&quot;, group), payload)
+            elif action == &quot;join&quot;:
+                manager.groups[data.get(&quot;group&quot;, group)].add(connection_id)
+                await manager.send_to_connection(
+                    connection_id,
+                    {&quot;event&quot;: &quot;joined&quot;, &quot;group&quot;: data.get(&quot;group&quot;, group)},
+                )
+            else:
+                await manager.broadcast(payload)
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id)
+
+
+@sio.event
+async def connect(sid, environ):
+    socketio_clients[sid] = &quot;anonymous&quot;
+    await sio.emit(&quot;connected&quot;, {&quot;sid&quot;: sid}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None)
+    for members in socketio_rooms.values():
+        members.discard(sid)
+
+
+@sio.event
+async def set_name(sid, data):
+    username = data.get(&quot;username&quot;, &quot;anonymous&quot;)
+    socketio_clients[sid] = username
+    await sio.emit(&quot;name_set&quot;, {&quot;sid&quot;: sid, &quot;username&quot;: username}, to=sid)
+
+
+@sio.event
 async def join_room(sid, data):
     room = data.get(&quot;room&quot;, &quot;general&quot;)
     await sio.enter_room(sid, room)
@@ -334,7 +450,22 @@ async def chat_message(sid, data):
     if room:
         await sio.emit(&quot;chat_message&quot;, payload, room=room)
     else:
-        await sio.emit(&quot;chat_message&quot;, payload){% endraw %}</code></pre>
+        await sio.emit(&quot;chat_message&quot;, payload)
+
+
+@sio.event
+async def direct_message(sid, data):
+    target_sid = data.get(&quot;sid&quot;)
+    payload = {
+        &quot;event&quot;: &quot;direct_message&quot;,
+        &quot;from&quot;: socketio_clients.get(sid, &quot;anonymous&quot;),
+        &quot;message&quot;: data.get(&quot;message&quot;, &quot;&quot;),
+    }
+    if target_sid:
+        await sio.emit(&quot;direct_message&quot;, payload, to=target_sid)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO join_room</code></strong><span>Отправьте <code>{ room: "python" }</code> и получите событие <code>joined_room</code>.</span></article>

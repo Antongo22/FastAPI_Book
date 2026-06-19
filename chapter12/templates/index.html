@@ -277,8 +277,124 @@ async def chat_message(sid, data):
 <li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
 <li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный service method и endpoint</h2>
-<pre><code>{% raw %}class ChatService:
+<article class="info-box"><h2>2. Полный код приложения после изменения</h2>
+<pre><code>{% raw %}import os
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+import socketio
+
+
+DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter12.db&quot;)
+
+
+def make_engine(database_url: str):
+    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
+    kwargs = {&quot;connect_args&quot;: connect_args}
+    if database_url == &quot;sqlite://&quot;:
+        kwargs[&quot;poolclass&quot;] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class ChatGroup(Base):
+    __tablename__ = &quot;chat_groups&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    messages: Mapped[list[&quot;Message&quot;]] = relationship(back_populates=&quot;group&quot;)
+
+
+class Message(Base):
+    __tablename__ = &quot;messages&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    sender: Mapped[str] = mapped_column(String(120), nullable=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey(&quot;chat_groups.id&quot;), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    group: Mapped[ChatGroup | None] = relationship(back_populates=&quot;messages&quot;)
+
+
+class MessageDto(BaseModel):
+    id: int
+    text: str
+    sender: str
+    group_id: int | None
+    created_at: datetime
+
+    model_config = {&quot;from_attributes&quot;: True}
+
+
+class ChatGroupDto(BaseModel):
+    id: int
+    name: str
+
+    model_config = {&quot;from_attributes&quot;: True}
+
+
+class SendMessageRequest(BaseModel):
+    text: str = Field(min_length=1)
+    sender: str = Field(min_length=1)
+    group_id: int | None = None
+
+
+class CreateGroupRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
+def init_db() -&gt; None:
+    Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+class ChatService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def send_message(self, text: str, sender: str, group_id: int | None = None) -&gt; Message:
+        if group_id is not None and self.db.get(ChatGroup, group_id) is None:
+            raise HTTPException(status_code=404, detail=&quot;Group not found&quot;)
+        message = Message(text=text, sender=sender, group_id=group_id)
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message
+
+    def get_messages(self, group_id: int | None = None) -&gt; list[Message]:
+        query = self.db.query(Message)
+        if group_id is not None:
+            query = query.filter(Message.group_id == group_id)
+        return query.order_by(Message.created_at, Message.id).all()
+
+    def create_group(self, name: str) -&gt; ChatGroup:
+        group = ChatGroup(name=name)
+        self.db.add(group)
+        self.db.commit()
+        self.db.refresh(group)
+        return group
+
+    def get_groups(self) -&gt; list[ChatGroup]:
+        return self.db.query(ChatGroup).order_by(ChatGroup.id).all()
+
     def delete_group(self, group_id: int) -&gt; None:
         group = self.db.get(ChatGroup, group_id)
         if group is None:
@@ -289,21 +405,142 @@ async def chat_message(sid, data):
         self.db.commit()
 
 
-@app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
+def get_chat_service(db: Session = Depends(get_db)) -&gt; ChatService:
+    return ChatService(db)
+
+
+def message_to_dict(message: Message) -&gt; dict:
+    return {
+        &quot;id&quot;: message.id,
+        &quot;text&quot;: message.text,
+        &quot;sender&quot;: message.sender,
+        &quot;group_id&quot;: message.group_id,
+        &quot;created_at&quot;: message.created_at.isoformat(),
+    }
+
+
+init_db()
+
+fastapi_app = FastAPI(
+    title=&quot;Глава 12: Socket.IO и тестирование&quot;,
+    description=&quot;API, service layer, Socket.IO, in-memory DB&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+socketio_clients: dict[str, str] = {}
+
+
+@fastapi_app.post(&quot;/api/chat/messages&quot;, response_model=MessageDto)
+async def send_message(request: SendMessageRequest, service: ChatService = Depends(get_chat_service)):
+    return service.send_message(request.text, request.sender, request.group_id)
+
+
+@fastapi_app.get(&quot;/api/chat/messages&quot;, response_model=list[MessageDto])
+async def get_messages(group_id: int | None = None, service: ChatService = Depends(get_chat_service)):
+    return service.get_messages(group_id)
+
+
+@fastapi_app.post(&quot;/api/chat/groups&quot;, response_model=ChatGroupDto)
+async def create_group(request: CreateGroupRequest, service: ChatService = Depends(get_chat_service)):
+    return service.create_group(request.name)
+
+
+@fastapi_app.get(&quot;/api/chat/groups&quot;, response_model=list[ChatGroupDto])
+async def get_groups(service: ChatService = Depends(get_chat_service)):
+    return service.get_groups()
+
+
+@fastapi_app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
 async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
-    service.delete_group(group_id){% endraw %}</code></pre>
-</article>
-<article class="info-box"><h2>3. Полное Socket.IO событие</h2>
-<pre><code>{% raw %}@sio.event
+    service.delete_group(group_id)
+
+
+@fastapi_app.get(&quot;/api/chat/realtime&quot;)
+async def realtime_info():
+    return {
+        &quot;socketio_path&quot;: &quot;/socket.io&quot;,
+        &quot;events&quot;: [&quot;set_name&quot;, &quot;join_group&quot;, &quot;chat_message&quot;, &quot;list_messages&quot;, &quot;delete_group&quot;],
+        &quot;connections&quot;: len(socketio_clients),
+    }
+
+
+@sio.event
+async def connect(sid, environ):
+    socketio_clients[sid] = &quot;anonymous&quot;
+    await sio.enter_room(sid, &quot;global&quot;)
+    await sio.emit(&quot;connected&quot;, {&quot;sid&quot;: sid}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None)
+
+
+@sio.event
+async def set_name(sid, data):
+    username = data.get(&quot;username&quot;, &quot;anonymous&quot;)
+    socketio_clients[sid] = username
+    await sio.emit(&quot;name_set&quot;, {&quot;sid&quot;: sid, &quot;username&quot;: username}, to=sid)
+
+
+@sio.event
+async def join_group(sid, data):
+    group_id = data.get(&quot;group_id&quot;)
+    if group_id is not None:
+        group_id = int(group_id)
+    room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
+    await sio.enter_room(sid, room)
+    await sio.emit(&quot;joined_group&quot;, {&quot;room&quot;: room, &quot;group_id&quot;: group_id}, to=sid)
+
+
+@sio.event
+async def chat_message(sid, data):
+    sender = data.get(&quot;sender&quot;) or socketio_clients.get(sid, &quot;anonymous&quot;)
+    text = data.get(&quot;text&quot;) or data.get(&quot;message&quot;, &quot;&quot;)
+    group_id = data.get(&quot;group_id&quot;)
+    if group_id is not None:
+        group_id = int(group_id)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        message = service.send_message(text=text, sender=sender, group_id=group_id)
+        payload = {&quot;event&quot;: &quot;chat_message&quot;, &quot;message&quot;: message_to_dict(message)}
+    room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
+    await sio.emit(&quot;chat_message&quot;, payload, room=room)
+
+
+@sio.event
+async def list_messages(sid, data):
+    group_id = data.get(&quot;group_id&quot;)
+    if group_id is not None:
+        group_id = int(group_id)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        messages = [message_to_dict(message) for message in service.get_messages(group_id)]
+    await sio.emit(&quot;messages&quot;, {&quot;group_id&quot;: group_id, &quot;items&quot;: messages}, to=sid)
+
+
+@sio.event
 async def delete_group(sid, data):
     group_id = int(data[&quot;group_id&quot;])
     with SessionLocal() as db:
         service = ChatService(db)
         service.delete_group(group_id)
-    await sio.emit(&quot;group_deleted&quot;, {&quot;group_id&quot;: group_id}){% endraw %}</code></pre>
+    await sio.emit(&quot;group_deleted&quot;, {&quot;group_id&quot;: group_id})
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;)
+app.dependency_overrides = fastapi_app.dependency_overrides{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>4. Полный тест</h2>
-<pre><code>{% raw %}def test_delete_group_removes_group_messages():
+<article class="info-box"><h2>3. Полный тест</h2>
+<pre><code>{% raw %}from fastapi.testclient import TestClient
+
+from chapter12.app.main import Base, app, get_db
+from tests.conftest import make_sqlite_override
+
+
+def test_delete_group_removes_group_messages():
     _, override = make_sqlite_override(Base, get_db)
     app.dependency_overrides[get_db] = override
     try:

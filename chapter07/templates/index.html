@@ -262,11 +262,106 @@ open http://localhost:8007/docs{% endraw %}</code></pre></article>
 <li>Добавить endpoint <code>GET /api/admin</code>.</li>
 <li>Для учебной проверки можно назначать role <code>admin</code> пользователю с username <code>admin</code>.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код проверки admin-роли</h2>
-<pre><code>{% raw %}def require_admin(user: dict = Depends(get_current_user)) -&gt; dict:
+<article class="info-box"><h2>2. Полный API-код после изменения</h2>
+<pre><code>{% raw %}import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title=&quot;Глава 7: JWT Authorization&quot;,
+    description=&quot;Authentication and authorization&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+
+SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-development-secret&quot;)
+ALGORITHM = &quot;HS256&quot;
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/login&quot;)
+USERS: dict[str, dict] = {}
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    token_type: str = &quot;bearer&quot;
+    username: str
+    role: str
+    expires: datetime
+
+
+def create_access_token(username: str, role: str) -&gt; tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {&quot;sub&quot;: username, &quot;role&quot;: role, &quot;exp&quot;: expires}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; dict:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get(&quot;sub&quot;)
+    except JWTError as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;Invalid token&quot;) from error
+    user = USERS.get(str(username))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;User not found&quot;)
+    return user
+
+
+def require_admin(user: dict = Depends(get_current_user)) -&gt; dict:
     if user[&quot;role&quot;] != &quot;admin&quot;:
         raise HTTPException(status_code=403, detail=&quot;Admin role required&quot;)
     return user
+
+
+@app.post(&quot;/api/auth/register&quot;, response_model=AuthResponse)
+async def register(request: RegisterRequest):
+    if request.username in USERS:
+        raise HTTPException(status_code=400, detail=&quot;Пользователь с таким именем уже существует&quot;)
+    if any(user[&quot;email&quot;] == request.email for user in USERS.values()):
+        raise HTTPException(status_code=400, detail=&quot;Пользователь с таким email уже существует&quot;)
+
+    role = &quot;admin&quot; if request.username == &quot;admin&quot; else &quot;user&quot;
+    USERS[request.username] = {
+        &quot;username&quot;: request.username,
+        &quot;email&quot;: request.email,
+        &quot;password_hash&quot;: pwd_context.hash(request.password),
+        &quot;role&quot;: role,
+    }
+    token, expires = create_access_token(request.username, role)
+    return AuthResponse(token=token, username=request.username, role=role, expires=expires)
+
+
+@app.post(&quot;/api/auth/login&quot;, response_model=AuthResponse)
+async def login(request: LoginRequest):
+    user = USERS.get(request.username)
+    if user is None or not pwd_context.verify(request.password, user[&quot;password_hash&quot;]):
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    token, expires = create_access_token(user[&quot;username&quot;], user[&quot;role&quot;])
+    return AuthResponse(token=token, username=user[&quot;username&quot;], role=user[&quot;role&quot;], expires=expires)
+
+
+@app.get(&quot;/api/protected&quot;)
+async def protected(user: dict = Depends(get_current_user)):
+    return {&quot;message&quot;: &quot;Это защищенный endpoint&quot;, &quot;username&quot;: user[&quot;username&quot;], &quot;role&quot;: user[&quot;role&quot;]}
 
 
 @app.get(&quot;/api/admin&quot;)
@@ -277,15 +372,11 @@ async def admin_area(user: dict = Depends(require_admin)):
         &quot;role&quot;: user[&quot;role&quot;],
     }{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Как выдать admin-роль в учебном примере</h2>
-<pre><code>{% raw %}role = &quot;admin&quot; if request.username == &quot;admin&quot; else &quot;user&quot;
-USERS[request.username] = {
-    &quot;username&quot;: request.username,
-    &quot;email&quot;: request.email,
-    &quot;password_hash&quot;: pwd_context.hash(request.password),
-    &quot;role&quot;: role,
-}
-token, expires = create_access_token(request.username, role){% endraw %}</code></pre>
+<article class="info-box"><h2>3. Ключевое место для admin-роли</h2>
+<p>В полном коде выше это уже встроено в register. Отдельно выделено место, где обычный пользователь отличается от admin.</p>
+<ul class="flow-list"><li>Если username равен <code>admin</code>, учебный код выдаёт роль <code>admin</code>.</li>
+<li>Для всех остальных username роль остаётся <code>user</code>.</li>
+<li>Token создаётся уже с выбранной ролью, поэтому <code>require_admin</code> может проверить её позже.</li></ul>
 </article>
 <article class="info-box"><h2>4. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/auth/register</code></strong><span>Создайте пользователя <code>admin</code>, получите token.</span></article>

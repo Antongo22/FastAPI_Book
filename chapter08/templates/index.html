@@ -267,8 +267,66 @@ refresh_token, refresh_expires = create_refresh_token(db, user){% endraw %}</cod
 <li>Заполнять <code>revoked_at</code> в <code>/revoke</code>.</li>
 <li>Для logout обновлять все активные token-ы пользователя.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный фрагмент модели и revoke-логики</h2>
-<pre><code>{% raw %}class RefreshToken(Base):
+<article class="info-box"><h2>2. Полный API-код после изменения</h2>
+<pre><code>{% raw %}import os
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+
+app = FastAPI(
+    title=&quot;Глава 8: Refresh Tokens&quot;,
+    description=&quot;Token rotation and revoke&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+
+DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter08.db&quot;)
+SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-development-secret&quot;)
+ALGORITHM = &quot;HS256&quot;
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/login&quot;)
+
+
+def make_engine(database_url: str):
+    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
+    kwargs = {&quot;connect_args&quot;: connect_args}
+    if database_url == &quot;sqlite://&quot;:
+        kwargs[&quot;poolclass&quot;] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = &quot;users&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(40), default=&quot;user&quot;)
+    refresh_tokens: Mapped[list[&quot;RefreshToken&quot;]] = relationship(back_populates=&quot;user&quot;)
+
+
+class RefreshToken(Base):
     __tablename__ = &quot;refresh_tokens&quot;
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -280,22 +338,166 @@ refresh_token, refresh_expires = create_refresh_token(db, user){% endraw %}</cod
     user: Mapped[User] = relationship(back_populates=&quot;refresh_tokens&quot;)
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = &quot;bearer&quot;
+    username: str
+    role: str
+    access_token_expires: datetime
+    refresh_token_expires: datetime
+
+
+def init_db() -&gt; None:
+    Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def create_access_token(user: User) -&gt; tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {&quot;sub&quot;: str(user.id), &quot;username&quot;: user.username, &quot;role&quot;: user.role, &quot;exp&quot;: expires}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def create_refresh_token(db: Session, user: User) -&gt; tuple[str, datetime]:
+    token = secrets.token_urlsafe(48)
+    expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.add(RefreshToken(token=token, user_id=user.id, expires_at=expires))
+    db.commit()
+    return token, expires
+
+
 def revoke_token(stored: RefreshToken) -&gt; None:
     stored.revoked = True
-    stored.revoked_at = datetime.utcnow(){% endraw %}</code></pre>
+    stored.revoked_at = datetime.utcnow()
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -&gt; User:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload[&quot;sub&quot;])
+    except (JWTError, KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;Invalid token&quot;) from error
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;User not found&quot;)
+    return user
+
+
+init_db()
+
+
+@app.post(&quot;/api/auth/register&quot;, response_model=AuthResponse)
+async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.username == request.username).first():
+        raise HTTPException(status_code=400, detail=&quot;Пользователь с таким именем уже существует&quot;)
+    user = User(
+        username=request.username,
+        email=request.email,
+        password_hash=pwd_context.hash(request.password),
+        role=&quot;user&quot;,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post(&quot;/api/auth/login&quot;, response_model=AuthResponse)
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == request.username).first()
+    if user is None or not pwd_context.verify(request.password, user.password_hash):
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post(&quot;/api/auth/refresh&quot;, response_model=AuthResponse)
+async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+    if stored is None or stored.revoked or stored.expires_at &lt;= datetime.utcnow():
+        raise HTTPException(status_code=401, detail=&quot;Недействительный refresh token&quot;)
+    revoke_token(stored)
+    user = db.get(User, stored.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail=&quot;Пользователь не найден&quot;)
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    db.commit()
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post(&quot;/api/auth/revoke&quot;)
+async def revoke(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+    if stored is not None and not stored.revoked:
+        revoke_token(stored)
+        db.commit()
+    return {&quot;message&quot;: &quot;Refresh token отозван&quot;}
+
+
+@app.post(&quot;/api/auth/logout&quot;)
+async def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    tokens = db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked.is_(False),
+    ).all()
+    for token in tokens:
+        revoke_token(token)
+    db.commit()
+    return {&quot;message&quot;: f&quot;Все сессии завершены. Отозвано токенов: {len(tokens)}&quot;}{% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Где использовать revoke_token</h2>
-<pre><code>{% raw %}# В /api/auth/refresh
-revoke_token(stored)
-access_token, access_expires = create_access_token(user)
-refresh_token, refresh_expires = create_refresh_token(db, user)
-db.commit()
-
-
-# В /api/auth/revoke
-if stored is not None and not stored.revoked:
-    revoke_token(stored)
-    db.commit(){% endraw %}</code></pre>
+<p>В полном коде выше helper <code>revoke_token</code> используется во всех местах, где refresh token становится недействительным.</p>
+<ul class="flow-list"><li>В <code>/api/auth/refresh</code> старый token отзывается перед выдачей новой пары token-ов.</li>
+<li>В <code>/api/auth/revoke</code> отзывается token, который прислал клиент.</li>
+<li>В <code>/api/auth/logout</code> отзываются все активные refresh token-ы текущего пользователя.</li></ul>
 </article>
 
                 <article class="info-box">

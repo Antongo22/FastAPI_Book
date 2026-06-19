@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from html import unescape
 
 from chapter01.app.main import app as chapter01_app
 from chapter02.app.main import app as chapter02_app
@@ -43,6 +44,21 @@ TASK_ANSWER_MARKERS = [
     ("chapter10", chapter10_app, ["leave_room", "left_room"]),
     ("chapter11", chapter11_app, ["admin_message"]),
     ("chapter12", chapter12_app, ["delete_group", "group_deleted"]),
+]
+
+FULL_ANSWER_CONTEXT_MARKERS = [
+    (chapter01_app, ["from typing import Annotated", "app = FastAPI", "async def power"]),
+    (chapter02_app, ["import logging", "app = FastAPI", "def get_log_prefix", "async def pretty_log"]),
+    (chapter03_app, ["import httpx", "JSONPLACEHOLDER", "class ExternalApiService", "async def get_post_comments"]),
+    (chapter04_app, ["import time", "app = FastAPI", "class NotReadyError", "async def not_ready"]),
+    (chapter05_app, ["from pathlib import Path", "Jinja2Templates", "class RegistrationForm", "<!doctype html>"]),
+    (chapter06_app, ["import os", "class Product", "class ProductDto", "def upgrade()"]),
+    (chapter07_app, ["import os", "OAuth2PasswordBearer", "def require_admin", "async def admin_area"]),
+    (chapter08_app, ["import secrets", "class RefreshToken", "revoked_at", "def revoke_token"]),
+    (chapter09_app, ["from uuid import uuid4", "class ConnectionManager", 'message == "/who"']),
+    (chapter10_app, ["import socketio", "socketio_rooms", "async def leave_room", "app = socketio.ASGIApp"]),
+    (chapter11_app, ["import socketio", "def verify_user_token", "async def admin_message", "app = socketio.ASGIApp"]),
+    (chapter12_app, ["import socketio", "class ChatService", "def delete_group", "from fastapi.testclient import TestClient"]),
 ]
 
 
@@ -98,6 +114,16 @@ def test_code_tab_does_not_show_task_answers():
             assert marker not in code_tab, f"{service} leaks task answer marker into code tab: {marker}"
 
 
+def test_answers_include_full_code_context_not_only_fragments():
+    for app, markers in FULL_ANSWER_CONTEXT_MARKERS:
+        response = TestClient(app).get("/")
+        assert response.status_code == 200
+        answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
+
+        for marker in markers:
+            assert marker in answers, f"answer is missing full-code context marker: {marker}"
+
+
 def test_chapter01_page_explains_headers():
     response = TestClient(chapter01_app).get("/")
     assert response.status_code == 200
@@ -151,6 +177,22 @@ def test_chapter02_practice_and_answers_are_distinct():
     assert "Где должен лежать код" in answers
     assert "def get_log_prefix" in answers
     assert "formatted_message = f" in answers
+
+
+def test_chapter03_task_uses_real_public_external_api():
+    response = TestClient(chapter03_app).get("/")
+    assert response.status_code == 200
+
+    practice = html_section(response.text, '<section id="task"', '<section id="answers"')
+    answers = html_section(response.text, '<section id="answers"', "</body>")
+
+    assert "https://jsonplaceholder.typicode.com/posts/1/comments" in practice
+    assert "реальном открытом тестовом API" in practice
+    assert "Не возвращайте локальный список" in practice
+    assert "не на локальной заглушке" in practice
+
+    assert "JSONPLACEHOLDER" in answers
+    assert "/posts/{post_id}/comments" in answers
 
 
 def test_chapter01_code_tab_is_api_lesson_not_page_shell():

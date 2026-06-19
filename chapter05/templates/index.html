@@ -263,7 +263,49 @@ async def submit_contact(
 <li>Создать шаблон <code>chapter05/templates/register.html</code>.</li></ul>
 </article>
 <article class="info-box"><h2>2. Полный код Python-части</h2>
-<pre><code>{% raw %}class RegistrationForm(BaseModel):
+<pre><code>{% raw %}from pathlib import Path
+
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ValidationError, field_validator
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app = FastAPI(
+    title=&quot;Глава 5: Jinja2 UI&quot;,
+    description=&quot;Templates, forms, validation&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+app.mount(&quot;/static&quot;, StaticFiles(directory=str(BASE_DIR / &quot;static&quot;)), name=&quot;static&quot;)
+templates = Jinja2Templates(directory=str(BASE_DIR / &quot;templates&quot;))
+
+
+class ContactForm(BaseModel):
+    name: str
+    email: str
+    message: str
+
+    @field_validator(&quot;name&quot;, &quot;email&quot;, &quot;message&quot;)
+    @classmethod
+    def not_empty(cls, value: str) -&gt; str:
+        if not value.strip():
+            raise ValueError(&quot;Поле обязательно&quot;)
+        return value.strip()
+
+    @field_validator(&quot;email&quot;)
+    @classmethod
+    def email_has_at(cls, value: str) -&gt; str:
+        if &quot;@&quot; not in value:
+            raise ValueError(&quot;Email должен содержать @&quot;)
+        return value
+
+
+class RegistrationForm(BaseModel):
     username: str
     email: str
     password: str
@@ -288,6 +330,40 @@ async def submit_contact(
         if len(value) &lt; 6:
             raise ValueError(&quot;Пароль должен быть не короче 6 символов&quot;)
         return value
+
+
+@app.get(&quot;/contact&quot;, response_class=HTMLResponse, include_in_schema=False)
+async def contact_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        &quot;contact.html&quot;,
+        {&quot;request&quot;: request, &quot;errors&quot;: {}, &quot;values&quot;: {}, &quot;sent&quot;: False},
+    )
+
+
+@app.post(&quot;/contact&quot;, response_class=HTMLResponse, include_in_schema=False)
+async def submit_contact(
+    request: Request,
+    name: str = Form(&quot;&quot;),
+    email: str = Form(&quot;&quot;),
+    message: str = Form(&quot;&quot;),
+):
+    values = {&quot;name&quot;: name, &quot;email&quot;: email, &quot;message&quot;: message}
+    try:
+        ContactForm(**values)
+    except ValidationError as error:
+        errors = {str(item[&quot;loc&quot;][0]): item[&quot;msg&quot;] for item in error.errors()}
+        return templates.TemplateResponse(
+            request,
+            &quot;contact.html&quot;,
+            {&quot;request&quot;: request, &quot;errors&quot;: errors, &quot;values&quot;: values, &quot;sent&quot;: False},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        request,
+        &quot;contact.html&quot;,
+        {&quot;request&quot;: request, &quot;errors&quot;: {}, &quot;values&quot;: values, &quot;sent&quot;: True},
+    )
 
 
 @app.get(&quot;/register&quot;, response_class=HTMLResponse, include_in_schema=False)
@@ -321,24 +397,69 @@ async def submit_register(
         request,
         &quot;register.html&quot;,
         {&quot;request&quot;: request, &quot;errors&quot;: {}, &quot;values&quot;: values, &quot;registered&quot;: True},
-    ){% endraw %}</code></pre>
+    )
+
+
+@app.post(&quot;/api/contact&quot;)
+async def api_contact(form: ContactForm):
+    return {&quot;message&quot;: &quot;Форма принята&quot;, &quot;data&quot;: form.model_dump()}{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Минимальный шаблон register.html</h2>
-<pre><code>{% raw %}&lt;form method=&quot;post&quot; action=&quot;/register&quot;&gt;
-    &lt;label&gt;Username
-        &lt;input name=&quot;username&quot; value=&quot;{{ values.get(&#x27;username&#x27;, &#x27;&#x27;) }}&quot;&gt;
-        {% if errors.get(&#x27;username&#x27;) %}&lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;username&#x27;) }}&lt;/span&gt;{% endif %}
-    &lt;/label&gt;
-    &lt;label&gt;Email
-        &lt;input name=&quot;email&quot; value=&quot;{{ values.get(&#x27;email&#x27;, &#x27;&#x27;) }}&quot;&gt;
-        {% if errors.get(&#x27;email&#x27;) %}&lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;email&#x27;) }}&lt;/span&gt;{% endif %}
-    &lt;/label&gt;
-    &lt;label&gt;Password
-        &lt;input name=&quot;password&quot; type=&quot;password&quot;&gt;
-        {% if errors.get(&#x27;password&#x27;) %}&lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;password&#x27;) }}&lt;/span&gt;{% endif %}
-    &lt;/label&gt;
-    &lt;button type=&quot;submit&quot;&gt;Зарегистрироваться&lt;/button&gt;
-&lt;/form&gt;{% endraw %}</code></pre>
+<article class="info-box"><h2>3. Полный шаблон chapter05/templates/register.html</h2>
+<pre><code>{% raw %}&lt;!doctype html&gt;
+&lt;html lang=&quot;ru&quot;&gt;
+&lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot;&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+    &lt;title&gt;Регистрация&lt;/title&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;/static/site.css&quot;&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;main class=&quot;chapter-shell&quot;&gt;
+        &lt;nav class=&quot;top-nav&quot;&gt;
+            &lt;a class=&quot;nav-link light&quot; href=&quot;/&quot;&gt;← К уроку&lt;/a&gt;
+        &lt;/nav&gt;
+
+        &lt;section class=&quot;hero&quot;&gt;
+            &lt;h1&gt;Регистрация&lt;/h1&gt;
+            &lt;p&gt;Jinja2-шаблон показывает значения формы, ошибки валидации и успешную отправку.&lt;/p&gt;
+        &lt;/section&gt;
+
+        {% if registered %}
+            &lt;article class=&quot;info-box&quot;&gt;
+                &lt;h2&gt;Готово&lt;/h2&gt;
+                &lt;p&gt;Пользователь {{ values.get(&quot;username&quot;) }} успешно зарегистрирован.&lt;/p&gt;
+            &lt;/article&gt;
+        {% endif %}
+
+        &lt;article class=&quot;info-box&quot;&gt;
+            &lt;form method=&quot;post&quot; action=&quot;/register&quot;&gt;
+                &lt;label&gt;Username
+                    &lt;input name=&quot;username&quot; value=&quot;{{ values.get(&#x27;username&#x27;, &#x27;&#x27;) }}&quot;&gt;
+                    {% if errors.get(&#x27;username&#x27;) %}
+                        &lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;username&#x27;) }}&lt;/span&gt;
+                    {% endif %}
+                &lt;/label&gt;
+
+                &lt;label&gt;Email
+                    &lt;input name=&quot;email&quot; value=&quot;{{ values.get(&#x27;email&#x27;, &#x27;&#x27;) }}&quot;&gt;
+                    {% if errors.get(&#x27;email&#x27;) %}
+                        &lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;email&#x27;) }}&lt;/span&gt;
+                    {% endif %}
+                &lt;/label&gt;
+
+                &lt;label&gt;Password
+                    &lt;input name=&quot;password&quot; type=&quot;password&quot;&gt;
+                    {% if errors.get(&#x27;password&#x27;) %}
+                        &lt;span class=&quot;error&quot;&gt;{{ errors.get(&#x27;password&#x27;) }}&lt;/span&gt;
+                    {% endif %}
+                &lt;/label&gt;
+
+                &lt;button type=&quot;submit&quot;&gt;Зарегистрироваться&lt;/button&gt;
+            &lt;/form&gt;
+        &lt;/article&gt;
+    &lt;/main&gt;
+&lt;/body&gt;
+&lt;/html&gt;{% endraw %}</code></pre>
 </article>
 
                 <article class="info-box">

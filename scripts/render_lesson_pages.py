@@ -653,7 +653,7 @@ class ExternalApiService:
             "В больших приложениях клиент можно держать дольше через lifespan, но для учебного примера локальный context manager проще.",
             "Endpoint не знает URL внешнего API: это ответственность сервиса.",
         ],
-        "task": "Добавьте метод и endpoint для получения комментариев поста: <code>GET /api/http-client/post/{post_id}/comments</code>.",
+        "task": "Потренируйтесь на реальном открытом тестовом API, а не на локальной заглушке. Используйте JSONPlaceholder: <code>https://jsonplaceholder.typicode.com/posts/1/comments</code>. Добавьте в свой сервис метод, который ходит во внешний endpoint <code>/posts/{post_id}/comments</code>, и откройте его через ваш FastAPI endpoint <code>GET /api/http-client/post/{post_id}/comments</code>.",
         "answer": '''
 async def get_post_comments(self, post_id: int) -> list[dict]:
     async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
@@ -1352,10 +1352,156 @@ if __name__ == "__main__":
             ],
         },
         {
-            "title": "Полный код новой dependency и endpoint-а",
+            "title": "Полный API-код после изменения",
             "code": '''
+import logging
+from dataclasses import dataclass
+from uuid import uuid4
+
+from fastapi import Depends, FastAPI, Query
+
+
+app = FastAPI(
+    title="Глава 2: Dependency Injection",
+    description="Depends and lifetimes",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+logger = logging.getLogger("chapter02")
+
+
+@dataclass
+class InstanceService:
+    service_type: str
+    id: str
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    app_name: str
+    environment: str
+
+
+@dataclass(frozen=True)
+class SingletonDiService:
+    id: str
+    name: str
+
+
+@dataclass
+class UserContext:
+    username: str
+    role: str
+
+
+singleton_service = InstanceService("singleton", str(uuid4()))
+app_settings = AppSettings(app_name="FastAPI Book Chapter 02", environment="development")
+singleton_di_service = SingletonDiService(id=str(uuid4()), name="created-once")
+
+
+def get_scoped_service() -> InstanceService:
+    return InstanceService("scoped", str(uuid4()))
+
+
+def get_singleton_service() -> InstanceService:
+    return singleton_service
+
+
+def get_transient_service() -> InstanceService:
+    return InstanceService("transient", str(uuid4()))
+
+
+def get_settings() -> AppSettings:
+    return app_settings
+
+
+def get_singleton_di_service() -> SingletonDiService:
+    return singleton_di_service
+
+
+def get_logger() -> logging.Logger:
+    return logger
+
+
 def get_log_prefix() -> str:
     return "[DI LOG]"
+
+
+def get_current_user(
+    username: str = Query("guest"),
+    role: str = Query("student"),
+) -> UserContext:
+    return UserContext(username=username, role=role)
+
+
+def shape(service: InstanceService) -> dict[str, str]:
+    return {"id": service.id, "type": service.service_type}
+
+
+@app.get("/api/dependency-injection/lifetimes")
+async def lifetimes(
+    scoped1: InstanceService = Depends(get_scoped_service),
+    scoped2: InstanceService = Depends(get_scoped_service),
+    singleton1: InstanceService = Depends(get_singleton_service),
+    singleton2: InstanceService = Depends(get_singleton_service),
+    transient1: InstanceService = Depends(get_transient_service, use_cache=False),
+    transient2: InstanceService = Depends(get_transient_service, use_cache=False),
+):
+    return {
+        "scoped": {
+            "service1": shape(scoped1),
+            "service2": shape(scoped2),
+            "explanation": "Depends кеширует одинаковую зависимость в пределах запроса.",
+        },
+        "singleton": {
+            "service1": shape(singleton1),
+            "service2": shape(singleton2),
+            "explanation": "Глобальный объект живет всё время работы приложения.",
+        },
+        "transient": {
+            "service1": shape(transient1),
+            "service2": shape(transient2),
+            "explanation": "use_cache=False создает новый экземпляр при каждом вызове.",
+        },
+    }
+
+
+@app.get("/api/dependency-injection/singleton-demo")
+async def singleton_demo(service: SingletonDiService = Depends(get_singleton_di_service)):
+    return {
+        "id": service.id,
+        "name": service.name,
+        "explanation": "Один объект создан на уровне модуля, а dependency каждый раз возвращает ссылку на него.",
+    }
+
+
+@app.get("/api/dependency-injection/settings-demo")
+async def settings_demo(settings: AppSettings = Depends(get_settings)):
+    return {
+        "app_name": settings.app_name,
+        "environment": settings.environment,
+        "explanation": "Endpoint получил settings через Depends(get_settings).",
+    }
+
+
+@app.get("/api/dependency-injection/current-user")
+async def current_user(user: UserContext = Depends(get_current_user)):
+    return {
+        "username": user.username,
+        "role": user.role,
+        "explanation": "Dependency прочитала query-параметры и собрала UserContext.",
+    }
+
+
+@app.get("/api/dependency-injection/logger-demo")
+async def logger_demo(
+    message: str = "Тестовое сообщение",
+    app_logger: logging.Logger = Depends(get_logger),
+):
+    app_logger.info("Получен запрос на логирование: %s", message)
+    app_logger.warning("Это предупреждение через logging")
+    return {"message": "Сообщения залогированы. Проверьте консоль.", "logged_message": message}
 
 
 @app.get("/api/dependency-injection/pretty-log")
@@ -1382,25 +1528,112 @@ async def pretty_log(
     "chapter03": [
         {
             "title": "Что добавляем",
-            "body": "Добавляем новый метод во внешний сервис и отдельный endpoint. Endpoint остаётся тонким: он только вызывает сервис и обрабатывает ошибку.",
+            "body": "Решение должно реально сходить в открытый внешний сервис JSONPlaceholder. Не создавайте локальный список комментариев и не возвращайте заранее написанный JSON: смысл задачи - потренироваться на стороннем HTTP API.",
             "items": [
-                "Добавить метод <code>get_post_comments</code> в <code>ExternalApiService</code>.",
-                "Добавить route <code>GET /api/http-client/post/{post_id}/comments</code>.",
-                "Использовать тот же <code>map_http_error</code>, что и в остальных методах.",
+                "Публичный base URL уже есть в главе: <code>JSONPLACEHOLDER = \"https://jsonplaceholder.typicode.com\"</code>.",
+                "Метод сервиса должен вызвать внешний путь <code>/posts/{post_id}/comments</code> через <code>httpx.AsyncClient</code>.",
+                "FastAPI endpoint должен остаться тонким: принять <code>post_id</code>, вызвать метод сервиса и обработать <code>httpx.HTTPError</code>.",
+                "Для ошибок используйте тот же <code>map_http_error</code>, что и в остальных endpoint-ах главы.",
             ],
         },
         {
-            "title": "Полный код метода сервиса и endpoint-а",
+            "title": "Полный API-код после изменения",
             "code": '''
+import httpx
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title="Глава 3: HTTP Requests",
+    description="httpx AsyncClient",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+JSONPLACEHOLDER = "https://jsonplaceholder.typicode.com"
+
+
+class CreatePostRequest(BaseModel):
+    title: str
+    body: str
+    user_id: int
+
+
 class ExternalApiService:
     def __init__(self, base_url: str = JSONPLACEHOLDER):
         self.base_url = base_url
+
+    async def get_post(self, post_id: int) -> dict:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(f"/posts/{post_id}")
+            response.raise_for_status()
+            return response.json()
+
+    async def get_posts(self) -> list[dict]:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get("/posts")
+            response.raise_for_status()
+            return response.json()
+
+    async def create_post(self, request: CreatePostRequest) -> dict:
+        payload = {"title": request.title, "body": request.body, "userId": request.user_id}
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.post("/posts", json=payload)
+            response.raise_for_status()
+            return response.json()
 
     async def get_post_comments(self, post_id: int) -> list[dict]:
         async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
             response = await client.get(f"/posts/{post_id}/comments")
             response.raise_for_status()
             return response.json()
+
+
+def get_external_api_service() -> ExternalApiService:
+    return ExternalApiService()
+
+
+def map_http_error(error: httpx.HTTPError) -> HTTPException:
+    status_code = 502
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+    return HTTPException(status_code=status_code, detail=str(error))
+
+
+@app.get("/api/http-client/direct/{post_id}")
+async def get_post_direct(post_id: int):
+    try:
+        async with httpx.AsyncClient(base_url=JSONPLACEHOLDER, timeout=10.0) as client:
+            response = await client.get(f"/posts/{post_id}")
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+
+
+@app.get("/api/http-client/post/{post_id}")
+async def get_post(post_id: int, service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.get_post(post_id)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+
+
+@app.get("/api/http-client/posts")
+async def get_posts(service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.get_posts()
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+
+
+@app.post("/api/http-client/post")
+async def create_post(request: CreatePostRequest, service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.create_post(request)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
 
 
 @app.get("/api/http-client/post/{post_id}/comments")
@@ -1417,7 +1650,8 @@ async def get_post_comments(
         {
             "title": "Как проверить",
             "checks": [
-                ("GET /api/http-client/post/1/comments", "Вернётся список комментариев к посту 1."),
+                ("Внешний API напрямую", "Откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> и убедитесь, что сторонний сервис возвращает JSON."),
+                ("GET /api/http-client/post/1/comments", "Ваш endpoint возвращает список комментариев к посту 1 из JSONPlaceholder."),
                 ("GET /api/http-client/post/999999/comments", "Внешний API может вернуть пустой список или ошибку, это зависит от сервиса."),
             ],
         },
@@ -1433,10 +1667,60 @@ async def get_post_comments(
             ],
         },
         {
-            "title": "Полный код ошибки, handler-а и проверки",
+            "title": "Полный API-код после изменения",
             "code": '''
+import time
+
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title="Глава 4: Error Handling",
+    description="Exception handlers and middleware",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+
 class NotReadyError(Exception):
     pass
+
+
+class DemoError(Exception):
+    pass
+
+
+class ValidationRequest(BaseModel):
+    name: str = ""
+    age: int = 0
+
+
+@app.middleware("http")
+async def request_logging_middleware(request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Process-Time"] = f"{time.perf_counter() - started:.6f}"
+    return response
+
+
+@app.exception_handler(DemoError)
+async def demo_error_handler(request, exc: DemoError):
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "path": str(request.url.path)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=400,
+        content={"error": "Validation failed", "details": exc.errors()},
+    )
 
 
 @app.exception_handler(NotReadyError)
@@ -1453,6 +1737,33 @@ async def not_ready_handler(request, exc: NotReadyError):
 @app.get("/api/error-demo/not-ready")
 async def not_ready():
     raise NotReadyError()
+
+
+@app.get("/api/error-demo/throw")
+async def throw_exception():
+    raise DemoError("Это тестовое исключение для демонстрации обработки ошибок")
+
+
+@app.get("/api/error-demo/badrequest")
+async def bad_request_demo():
+    raise HTTPException(status_code=400, detail="Это пример BadRequest ответа")
+
+
+@app.post("/api/error-demo/validate")
+async def validate_demo(request: ValidationRequest):
+    errors: dict[str, str] = {}
+    if not request.name:
+        errors["name"] = "Имя обязательно"
+    if request.age < 0 or request.age > 150:
+        errors["age"] = "Возраст должен быть от 0 до 150"
+    if errors:
+        return JSONResponse(status_code=400, content={"errors": errors})
+    return {"message": "Валидация прошла успешно", "data": request.model_dump()}
+
+
+@app.get("/api/error-demo/success")
+async def success():
+    return {"message": "Запрос выполнен успешно"}
             ''',
         },
         {
@@ -1476,6 +1787,48 @@ async def not_ready():
         {
             "title": "Полный код Python-части",
             "code": '''
+from pathlib import Path
+
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ValidationError, field_validator
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app = FastAPI(
+    title="Глава 5: Jinja2 UI",
+    description="Templates, forms, validation",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+class ContactForm(BaseModel):
+    name: str
+    email: str
+    message: str
+
+    @field_validator("name", "email", "message")
+    @classmethod
+    def not_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Поле обязательно")
+        return value.strip()
+
+    @field_validator("email")
+    @classmethod
+    def email_has_at(cls, value: str) -> str:
+        if "@" not in value:
+            raise ValueError("Email должен содержать @")
+        return value
+
+
 class RegistrationForm(BaseModel):
     username: str
     email: str
@@ -1501,6 +1854,40 @@ class RegistrationForm(BaseModel):
         if len(value) < 6:
             raise ValueError("Пароль должен быть не короче 6 символов")
         return value
+
+
+@app.get("/contact", response_class=HTMLResponse, include_in_schema=False)
+async def contact_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "contact.html",
+        {"request": request, "errors": {}, "values": {}, "sent": False},
+    )
+
+
+@app.post("/contact", response_class=HTMLResponse, include_in_schema=False)
+async def submit_contact(
+    request: Request,
+    name: str = Form(""),
+    email: str = Form(""),
+    message: str = Form(""),
+):
+    values = {"name": name, "email": email, "message": message}
+    try:
+        ContactForm(**values)
+    except ValidationError as error:
+        errors = {str(item["loc"][0]): item["msg"] for item in error.errors()}
+        return templates.TemplateResponse(
+            request,
+            "contact.html",
+            {"request": request, "errors": errors, "values": values, "sent": False},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        request,
+        "contact.html",
+        {"request": request, "errors": {}, "values": values, "sent": True},
+    )
 
 
 @app.get("/register", response_class=HTMLResponse, include_in_schema=False)
@@ -1535,26 +1922,71 @@ async def submit_register(
         "register.html",
         {"request": request, "errors": {}, "values": values, "registered": True},
     )
+
+
+@app.post("/api/contact")
+async def api_contact(form: ContactForm):
+    return {"message": "Форма принята", "data": form.model_dump()}
             ''',
         },
         {
-            "title": "Минимальный шаблон register.html",
+            "title": "Полный шаблон chapter05/templates/register.html",
             "code": '''
-<form method="post" action="/register">
-    <label>Username
-        <input name="username" value="{{ values.get('username', '') }}">
-        {% if errors.get('username') %}<span class="error">{{ errors.get('username') }}</span>{% endif %}
-    </label>
-    <label>Email
-        <input name="email" value="{{ values.get('email', '') }}">
-        {% if errors.get('email') %}<span class="error">{{ errors.get('email') }}</span>{% endif %}
-    </label>
-    <label>Password
-        <input name="password" type="password">
-        {% if errors.get('password') %}<span class="error">{{ errors.get('password') }}</span>{% endif %}
-    </label>
-    <button type="submit">Зарегистрироваться</button>
-</form>
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Регистрация</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav">
+            <a class="nav-link light" href="/">← К уроку</a>
+        </nav>
+
+        <section class="hero">
+            <h1>Регистрация</h1>
+            <p>Jinja2-шаблон показывает значения формы, ошибки валидации и успешную отправку.</p>
+        </section>
+
+        {% if registered %}
+            <article class="info-box">
+                <h2>Готово</h2>
+                <p>Пользователь {{ values.get("username") }} успешно зарегистрирован.</p>
+            </article>
+        {% endif %}
+
+        <article class="info-box">
+            <form method="post" action="/register">
+                <label>Username
+                    <input name="username" value="{{ values.get('username', '') }}">
+                    {% if errors.get('username') %}
+                        <span class="error">{{ errors.get('username') }}</span>
+                    {% endif %}
+                </label>
+
+                <label>Email
+                    <input name="email" value="{{ values.get('email', '') }}">
+                    {% if errors.get('email') %}
+                        <span class="error">{{ errors.get('email') }}</span>
+                    {% endif %}
+                </label>
+
+                <label>Password
+                    <input name="password" type="password">
+                    {% if errors.get('password') %}
+                        <span class="error">{{ errors.get('password') }}</span>
+                    {% endif %}
+                </label>
+
+                <button type="submit">Зарегистрироваться</button>
+            </form>
+        </article>
+    </main>
+</body>
+</html>
             ''',
         },
     ],
@@ -1573,6 +2005,45 @@ async def submit_register(
         {
             "title": "Полный набор изменений в моделях",
             "code": '''
+import os
+from datetime import datetime
+from decimal import Decimal
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy import DateTime, Integer, Numeric, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter06.db")
+
+
+def make_engine(database_url: str):
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    kwargs = {"connect_args": connect_args}
+    if database_url == "sqlite://":
+        kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+app = FastAPI(
+    title="Глава 6: SQLAlchemy",
+    description="SQLite, DTO, Alembic, CRUD",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+
 class Product(Base):
     __tablename__ = "products"
 
@@ -1610,6 +2081,62 @@ class UpdateProductDto(BaseModel):
     description: str | None = None
     price: Decimal | None = Field(default=None, gt=0)
     stock: int | None = Field(default=None, ge=0)
+
+
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+init_db()
+
+
+@app.get("/api/products", response_model=list[ProductDto])
+async def get_products(db: Session = Depends(get_db)):
+    return db.query(Product).order_by(Product.id).all()
+
+
+@app.get("/api/products/{product_id}", response_model=ProductDto)
+async def get_product(product_id: int, db: Session = Depends(get_db)):
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+
+@app.post("/api/products", response_model=ProductDto, status_code=status.HTTP_201_CREATED)
+async def create_product(request: CreateProductDto, db: Session = Depends(get_db)):
+    product = Product(**request.model_dump())
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@app.put("/api/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def update_product(product_id: int, request: UpdateProductDto, db: Session = Depends(get_db)):
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    for field, value in request.model_dump(exclude_unset=True).items():
+        setattr(product, field, value)
+    db.commit()
+
+
+@app.delete("/api/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    db.delete(product)
+    db.commit()
             ''',
         },
         {
@@ -1655,12 +2182,107 @@ def downgrade():
             ],
         },
         {
-            "title": "Полный код проверки admin-роли",
+            "title": "Полный API-код после изменения",
             "code": '''
+import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title="Глава 7: JWT Authorization",
+    description="Authentication and authorization",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+USERS: dict[str, dict] = {}
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    token_type: str = "bearer"
+    username: str
+    role: str
+    expires: datetime
+
+
+def create_access_token(username: str, role: str) -> tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": username, "role": role, "exp": expires}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+    except JWTError as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from error
+    user = USERS.get(str(username))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
+
+
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
     return user
+
+
+@app.post("/api/auth/register", response_model=AuthResponse)
+async def register(request: RegisterRequest):
+    if request.username in USERS:
+        raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
+    if any(user["email"] == request.email for user in USERS.values()):
+        raise HTTPException(status_code=400, detail="Пользователь с таким email уже существует")
+
+    role = "admin" if request.username == "admin" else "user"
+    USERS[request.username] = {
+        "username": request.username,
+        "email": request.email,
+        "password_hash": pwd_context.hash(request.password),
+        "role": role,
+    }
+    token, expires = create_access_token(request.username, role)
+    return AuthResponse(token=token, username=request.username, role=role, expires=expires)
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+async def login(request: LoginRequest):
+    user = USERS.get(request.username)
+    if user is None or not pwd_context.verify(request.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
+    token, expires = create_access_token(user["username"], user["role"])
+    return AuthResponse(token=token, username=user["username"], role=user["role"], expires=expires)
+
+
+@app.get("/api/protected")
+async def protected(user: dict = Depends(get_current_user)):
+    return {"message": "Это защищенный endpoint", "username": user["username"], "role": user["role"]}
 
 
 @app.get("/api/admin")
@@ -1673,17 +2295,13 @@ async def admin_area(user: dict = Depends(require_admin)):
             ''',
         },
         {
-            "title": "Как выдать admin-роль в учебном примере",
-            "code": '''
-role = "admin" if request.username == "admin" else "user"
-USERS[request.username] = {
-    "username": request.username,
-    "email": request.email,
-    "password_hash": pwd_context.hash(request.password),
-    "role": role,
-}
-token, expires = create_access_token(request.username, role)
-            ''',
+            "title": "Ключевое место для admin-роли",
+            "body": "В полном коде выше это уже встроено в register. Отдельно выделено место, где обычный пользователь отличается от admin.",
+            "items": [
+                "Если username равен <code>admin</code>, учебный код выдаёт роль <code>admin</code>.",
+                "Для всех остальных username роль остаётся <code>user</code>.",
+                "Token создаётся уже с выбранной ролью, поэтому <code>require_admin</code> может проверить её позже.",
+            ],
         },
         {
             "title": "Как проверить",
@@ -1706,8 +2324,66 @@ token, expires = create_access_token(request.username, role)
             ],
         },
         {
-            "title": "Полный фрагмент модели и revoke-логики",
+            "title": "Полный API-код после изменения",
             "code": '''
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+
+app = FastAPI(
+    title="Глава 8: Refresh Tokens",
+    description="Token rotation and revoke",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter08.db")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+
+def make_engine(database_url: str):
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    kwargs = {"connect_args": connect_args}
+    if database_url == "sqlite://":
+        kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(40), default="user")
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
+
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
@@ -1720,26 +2396,170 @@ class RefreshToken(Base):
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    username: str
+    role: str
+    access_token_expires: datetime
+    refresh_token_expires: datetime
+
+
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def create_access_token(user: User) -> tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": str(user.id), "username": user.username, "role": user.role, "exp": expires}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def create_refresh_token(db: Session, user: User) -> tuple[str, datetime]:
+    token = secrets.token_urlsafe(48)
+    expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.add(RefreshToken(token=token, user_id=user.id, expires_at=expires))
+    db.commit()
+    return token, expires
+
+
 def revoke_token(stored: RefreshToken) -> None:
     stored.revoked = True
     stored.revoked_at = datetime.utcnow()
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except (JWTError, KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from error
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
+
+
+init_db()
+
+
+@app.post("/api/auth/register", response_model=AuthResponse)
+async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.username == request.username).first():
+        raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
+    user = User(
+        username=request.username,
+        email=request.email,
+        password_hash=pwd_context.hash(request.password),
+        role="user",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == request.username).first()
+    if user is None or not pwd_context.verify(request.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post("/api/auth/refresh", response_model=AuthResponse)
+async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+    if stored is None or stored.revoked or stored.expires_at <= datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Недействительный refresh token")
+    revoke_token(stored)
+    user = db.get(User, stored.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    db.commit()
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post("/api/auth/revoke")
+async def revoke(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+    if stored is not None and not stored.revoked:
+        revoke_token(stored)
+        db.commit()
+    return {"message": "Refresh token отозван"}
+
+
+@app.post("/api/auth/logout")
+async def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    tokens = db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked.is_(False),
+    ).all()
+    for token in tokens:
+        revoke_token(token)
+    db.commit()
+    return {"message": f"Все сессии завершены. Отозвано токенов: {len(tokens)}"}
             ''',
         },
         {
             "title": "Где использовать revoke_token",
-            "code": '''
-# В /api/auth/refresh
-revoke_token(stored)
-access_token, access_expires = create_access_token(user)
-refresh_token, refresh_expires = create_refresh_token(db, user)
-db.commit()
-
-
-# В /api/auth/revoke
-if stored is not None and not stored.revoked:
-    revoke_token(stored)
-    db.commit()
-            ''',
+            "body": "В полном коде выше helper <code>revoke_token</code> используется во всех местах, где refresh token становится недействительным.",
+            "items": [
+                "В <code>/api/auth/refresh</code> старый token отзывается перед выдачей новой пары token-ов.",
+                "В <code>/api/auth/revoke</code> отзывается token, который прислал клиент.",
+                "В <code>/api/auth/logout</code> отзываются все активные refresh token-ы текущего пользователя.",
+            ],
         },
     ],
     "chapter09": [
@@ -1754,8 +2574,55 @@ if stored is not None and not stored.revoked:
             ],
         },
         {
-            "title": "Полный receive loop после изменения",
+            "title": "Полный WebSocket API-код после изменения",
             "code": '''
+from uuid import uuid4
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+
+app = FastAPI(
+    title="Глава 9: WebSockets",
+    description="Raw WebSocket chat",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket) -> str:
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.active_connections[connection_id] = websocket
+        await websocket.send_json({"event": "connected", "connection_id": connection_id})
+        return connection_id
+
+    def disconnect(self, connection_id: str) -> None:
+        self.active_connections.pop(connection_id, None)
+
+    async def broadcast(self, payload: dict) -> None:
+        disconnected: list[str] = []
+        for connection_id, websocket in self.active_connections.items():
+            try:
+                await websocket.send_json(payload)
+            except RuntimeError:
+                disconnected.append(connection_id)
+        for connection_id in disconnected:
+            self.disconnect(connection_id)
+
+
+manager = ConnectionManager()
+
+
+@app.get("/api/websocket/info")
+async def websocket_info():
+    return {"endpoint": "/ws", "connections": len(manager.active_connections)}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     connection_id = await manager.connect(websocket)
@@ -1800,8 +2667,124 @@ async def websocket_endpoint(websocket: WebSocket):
             ],
         },
         {
-            "title": "Полный блок Socket.IO событий для комнат",
+            "title": "Полный Socket.IO API-код после изменения",
             "code": '''
+from collections import defaultdict
+from uuid import uuid4
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import socketio
+
+
+fastapi_app = FastAPI(
+    title="Глава 10: Socket.IO чат",
+    description="Groups and direct messages",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+
+
+class ChatManager:
+    def __init__(self):
+        self.connections: dict[str, WebSocket] = {}
+        self.groups: dict[str, set[str]] = defaultdict(set)
+
+    async def connect(self, websocket: WebSocket, group: str) -> str:
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.connections[connection_id] = websocket
+        self.groups[group].add(connection_id)
+        await websocket.send_json({"event": "connected", "connection_id": connection_id, "group": group})
+        return connection_id
+
+    def disconnect(self, connection_id: str) -> None:
+        self.connections.pop(connection_id, None)
+        for members in self.groups.values():
+            members.discard(connection_id)
+
+    async def send_to_connection(self, connection_id: str, payload: dict) -> bool:
+        websocket = self.connections.get(connection_id)
+        if websocket is None:
+            return False
+        await websocket.send_json(payload)
+        return True
+
+    async def broadcast(self, payload: dict, exclude: str | None = None) -> None:
+        for connection_id in list(self.connections):
+            if connection_id != exclude:
+                await self.send_to_connection(connection_id, payload)
+
+    async def send_to_group(self, group: str, payload: dict) -> None:
+        for connection_id in list(self.groups[group]):
+            await self.send_to_connection(connection_id, payload)
+
+
+manager = ChatManager()
+socketio_clients: dict[str, str] = {}
+socketio_rooms: dict[str, set[str]] = defaultdict(set)
+
+
+@fastapi_app.get("/api/chat/info")
+async def chat_info():
+    return {
+        "raw_websocket_connections": len(manager.connections),
+        "socketio_connections": len(socketio_clients),
+        "groups": {name: len(members) for name, members in manager.groups.items()},
+        "socketio_rooms": {name: len(members) for name, members in socketio_rooms.items()},
+    }
+
+
+@fastapi_app.websocket("/ws/chat")
+async def chat_socket(websocket: WebSocket, group: str = "general"):
+    connection_id = await manager.connect(websocket, group)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action", "broadcast")
+            payload = {
+                "event": "message",
+                "from": connection_id,
+                "user": data.get("user", "anonymous"),
+                "message": data.get("message", ""),
+            }
+            if action == "send_to_connection":
+                await manager.send_to_connection(data["connection_id"], payload)
+            elif action == "send_to_group":
+                await manager.send_to_group(data.get("group", group), payload)
+            elif action == "join":
+                manager.groups[data.get("group", group)].add(connection_id)
+                await manager.send_to_connection(
+                    connection_id,
+                    {"event": "joined", "group": data.get("group", group)},
+                )
+            else:
+                await manager.broadcast(payload)
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id)
+
+
+@sio.event
+async def connect(sid, environ):
+    socketio_clients[sid] = "anonymous"
+    await sio.emit("connected", {"sid": sid}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None)
+    for members in socketio_rooms.values():
+        members.discard(sid)
+
+
+@sio.event
+async def set_name(sid, data):
+    username = data.get("username", "anonymous")
+    socketio_clients[sid] = username
+    await sio.emit("name_set", {"sid": sid, "username": username}, to=sid)
+
+
 @sio.event
 async def join_room(sid, data):
     room = data.get("room", "general")
@@ -1831,6 +2814,21 @@ async def chat_message(sid, data):
         await sio.emit("chat_message", payload, room=room)
     else:
         await sio.emit("chat_message", payload)
+
+
+@sio.event
+async def direct_message(sid, data):
+    target_sid = data.get("sid")
+    payload = {
+        "event": "direct_message",
+        "from": socketio_clients.get(sid, "anonymous"),
+        "message": data.get("message", ""),
+    }
+    if target_sid:
+        await sio.emit("direct_message", payload, to=target_sid)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")
             ''',
         },
         {
@@ -1854,8 +2852,35 @@ async def chat_message(sid, data):
             ],
         },
         {
-            "title": "Полный код token payload и admin-события",
+            "title": "Полный Socket.IO auth API-код после изменения",
             "code": '''
+import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI, HTTPException
+from jose import JWTError, jwt
+from pydantic import BaseModel
+import socketio
+
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
+ALGORITHM = "HS256"
+
+fastapi_app = FastAPI(
+    title="Глава 11: Auth Socket.IO",
+    description="JWT protected Socket.IO",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 def create_access_token(username: str, role: str = "user") -> str:
     expires = datetime.now(timezone.utc) + timedelta(minutes=30)
     return jwt.encode({"sub": username, "role": role, "exp": expires}, SECRET_KEY, algorithm=ALGORITHM)
@@ -1869,6 +2894,69 @@ def verify_user_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token") from error
 
 
+def authorize_socketio(auth: dict | None) -> dict | None:
+    token = (auth or {}).get("access_token") or (auth or {}).get("token")
+    if not token:
+        return None
+    try:
+        return verify_user_token(str(token))
+    except HTTPException:
+        return None
+
+
+authorized_clients: dict[str, dict] = {}
+
+
+@fastapi_app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    if not request.username or not request.password:
+        raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
+    role = "admin" if request.username == "admin" else "user"
+    return {
+        "access_token": create_access_token(request.username, role),
+        "token_type": "bearer",
+        "username": request.username,
+        "role": role,
+    }
+
+
+@fastapi_app.get("/api/socket/info")
+async def socket_info():
+    return {
+        "authorized_connections": len(authorized_clients),
+        "users": [user["username"] for user in authorized_clients.values()],
+    }
+
+
+@sio.event
+async def connect(sid, environ, auth):
+    user = authorize_socketio(auth)
+    if user is None:
+        return False
+    authorized_clients[sid] = user
+    if user["role"] == "admin":
+        await sio.enter_room(sid, "admins")
+    await sio.emit("authorized", {"sid": sid, **user}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    authorized_clients.pop(sid, None)
+
+
+@sio.event
+async def authorized_message(sid, data):
+    user = authorized_clients.get(sid)
+    if user is None:
+        return
+    await sio.emit("authorized_message", {
+        "event": "authorized_message",
+        "sid": sid,
+        "username": user["username"],
+        "message": data.get("message", ""),
+    })
+
+
 @sio.event
 async def admin_message(sid, data):
     user = authorized_clients.get(sid)
@@ -1879,6 +2967,9 @@ async def admin_message(sid, data):
         "from": user["username"],
         "message": data.get("message", ""),
     }, room="admins")
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")
             ''',
         },
         {
@@ -1903,9 +2994,125 @@ async def admin_message(sid, data):
             ],
         },
         {
-            "title": "Полный service method и endpoint",
+            "title": "Полный код приложения после изменения",
             "code": '''
+import os
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+import socketio
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter12.db")
+
+
+def make_engine(database_url: str):
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    kwargs = {"connect_args": connect_args}
+    if database_url == "sqlite://":
+        kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class ChatGroup(Base):
+    __tablename__ = "chat_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    messages: Mapped[list["Message"]] = relationship(back_populates="group")
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    sender: Mapped[str] = mapped_column(String(120), nullable=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("chat_groups.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    group: Mapped[ChatGroup | None] = relationship(back_populates="messages")
+
+
+class MessageDto(BaseModel):
+    id: int
+    text: str
+    sender: str
+    group_id: int | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChatGroupDto(BaseModel):
+    id: int
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class SendMessageRequest(BaseModel):
+    text: str = Field(min_length=1)
+    sender: str = Field(min_length=1)
+    group_id: int | None = None
+
+
+class CreateGroupRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 class ChatService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def send_message(self, text: str, sender: str, group_id: int | None = None) -> Message:
+        if group_id is not None and self.db.get(ChatGroup, group_id) is None:
+            raise HTTPException(status_code=404, detail="Group not found")
+        message = Message(text=text, sender=sender, group_id=group_id)
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message
+
+    def get_messages(self, group_id: int | None = None) -> list[Message]:
+        query = self.db.query(Message)
+        if group_id is not None:
+            query = query.filter(Message.group_id == group_id)
+        return query.order_by(Message.created_at, Message.id).all()
+
+    def create_group(self, name: str) -> ChatGroup:
+        group = ChatGroup(name=name)
+        self.db.add(group)
+        self.db.commit()
+        self.db.refresh(group)
+        return group
+
+    def get_groups(self) -> list[ChatGroup]:
+        return self.db.query(ChatGroup).order_by(ChatGroup.id).all()
+
     def delete_group(self, group_id: int) -> None:
         group = self.db.get(ChatGroup, group_id)
         if group is None:
@@ -1916,14 +3123,122 @@ class ChatService:
         self.db.commit()
 
 
-@app.delete("/api/chat/groups/{group_id}", status_code=204)
+def get_chat_service(db: Session = Depends(get_db)) -> ChatService:
+    return ChatService(db)
+
+
+def message_to_dict(message: Message) -> dict:
+    return {
+        "id": message.id,
+        "text": message.text,
+        "sender": message.sender,
+        "group_id": message.group_id,
+        "created_at": message.created_at.isoformat(),
+    }
+
+
+init_db()
+
+fastapi_app = FastAPI(
+    title="Глава 12: Socket.IO и тестирование",
+    description="API, service layer, Socket.IO, in-memory DB",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+socketio_clients: dict[str, str] = {}
+
+
+@fastapi_app.post("/api/chat/messages", response_model=MessageDto)
+async def send_message(request: SendMessageRequest, service: ChatService = Depends(get_chat_service)):
+    return service.send_message(request.text, request.sender, request.group_id)
+
+
+@fastapi_app.get("/api/chat/messages", response_model=list[MessageDto])
+async def get_messages(group_id: int | None = None, service: ChatService = Depends(get_chat_service)):
+    return service.get_messages(group_id)
+
+
+@fastapi_app.post("/api/chat/groups", response_model=ChatGroupDto)
+async def create_group(request: CreateGroupRequest, service: ChatService = Depends(get_chat_service)):
+    return service.create_group(request.name)
+
+
+@fastapi_app.get("/api/chat/groups", response_model=list[ChatGroupDto])
+async def get_groups(service: ChatService = Depends(get_chat_service)):
+    return service.get_groups()
+
+
+@fastapi_app.delete("/api/chat/groups/{group_id}", status_code=204)
 async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
     service.delete_group(group_id)
-            ''',
-        },
-        {
-            "title": "Полное Socket.IO событие",
-            "code": '''
+
+
+@fastapi_app.get("/api/chat/realtime")
+async def realtime_info():
+    return {
+        "socketio_path": "/socket.io",
+        "events": ["set_name", "join_group", "chat_message", "list_messages", "delete_group"],
+        "connections": len(socketio_clients),
+    }
+
+
+@sio.event
+async def connect(sid, environ):
+    socketio_clients[sid] = "anonymous"
+    await sio.enter_room(sid, "global")
+    await sio.emit("connected", {"sid": sid}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    socketio_clients.pop(sid, None)
+
+
+@sio.event
+async def set_name(sid, data):
+    username = data.get("username", "anonymous")
+    socketio_clients[sid] = username
+    await sio.emit("name_set", {"sid": sid, "username": username}, to=sid)
+
+
+@sio.event
+async def join_group(sid, data):
+    group_id = data.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
+    room = f"group:{group_id}" if group_id is not None else "global"
+    await sio.enter_room(sid, room)
+    await sio.emit("joined_group", {"room": room, "group_id": group_id}, to=sid)
+
+
+@sio.event
+async def chat_message(sid, data):
+    sender = data.get("sender") or socketio_clients.get(sid, "anonymous")
+    text = data.get("text") or data.get("message", "")
+    group_id = data.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        message = service.send_message(text=text, sender=sender, group_id=group_id)
+        payload = {"event": "chat_message", "message": message_to_dict(message)}
+    room = f"group:{group_id}" if group_id is not None else "global"
+    await sio.emit("chat_message", payload, room=room)
+
+
+@sio.event
+async def list_messages(sid, data):
+    group_id = data.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
+    with SessionLocal() as db:
+        service = ChatService(db)
+        messages = [message_to_dict(message) for message in service.get_messages(group_id)]
+    await sio.emit("messages", {"group_id": group_id, "items": messages}, to=sid)
+
+
 @sio.event
 async def delete_group(sid, data):
     group_id = int(data["group_id"])
@@ -1931,11 +3246,21 @@ async def delete_group(sid, data):
         service = ChatService(db)
         service.delete_group(group_id)
     await sio.emit("group_deleted", {"group_id": group_id})
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")
+app.dependency_overrides = fastapi_app.dependency_overrides
             ''',
         },
         {
             "title": "Полный тест",
             "code": '''
+from fastapi.testclient import TestClient
+
+from chapter12.app.main import Base, app, get_db
+from tests.conftest import make_sqlite_override
+
+
 def test_delete_group_removes_group_messages():
     _, override = make_sqlite_override(Base, get_db)
     app.dependency_overrides[get_db] = override
@@ -1968,6 +3293,14 @@ PRACTICE_STEPS = {
         "Верните готовую строку в поле <code>formatted_message</code>, чтобы результат было видно в Swagger без чтения консоли.",
         "После этого откройте Swagger и попробуйте два значения <code>message</code>: <code>hello</code> и <code>FastAPI</code>.",
     ],
+    "chapter03": [
+        "Сначала проверьте внешний сервис без своего кода: откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> в браузере или выполните curl.",
+        "Посмотрите на JSON: это список комментариев, у каждого есть <code>postId</code>, <code>id</code>, <code>name</code>, <code>email</code> и <code>body</code>.",
+        "После этого добавляйте метод в <code>ExternalApiService</code>. Метод должен обращаться именно к внешнему пути <code>/posts/{post_id}/comments</code>.",
+        "Не возвращайте локальный список и не копируйте пример JSON в код. Ваш FastAPI endpoint должен быть прокладкой между клиентом и открытым внешним API.",
+        "В endpoint-е используйте существующую dependency <code>get_external_api_service</code>, чтобы сохранить учебную архитектуру главы.",
+        "Проверьте два сценария: внешний URL напрямую и ваш локальный endpoint через Swagger.",
+    ],
 }
 
 
@@ -1983,8 +3316,9 @@ TASK_CRITERIA = {
         ("DI", "Префикс приходит через dependency, а не записан напрямую внутри endpoint-а."),
     ],
     "chapter03": [
-        ("GET /api/http-client/post/1/comments", "Возвращается список комментариев внешнего API."),
-        ("Service layer", "Endpoint вызывает метод <code>ExternalApiService.get_post_comments</code>."),
+        ("Внешний API", "Перед кодом проверьте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> напрямую в браузере или curl."),
+        ("GET /api/http-client/post/1/comments", "Ваш endpoint возвращает список комментариев из открытого тестового API JSONPlaceholder."),
+        ("Service layer", "Endpoint вызывает метод <code>ExternalApiService.get_post_comments</code>, а не возвращает локальную заглушку."),
         ("Ошибки", "HTTP-ошибки внешнего API проходят через общий <code>map_http_error</code>."),
     ],
     "chapter04": [
@@ -2462,8 +3796,9 @@ REQUEST_EXAMPLES = {
         ("Логирование через dependency", "curl 'http://localhost:8002/api/dependency-injection/logger-demo?message=hello'"),
     ],
     "chapter03": [
-        ("Получить внешний post", "curl http://localhost:8003/api/http-client/posts/1"),
-        ("Получить комментарии post-а", "curl http://localhost:8003/api/http-client/posts/1/comments"),
+        ("Проверить внешний API напрямую", "curl https://jsonplaceholder.typicode.com/posts/1"),
+        ("Проверить внешний comments endpoint напрямую", "curl https://jsonplaceholder.typicode.com/posts/1/comments"),
+        ("Получить внешний post через ваш FastAPI", "curl http://localhost:8003/api/http-client/post/1"),
     ],
     "chapter04": [
         ("Ожидаемая demo-ошибка", "curl -i http://localhost:8004/api/error-demo/custom"),

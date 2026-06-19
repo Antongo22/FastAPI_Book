@@ -258,9 +258,59 @@ async def demo_error_handler(request, exc: DemoError):
 <li>Зарегистрировать <code>@app.exception_handler(NotReadyError)</code>.</li>
 <li>Добавить endpoint, который бросает эту ошибку для проверки.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код ошибки, handler-а и проверки</h2>
-<pre><code>{% raw %}class NotReadyError(Exception):
+<article class="info-box"><h2>2. Полный API-код после изменения</h2>
+<pre><code>{% raw %}import time
+
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title=&quot;Глава 4: Error Handling&quot;,
+    description=&quot;Exception handlers and middleware&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+
+
+class NotReadyError(Exception):
     pass
+
+
+class DemoError(Exception):
+    pass
+
+
+class ValidationRequest(BaseModel):
+    name: str = &quot;&quot;
+    age: int = 0
+
+
+@app.middleware(&quot;http&quot;)
+async def request_logging_middleware(request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    response.headers[&quot;X-Process-Time&quot;] = f&quot;{time.perf_counter() - started:.6f}&quot;
+    return response
+
+
+@app.exception_handler(DemoError)
+async def demo_error_handler(request, exc: DemoError):
+    return JSONResponse(
+        status_code=500,
+        content={&quot;error&quot;: str(exc), &quot;path&quot;: str(request.url.path)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=400,
+        content={&quot;error&quot;: &quot;Validation failed&quot;, &quot;details&quot;: exc.errors()},
+    )
 
 
 @app.exception_handler(NotReadyError)
@@ -276,7 +326,34 @@ async def not_ready_handler(request, exc: NotReadyError):
 
 @app.get(&quot;/api/error-demo/not-ready&quot;)
 async def not_ready():
-    raise NotReadyError(){% endraw %}</code></pre>
+    raise NotReadyError()
+
+
+@app.get(&quot;/api/error-demo/throw&quot;)
+async def throw_exception():
+    raise DemoError(&quot;Это тестовое исключение для демонстрации обработки ошибок&quot;)
+
+
+@app.get(&quot;/api/error-demo/badrequest&quot;)
+async def bad_request_demo():
+    raise HTTPException(status_code=400, detail=&quot;Это пример BadRequest ответа&quot;)
+
+
+@app.post(&quot;/api/error-demo/validate&quot;)
+async def validate_demo(request: ValidationRequest):
+    errors: dict[str, str] = {}
+    if not request.name:
+        errors[&quot;name&quot;] = &quot;Имя обязательно&quot;
+    if request.age &lt; 0 or request.age &gt; 150:
+        errors[&quot;age&quot;] = &quot;Возраст должен быть от 0 до 150&quot;
+    if errors:
+        return JSONResponse(status_code=400, content={&quot;errors&quot;: errors})
+    return {&quot;message&quot;: &quot;Валидация прошла успешно&quot;, &quot;data&quot;: request.model_dump()}
+
+
+@app.get(&quot;/api/error-demo/success&quot;)
+async def success():
+    return {&quot;message&quot;: &quot;Запрос выполнен успешно&quot;}{% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/error-demo/not-ready</code></strong><span>HTTP 503 и JSON с <code>error</code>.</span></article>

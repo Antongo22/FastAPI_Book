@@ -274,8 +274,55 @@ ws.onopen = () =&gt; ws.send(&quot;hello&quot;);{% endraw %}</code></pre></artic
 <li>Если да, отправить ответ только текущему WebSocket.</li>
 <li>Если нет, оставить обычный broadcast.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный receive loop после изменения</h2>
-<pre><code>{% raw %}@app.websocket(&quot;/ws&quot;)
+<article class="info-box"><h2>2. Полный WebSocket API-код после изменения</h2>
+<pre><code>{% raw %}from uuid import uuid4
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+
+app = FastAPI(
+    title=&quot;Глава 9: WebSockets&quot;,
+    description=&quot;Raw WebSocket chat&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket) -&gt; str:
+        await websocket.accept()
+        connection_id = str(uuid4())
+        self.active_connections[connection_id] = websocket
+        await websocket.send_json({&quot;event&quot;: &quot;connected&quot;, &quot;connection_id&quot;: connection_id})
+        return connection_id
+
+    def disconnect(self, connection_id: str) -&gt; None:
+        self.active_connections.pop(connection_id, None)
+
+    async def broadcast(self, payload: dict) -&gt; None:
+        disconnected: list[str] = []
+        for connection_id, websocket in self.active_connections.items():
+            try:
+                await websocket.send_json(payload)
+            except RuntimeError:
+                disconnected.append(connection_id)
+        for connection_id in disconnected:
+            self.disconnect(connection_id)
+
+
+manager = ConnectionManager()
+
+
+@app.get(&quot;/api/websocket/info&quot;)
+async def websocket_info():
+    return {&quot;endpoint&quot;: &quot;/ws&quot;, &quot;connections&quot;: len(manager.active_connections)}
+
+
+@app.websocket(&quot;/ws&quot;)
 async def websocket_endpoint(websocket: WebSocket):
     connection_id = await manager.connect(websocket)
     try:

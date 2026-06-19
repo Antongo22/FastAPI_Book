@@ -139,8 +139,9 @@ open http://localhost:8003/docs{% endraw %}</code></pre></article>
                 </article>
 
                 <div class="section-grid">
-                    <article class="info-box command-box"><h2>Получить внешний post</h2><pre><code>{% raw %}curl http://localhost:8003/api/http-client/posts/1{% endraw %}</code></pre></article>
-<article class="info-box command-box"><h2>Получить комментарии post-а</h2><pre><code>{% raw %}curl http://localhost:8003/api/http-client/posts/1/comments{% endraw %}</code></pre></article>
+                    <article class="info-box command-box"><h2>Проверить внешний API напрямую</h2><pre><code>{% raw %}curl https://jsonplaceholder.typicode.com/posts/1{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить внешний comments endpoint напрямую</h2><pre><code>{% raw %}curl https://jsonplaceholder.typicode.com/posts/1/comments{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Получить внешний post через ваш FastAPI</h2><pre><code>{% raw %}curl http://localhost:8003/api/http-client/post/1{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -211,22 +212,26 @@ open http://localhost:8003/docs{% endraw %}</code></pre></article>
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">Добавьте метод и endpoint для получения комментариев поста: <code>GET /api/http-client/post/{post_id}/comments</code>.</div>
+                    <div class="callout">Потренируйтесь на реальном открытом тестовом API, а не на локальной заглушке. Используйте JSONPlaceholder: <code>https://jsonplaceholder.typicode.com/posts/1/comments</code>. Добавьте в свой сервис метод, который ходит во внешний endpoint <code>/posts/{post_id}/comments</code>, и откройте его через ваш FastAPI endpoint <code>GET /api/http-client/post/{post_id}/comments</code>.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
-                    <ul class="flow-list"><li>Добавить метод <code>get_post_comments</code> в <code>ExternalApiService</code>.</li>
-<li>Добавить route <code>GET /api/http-client/post/{post_id}/comments</code>.</li>
-<li>Использовать тот же <code>map_http_error</code>, что и в остальных методах.</li></ul>
+                    <ul class="flow-list"><li>Сначала проверьте внешний сервис без своего кода: откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> в браузере или выполните curl.</li>
+<li>Посмотрите на JSON: это список комментариев, у каждого есть <code>postId</code>, <code>id</code>, <code>name</code>, <code>email</code> и <code>body</code>.</li>
+<li>После этого добавляйте метод в <code>ExternalApiService</code>. Метод должен обращаться именно к внешнему пути <code>/posts/{post_id}/comments</code>.</li>
+<li>Не возвращайте локальный список и не копируйте пример JSON в код. Ваш FastAPI endpoint должен быть прокладкой между клиентом и открытым внешним API.</li>
+<li>В endpoint-е используйте существующую dependency <code>get_external_api_service</code>, чтобы сохранить учебную архитектуру главы.</li>
+<li>Проверьте два сценария: внешний URL напрямую и ваш локальный endpoint через Swagger.</li></ul>
                 </article>
 
                 <article class="info-box">
                     <h2>Критерии готовности</h2>
                     <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
                     <div class="endpoint-grid">
-                        <article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Возвращается список комментариев внешнего API.</span></article>
-<article class="endpoint-card"><strong><code>Service layer</code></strong><span>Endpoint вызывает метод <code>ExternalApiService.get_post_comments</code>.</span></article>
+                        <article class="endpoint-card"><strong><code>Внешний API</code></strong><span>Перед кодом проверьте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> напрямую в браузере или curl.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Ваш endpoint возвращает список комментариев из открытого тестового API JSONPlaceholder.</span></article>
+<article class="endpoint-card"><strong><code>Service layer</code></strong><span>Endpoint вызывает метод <code>ExternalApiService.get_post_comments</code>, а не возвращает локальную заглушку.</span></article>
 <article class="endpoint-card"><strong><code>Ошибки</code></strong><span>HTTP-ошибки внешнего API проходят через общий <code>map_http_error</code>.</span></article>
                     </div>
                 </article>
@@ -252,21 +257,108 @@ open http://localhost:8003/docs{% endraw %}</code></pre></article>
                 </article>
 
                 <article class="info-box"><h2>1. Что добавляем</h2>
-<p>Добавляем новый метод во внешний сервис и отдельный endpoint. Endpoint остаётся тонким: он только вызывает сервис и обрабатывает ошибку.</p>
-<ul class="flow-list"><li>Добавить метод <code>get_post_comments</code> в <code>ExternalApiService</code>.</li>
-<li>Добавить route <code>GET /api/http-client/post/{post_id}/comments</code>.</li>
-<li>Использовать тот же <code>map_http_error</code>, что и в остальных методах.</li></ul>
+<p>Решение должно реально сходить в открытый внешний сервис JSONPlaceholder. Не создавайте локальный список комментариев и не возвращайте заранее написанный JSON: смысл задачи - потренироваться на стороннем HTTP API.</p>
+<ul class="flow-list"><li>Публичный base URL уже есть в главе: <code>JSONPLACEHOLDER = "https://jsonplaceholder.typicode.com"</code>.</li>
+<li>Метод сервиса должен вызвать внешний путь <code>/posts/{post_id}/comments</code> через <code>httpx.AsyncClient</code>.</li>
+<li>FastAPI endpoint должен остаться тонким: принять <code>post_id</code>, вызвать метод сервиса и обработать <code>httpx.HTTPError</code>.</li>
+<li>Для ошибок используйте тот же <code>map_http_error</code>, что и в остальных endpoint-ах главы.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код метода сервиса и endpoint-а</h2>
-<pre><code>{% raw %}class ExternalApiService:
+<article class="info-box"><h2>2. Полный API-код после изменения</h2>
+<pre><code>{% raw %}import httpx
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title=&quot;Глава 3: HTTP Requests&quot;,
+    description=&quot;httpx AsyncClient&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+JSONPLACEHOLDER = &quot;https://jsonplaceholder.typicode.com&quot;
+
+
+class CreatePostRequest(BaseModel):
+    title: str
+    body: str
+    user_id: int
+
+
+class ExternalApiService:
     def __init__(self, base_url: str = JSONPLACEHOLDER):
         self.base_url = base_url
+
+    async def get_post(self, post_id: int) -&gt; dict:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(f&quot;/posts/{post_id}&quot;)
+            response.raise_for_status()
+            return response.json()
+
+    async def get_posts(self) -&gt; list[dict]:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.get(&quot;/posts&quot;)
+            response.raise_for_status()
+            return response.json()
+
+    async def create_post(self, request: CreatePostRequest) -&gt; dict:
+        payload = {&quot;title&quot;: request.title, &quot;body&quot;: request.body, &quot;userId&quot;: request.user_id}
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.post(&quot;/posts&quot;, json=payload)
+            response.raise_for_status()
+            return response.json()
 
     async def get_post_comments(self, post_id: int) -&gt; list[dict]:
         async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
             response = await client.get(f&quot;/posts/{post_id}/comments&quot;)
             response.raise_for_status()
             return response.json()
+
+
+def get_external_api_service() -&gt; ExternalApiService:
+    return ExternalApiService()
+
+
+def map_http_error(error: httpx.HTTPError) -&gt; HTTPException:
+    status_code = 502
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+    return HTTPException(status_code=status_code, detail=str(error))
+
+
+@app.get(&quot;/api/http-client/direct/{post_id}&quot;)
+async def get_post_direct(post_id: int):
+    try:
+        async with httpx.AsyncClient(base_url=JSONPLACEHOLDER, timeout=10.0) as client:
+            response = await client.get(f&quot;/posts/{post_id}&quot;)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+
+
+@app.get(&quot;/api/http-client/post/{post_id}&quot;)
+async def get_post(post_id: int, service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.get_post(post_id)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+
+
+@app.get(&quot;/api/http-client/posts&quot;)
+async def get_posts(service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.get_posts()
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
+
+
+@app.post(&quot;/api/http-client/post&quot;)
+async def create_post(request: CreatePostRequest, service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.create_post(request)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
 
 
 @app.get(&quot;/api/http-client/post/{post_id}/comments&quot;)
@@ -280,7 +372,8 @@ async def get_post_comments(
         raise map_http_error(error) from error{% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Вернётся список комментариев к посту 1.</span></article>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Внешний API напрямую</code></strong><span>Откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> и убедитесь, что сторонний сервис возвращает JSON.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/http-client/post/1/comments</code></strong><span>Ваш endpoint возвращает список комментариев к посту 1 из JSONPlaceholder.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/http-client/post/999999/comments</code></strong><span>Внешний API может вернуть пустой список или ошибку, это зависит от сервиса.</span></article></div>
 </article>
 

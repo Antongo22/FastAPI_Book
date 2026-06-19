@@ -286,8 +286,35 @@ async def connect(sid, environ, auth):
 <li>Добавить событие <code>admin_message</code>.</li>
 <li>Если роль текущего <code>sid</code> не admin, отправить событие <code>forbidden</code> только этому клиенту.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код token payload и admin-события</h2>
-<pre><code>{% raw %}def create_access_token(username: str, role: str = &quot;user&quot;) -&gt; str:
+<article class="info-box"><h2>2. Полный Socket.IO auth API-код после изменения</h2>
+<pre><code>{% raw %}import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI, HTTPException
+from jose import JWTError, jwt
+from pydantic import BaseModel
+import socketio
+
+
+SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-development-secret&quot;)
+ALGORITHM = &quot;HS256&quot;
+
+fastapi_app = FastAPI(
+    title=&quot;Глава 11: Auth Socket.IO&quot;,
+    description=&quot;JWT protected Socket.IO&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def create_access_token(username: str, role: str = &quot;user&quot;) -&gt; str:
     expires = datetime.now(timezone.utc) + timedelta(minutes=30)
     return jwt.encode({&quot;sub&quot;: username, &quot;role&quot;: role, &quot;exp&quot;: expires}, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -300,6 +327,69 @@ def verify_user_token(token: str) -&gt; dict:
         raise HTTPException(status_code=401, detail=&quot;Invalid token&quot;) from error
 
 
+def authorize_socketio(auth: dict | None) -&gt; dict | None:
+    token = (auth or {}).get(&quot;access_token&quot;) or (auth or {}).get(&quot;token&quot;)
+    if not token:
+        return None
+    try:
+        return verify_user_token(str(token))
+    except HTTPException:
+        return None
+
+
+authorized_clients: dict[str, dict] = {}
+
+
+@fastapi_app.post(&quot;/api/auth/login&quot;)
+async def login(request: LoginRequest):
+    if not request.username or not request.password:
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    role = &quot;admin&quot; if request.username == &quot;admin&quot; else &quot;user&quot;
+    return {
+        &quot;access_token&quot;: create_access_token(request.username, role),
+        &quot;token_type&quot;: &quot;bearer&quot;,
+        &quot;username&quot;: request.username,
+        &quot;role&quot;: role,
+    }
+
+
+@fastapi_app.get(&quot;/api/socket/info&quot;)
+async def socket_info():
+    return {
+        &quot;authorized_connections&quot;: len(authorized_clients),
+        &quot;users&quot;: [user[&quot;username&quot;] for user in authorized_clients.values()],
+    }
+
+
+@sio.event
+async def connect(sid, environ, auth):
+    user = authorize_socketio(auth)
+    if user is None:
+        return False
+    authorized_clients[sid] = user
+    if user[&quot;role&quot;] == &quot;admin&quot;:
+        await sio.enter_room(sid, &quot;admins&quot;)
+    await sio.emit(&quot;authorized&quot;, {&quot;sid&quot;: sid, **user}, to=sid)
+
+
+@sio.event
+async def disconnect(sid):
+    authorized_clients.pop(sid, None)
+
+
+@sio.event
+async def authorized_message(sid, data):
+    user = authorized_clients.get(sid)
+    if user is None:
+        return
+    await sio.emit(&quot;authorized_message&quot;, {
+        &quot;event&quot;: &quot;authorized_message&quot;,
+        &quot;sid&quot;: sid,
+        &quot;username&quot;: user[&quot;username&quot;],
+        &quot;message&quot;: data.get(&quot;message&quot;, &quot;&quot;),
+    })
+
+
 @sio.event
 async def admin_message(sid, data):
     user = authorized_clients.get(sid)
@@ -309,7 +399,10 @@ async def admin_message(sid, data):
     await sio.emit(&quot;admin_message&quot;, {
         &quot;from&quot;: user[&quot;username&quot;],
         &quot;message&quot;: data.get(&quot;message&quot;, &quot;&quot;),
-    }, room=&quot;admins&quot;){% endraw %}</code></pre>
+    }, room=&quot;admins&quot;)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Обычный пользователь подключается с <code>auth: { access_token }</code>.</span></article>

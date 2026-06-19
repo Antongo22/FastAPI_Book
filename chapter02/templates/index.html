@@ -513,9 +513,155 @@ async def logger_demo(
 <li>Endpoint <code>pretty_log</code> можно поставить после <code>logger_demo</code> или рядом с другими endpoint-ами <code>/api/dependency-injection/*</code>.</li>
 <li>Важно: в endpoint-е префикс приходит из параметра <code>prefix</code>, а не создаётся внутри тела функции.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код новой dependency и endpoint-а</h2>
-<pre><code>{% raw %}def get_log_prefix() -&gt; str:
+<article class="info-box"><h2>2. Полный API-код после изменения</h2>
+<pre><code>{% raw %}import logging
+from dataclasses import dataclass
+from uuid import uuid4
+
+from fastapi import Depends, FastAPI, Query
+
+
+app = FastAPI(
+    title=&quot;Глава 2: Dependency Injection&quot;,
+    description=&quot;Depends and lifetimes&quot;,
+    version=&quot;1.0.0&quot;,
+    docs_url=&quot;/docs&quot;,
+    redoc_url=&quot;/redoc&quot;,
+)
+logger = logging.getLogger(&quot;chapter02&quot;)
+
+
+@dataclass
+class InstanceService:
+    service_type: str
+    id: str
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    app_name: str
+    environment: str
+
+
+@dataclass(frozen=True)
+class SingletonDiService:
+    id: str
+    name: str
+
+
+@dataclass
+class UserContext:
+    username: str
+    role: str
+
+
+singleton_service = InstanceService(&quot;singleton&quot;, str(uuid4()))
+app_settings = AppSettings(app_name=&quot;FastAPI Book Chapter 02&quot;, environment=&quot;development&quot;)
+singleton_di_service = SingletonDiService(id=str(uuid4()), name=&quot;created-once&quot;)
+
+
+def get_scoped_service() -&gt; InstanceService:
+    return InstanceService(&quot;scoped&quot;, str(uuid4()))
+
+
+def get_singleton_service() -&gt; InstanceService:
+    return singleton_service
+
+
+def get_transient_service() -&gt; InstanceService:
+    return InstanceService(&quot;transient&quot;, str(uuid4()))
+
+
+def get_settings() -&gt; AppSettings:
+    return app_settings
+
+
+def get_singleton_di_service() -&gt; SingletonDiService:
+    return singleton_di_service
+
+
+def get_logger() -&gt; logging.Logger:
+    return logger
+
+
+def get_log_prefix() -&gt; str:
     return &quot;[DI LOG]&quot;
+
+
+def get_current_user(
+    username: str = Query(&quot;guest&quot;),
+    role: str = Query(&quot;student&quot;),
+) -&gt; UserContext:
+    return UserContext(username=username, role=role)
+
+
+def shape(service: InstanceService) -&gt; dict[str, str]:
+    return {&quot;id&quot;: service.id, &quot;type&quot;: service.service_type}
+
+
+@app.get(&quot;/api/dependency-injection/lifetimes&quot;)
+async def lifetimes(
+    scoped1: InstanceService = Depends(get_scoped_service),
+    scoped2: InstanceService = Depends(get_scoped_service),
+    singleton1: InstanceService = Depends(get_singleton_service),
+    singleton2: InstanceService = Depends(get_singleton_service),
+    transient1: InstanceService = Depends(get_transient_service, use_cache=False),
+    transient2: InstanceService = Depends(get_transient_service, use_cache=False),
+):
+    return {
+        &quot;scoped&quot;: {
+            &quot;service1&quot;: shape(scoped1),
+            &quot;service2&quot;: shape(scoped2),
+            &quot;explanation&quot;: &quot;Depends кеширует одинаковую зависимость в пределах запроса.&quot;,
+        },
+        &quot;singleton&quot;: {
+            &quot;service1&quot;: shape(singleton1),
+            &quot;service2&quot;: shape(singleton2),
+            &quot;explanation&quot;: &quot;Глобальный объект живет всё время работы приложения.&quot;,
+        },
+        &quot;transient&quot;: {
+            &quot;service1&quot;: shape(transient1),
+            &quot;service2&quot;: shape(transient2),
+            &quot;explanation&quot;: &quot;use_cache=False создает новый экземпляр при каждом вызове.&quot;,
+        },
+    }
+
+
+@app.get(&quot;/api/dependency-injection/singleton-demo&quot;)
+async def singleton_demo(service: SingletonDiService = Depends(get_singleton_di_service)):
+    return {
+        &quot;id&quot;: service.id,
+        &quot;name&quot;: service.name,
+        &quot;explanation&quot;: &quot;Один объект создан на уровне модуля, а dependency каждый раз возвращает ссылку на него.&quot;,
+    }
+
+
+@app.get(&quot;/api/dependency-injection/settings-demo&quot;)
+async def settings_demo(settings: AppSettings = Depends(get_settings)):
+    return {
+        &quot;app_name&quot;: settings.app_name,
+        &quot;environment&quot;: settings.environment,
+        &quot;explanation&quot;: &quot;Endpoint получил settings через Depends(get_settings).&quot;,
+    }
+
+
+@app.get(&quot;/api/dependency-injection/current-user&quot;)
+async def current_user(user: UserContext = Depends(get_current_user)):
+    return {
+        &quot;username&quot;: user.username,
+        &quot;role&quot;: user.role,
+        &quot;explanation&quot;: &quot;Dependency прочитала query-параметры и собрала UserContext.&quot;,
+    }
+
+
+@app.get(&quot;/api/dependency-injection/logger-demo&quot;)
+async def logger_demo(
+    message: str = &quot;Тестовое сообщение&quot;,
+    app_logger: logging.Logger = Depends(get_logger),
+):
+    app_logger.info(&quot;Получен запрос на логирование: %s&quot;, message)
+    app_logger.warning(&quot;Это предупреждение через logging&quot;)
+    return {&quot;message&quot;: &quot;Сообщения залогированы. Проверьте консоль.&quot;, &quot;logged_message&quot;: message}
 
 
 @app.get(&quot;/api/dependency-injection/pretty-log&quot;)
