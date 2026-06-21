@@ -378,7 +378,65 @@ async def get_post_comments(
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Зачем нужен service layer</h2>
+<p>Задача добавляет запрос к реальному внешнему API JSONPlaceholder. Endpoint не должен сам знать все детали HTTP-клиента, поэтому логика запроса лежит в <code>ExternalApiService</code>.</p>
+<ul class="flow-list"><li><code>JSONPLACEHOLDER</code> хранит базовый URL внешнего сервиса в одном месте.</li>
+<li><code>ExternalApiService.__init__</code> принимает <code>base_url</code>, чтобы в тестах или будущем окружении можно было подменить внешний адрес.</li>
+<li>Метод <code>get_post_comments</code> лежит внутри сервиса, потому что это такая же внешняя операция, как получение поста.</li>
+<li>Endpoint остаётся тонким: он принимает <code>post_id</code>, получает сервис через dependency и возвращает результат сервиса.</li></ul>
+</article>
+<article class="info-box"><h2>Как работает httpx-код</h2>
+<ul class="flow-list"><li><code>async with httpx.AsyncClient(...)</code> открывает HTTP-клиент на время запроса и корректно закрывает соединения после выхода из блока.</li>
+<li><code>base_url=self.base_url</code> позволяет писать короткий путь <code>/posts/{post_id}/comments</code>, а не полный URL каждый раз.</li>
+<li><code>timeout=10.0</code> нужен, чтобы приложение не висело бесконечно, если внешний сервис тормозит.</li>
+<li><code>await client.get(...)</code> отправляет GET-запрос асинхронно. Пока внешний API отвечает, event loop может обслуживать другие запросы.</li>
+<li><code>response.raise_for_status()</code> превращает HTTP 4xx/5xx внешнего API в исключение, которое потом можно обработать единообразно.</li></ul>
+</article>
+<article class="info-box"><h2>Как endpoint связан с сервисом</h2>
+<ul class="flow-list"><li><code>post_id: int</code> берётся из path-параметра <code>/post/{post_id}/comments</code>.</li>
+<li><code>service: ExternalApiService = Depends(get_external_api_service)</code> просит FastAPI создать или вернуть сервис.</li>
+<li><code>return await service.get_post_comments(post_id)</code> отдаёт клиенту JSON, полученный из внешнего API.</li>
+<li><code>except httpx.HTTPError as error</code> нужен, чтобы не показывать пользователю внутреннюю ошибку Python.</li>
+<li><code>raise map_http_error(error) from error</code> сохраняет общий формат обработки ошибок, уже принятый в главе.</li></ul>
+</article>
+<article class="info-box"><h2>Как отличить реальную интеграцию от заглушки</h2>
+<ul class="flow-list"><li>Сначала откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> напрямую. Вы должны увидеть список комментариев.</li>
+<li>Потом откройте локальный endpoint <code>/api/http-client/post/1/comments</code>. Структура ответа должна быть похожей.</li>
+<li>В коде не должно быть заранее написанного локального списка комментариев. Иначе задача не тренирует outbound HTTP.</li>
+<li>Если внешний сервис вернёт ошибку, ваш endpoint должен пройти через <code>map_http_error</code>, а не падать с traceback.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем HTTP-интеграцию сверху вниз</h2>
+<ul class="flow-list"><li><code>import httpx</code> нужен, потому что исходящий HTTP-запрос делает не FastAPI, а клиентская библиотека httpx.</li>
+<li><code>JSONPLACEHOLDER</code> вынесен в константу, чтобы внешний адрес не был размазан по методам сервиса.</li>
+<li><code>CreatePostRequest</code> относится к другому endpoint-у главы, но остаётся в полном ответе, чтобы файл был целиком рабочим.</li>
+<li><code>ExternalApiService</code> собирает в одном месте все обращения к JSONPlaceholder.</li>
+<li><code>get_external_api_service</code> - dependency, которая отдаёт endpoint-ам готовый service object.</li>
+<li><code>map_http_error</code> стоит отдельно, потому что ошибку внешнего API надо превращать в ошибку вашего API единообразно.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при запросе comments</h2>
+<ul class="flow-list"><li>Клиент вызывает локальный URL <code>/api/http-client/post/1/comments</code>, а не внешний JSONPlaceholder напрямую.</li>
+<li>FastAPI берёт <code>post_id=1</code> из path.</li>
+<li>FastAPI вызывает <code>get_external_api_service</code> и передаёт результат в параметр <code>service</code>.</li>
+<li>Endpoint вызывает <code>await service.get_post_comments(post_id)</code>.</li>
+<li>Сервис открывает <code>httpx.AsyncClient</code> с <code>base_url=JSONPLACEHOLDER</code>.</li>
+<li>Сервис отправляет внешний запрос на <code>/posts/1/comments</code>.</li>
+<li>Внешний JSON возвращается из сервиса в endpoint, а endpoint отдаёт его клиенту.</li></ul>
+</article>
+<article class="info-box"><h2>Зачем нужен try/except вокруг await</h2>
+<ul class="flow-list"><li>Внешний сервис может быть недоступен, вернуть 404, 500 или ответить слишком медленно.</li>
+<li>Если не перехватить <code>httpx.HTTPError</code>, клиент вашего API увидит внутреннюю ошибку приложения.</li>
+<li><code>except httpx.HTTPError as error</code> ловит сетевые ошибки и ошибки status code после <code>raise_for_status()</code>.</li>
+<li><code>map_http_error(error)</code> превращает техническую ошибку httpx в понятный <code>HTTPException</code> FastAPI.</li>
+<li><code>from error</code> сохраняет связь исключений для отладки, но клиенту наружу отдаётся аккуратный HTTP-ответ.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Метод должен жить в сервисе, чтобы endpoint оставался тонким.</li>
 <li>Обработку <code>httpx.HTTPError</code> можно переиспользовать из существующих endpoint-ов.</li>

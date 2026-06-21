@@ -385,7 +385,65 @@ async def admin_area(user: dict = Depends(require_admin)):
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Чем authentication отличается от authorization в ответе</h2>
+<p>Login отвечает на вопрос “кто ты?”, а admin endpoint отвечает на вопрос “можно ли тебе сюда?”. Поэтому в решении появляются и token, и проверка роли.</p>
+<ul class="flow-list"><li><code>RegisterRequest</code> получает роль пользователя при регистрации в учебном примере.</li>
+<li><code>UserInDb</code> хранит роль на сервере вместе с username, email и hash пароля.</li>
+<li><code>create_access_token</code> кладёт роль в JWT payload, чтобы сервер мог прочитать её позже.</li>
+<li><code>get_current_user</code> проверяет token и возвращает пользователя, которому сервер доверяет.</li></ul>
+</article>
+<article class="info-box"><h2>Почему роль нельзя брать из запроса к admin endpoint</h2>
+<ul class="flow-list"><li>Клиент может отправить любой JSON или query-параметр, например <code>role=admin</code>. Этому нельзя доверять.</li>
+<li>Роль должна прийти из проверенного источника: базы/памяти сервера или подписанного JWT.</li>
+<li><code>jwt.decode</code> проверяет подпись token-а. Если token подделан, декодирование упадёт.</li>
+<li>После декодирования сервер ищет пользователя в <code>USERS</code>, чтобы убедиться, что такой пользователь всё ещё существует.</li></ul>
+</article>
+<article class="info-box"><h2>Как работает require_admin</h2>
+<ul class="flow-list"><li><code>require_admin</code> - отдельная dependency поверх <code>get_current_user</code>.</li>
+<li>Сначала FastAPI вызывает <code>get_current_user</code>, получает текущего пользователя, а потом передаёт его в <code>require_admin</code>.</li>
+<li>Если <code>user.role != "admin"</code>, dependency бросает <code>HTTPException(status_code=403)</code>.</li>
+<li><code>403 Forbidden</code> означает: пользователь известен, но прав недостаточно.</li>
+<li>Если проверка пройдена, dependency возвращает user, и endpoint может спокойно выполнить admin-логику.</li></ul>
+</article>
+<article class="info-box"><h2>Что должен доказать тест или ручная проверка</h2>
+<ul class="flow-list"><li>Обычный пользователь должен успешно логиниться, но получать <code>403</code> на <code>/api/admin</code>.</li>
+<li>Admin-пользователь должен получать <code>200</code> на <code>/api/admin</code>.</li>
+<li>Запрос без Bearer token должен получить <code>401</code>, потому что authentication не пройдена.</li>
+<li>Так ученик видит три разные ситуации: нет входа, вошёл без прав, вошёл с правами.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем auth-ответ сверху вниз</h2>
+<ul class="flow-list"><li>Imports нужны для JWT, password hashing, OAuth2 dependency, Pydantic-моделей и HTTP-ошибок.</li>
+<li>Константы <code>SECRET_KEY</code>, <code>ALGORITHM</code> и время жизни token-а определяют, как создаётся JWT.</li>
+<li><code>pwd_context</code> отвечает за hash пароля. Даже в учебнике пароль не должен сравниваться как обычная строка.</li>
+<li>Pydantic-модели описывают вход и выход auth endpoint-ов.</li>
+<li><code>create_access_token</code> собирает payload и подписывает JWT.</li>
+<li><code>get_current_user</code> превращает Bearer token обратно в пользователя.</li>
+<li><code>require_admin</code> добавляет вторую проверку: не просто вошёл, а вошёл с нужной ролью.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при запросе /api/admin</h2>
+<ul class="flow-list"><li>Клиент отправляет header <code>Authorization: Bearer ...</code>.</li>
+<li>OAuth2 dependency достаёт token из header-а.</li>
+<li><code>get_current_user</code> декодирует token, проверяет подпись и ищет пользователя.</li>
+<li>Если token плохой, запрос заканчивается <code>401 Unauthorized</code>.</li>
+<li>Если token хороший, FastAPI передаёт user в <code>require_admin</code>.</li>
+<li>Если user не admin, dependency бросает <code>403 Forbidden</code>.</li>
+<li>Если user admin, endpoint <code>admin_area</code> выполняется и возвращает успешный JSON.</li></ul>
+</article>
+<article class="info-box"><h2>Почему 401 и 403 разные</h2>
+<ul class="flow-list"><li><code>401</code> означает: сервер не смог подтвердить личность пользователя.</li>
+<li><code>403</code> означает: сервер знает пользователя, но не разрешает действие.</li>
+<li>Для новичка это важная граница: authentication проверяет вход, authorization проверяет права.</li>
+<li>Если всё возвращать как 401, будет непонятно, пользователь не вошёл или вошёл без нужной роли.</li>
+<li>Если всё возвращать как 403, клиент не поймёт, что ему сначала нужно получить token.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>401 означает, что пользователь не аутентифицирован; 403 - пользователь известен, но прав не хватает.</li>
 <li>Проверку роли лучше вынести в dependency, чтобы переиспользовать в нескольких endpoint-ах.</li>

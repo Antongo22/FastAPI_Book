@@ -682,7 +682,62 @@ async def pretty_log(
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Куда добавлять dependency</h2>
+<p>В этой задаче dependency очень простая: она возвращает строку-префикс для логов. Её лучше поставить рядом с другими provider-функциями, например около <code>get_logger</code>.</p>
+<ul class="flow-list"><li><code>def get_log_prefix() -> str</code> - обычная Python-функция. В FastAPI dependency не обязана быть классом.</li>
+<li><code>return "[DI LOG]"</code> находится внутри dependency, чтобы endpoint не знал, какой именно префикс используется.</li>
+<li>Если завтра префикс изменится, вы поменяете одну dependency, а не все endpoint-ы, где нужен красивый лог.</li>
+<li>Тип <code>-> str</code> не обязателен для запуска, но новичку помогает понять, что именно dependency возвращает.</li></ul>
+</article>
+<article class="info-box"><h2>Как FastAPI подставляет prefix</h2>
+<ul class="flow-list"><li>В параметре endpoint-а пишется <code>prefix: str = Depends(get_log_prefix)</code>.</li>
+<li>Важно: <code>get_log_prefix</code> передаётся без скобок. Если написать <code>get_log_prefix()</code>, функция вызовется сразу при импорте файла, а не во время запроса.</li>
+<li>FastAPI видит <code>Depends</code>, вызывает dependency перед выполнением endpoint-а и кладёт результат в переменную <code>prefix</code>.</li>
+<li>В этом же endpoint-е используется <code>app_logger: logging.Logger = Depends(get_logger)</code>. Это показывает, что endpoint может получить сразу несколько зависимостей.</li></ul>
+</article>
+<article class="info-box"><h2>Что делает endpoint</h2>
+<ul class="flow-list"><li><code>message: str = "hello"</code> - query-параметр. Если открыть endpoint без <code>?message=...</code>, будет использовано значение <code>hello</code>.</li>
+<li><code>formatted_message = f"{prefix} {message}"</code> собирает итоговую строку из dependency-префикса и пользовательского текста.</li>
+<li><code>app_logger.info(formatted_message)</code> показывает практический смысл DI: logger пришёл снаружи, endpoint его только использует.</li>
+<li><code>return {"formatted_message": formatted_message}</code> нужен, чтобы результат был виден прямо в Swagger, даже если ученик не смотрит консоль.</li></ul>
+</article>
+<article class="info-box"><h2>Как проверять и где чаще ошибаются</h2>
+<ul class="flow-list"><li>Проверьте <code>/api/dependency-injection/pretty-log?message=hello</code>. Должно вернуться <code>[DI LOG] hello</code>.</li>
+<li>Потом проверьте <code>message=FastAPI</code>. Меняется только текст после префикса.</li>
+<li>Если ответ возвращает только <code>hello</code>, значит dependency не используется при сборке строки.</li>
+<li>Если приложение падает при старте, проверьте, что <code>Depends</code> и <code>logging</code> импортированы, а <code>get_logger</code> действительно существует выше или ниже в модуле.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем DI-решение сверху вниз</h2>
+<ul class="flow-list"><li>Сначала в файле уже есть imports: <code>logging</code>, <code>Depends</code>, <code>FastAPI</code> и другие вещи главы.</li>
+<li>Потом создаются объекты и функции, которые могут быть зависимостями: logger, settings, singleton service, request-scoped service.</li>
+<li><code>get_log_prefix</code> добавляется в эту же зону, потому что это provider: маленькая функция, которая готовит значение для endpoint-а.</li>
+<li>Provider не обязан знать про HTTP. Он просто возвращает строку. Это делает код проще для проверки и переиспользования.</li>
+<li>Endpoint <code>pretty_log</code> добавляется в секцию маршрутов <code>/api/dependency-injection/*</code>.</li>
+<li>В сигнатуре endpoint-а рядом стоят обычный query-параметр <code>message</code> и dependency-параметры <code>prefix</code>, <code>app_logger</code>.</li></ul>
+</article>
+<article class="info-box"><h2>Что FastAPI делает перед входом в pretty_log</h2>
+<ul class="flow-list"><li>FastAPI видит обычный параметр <code>message: str = "hello"</code> и ищет его в query string.</li>
+<li>FastAPI видит <code>Depends(get_log_prefix)</code> и вызывает <code>get_log_prefix()</code> сам.</li>
+<li>Результат <code>"[DI LOG]"</code> кладётся в переменную <code>prefix</code>.</li>
+<li>FastAPI видит <code>Depends(get_logger)</code>, вызывает logger dependency и кладёт результат в <code>app_logger</code>.</li>
+<li>Только после подготовки всех параметров вызывается тело функции <code>pretty_log</code>.</li>
+<li>Поэтому внутри endpoint-а уже не надо думать, откуда взять prefix и logger. Они уже пришли готовыми.</li></ul>
+</article>
+<article class="info-box"><h2>Почему это учебный пример DI, а не просто лишняя функция</h2>
+<ul class="flow-list"><li>Да, для строки <code>[DI LOG]</code> dependency выглядит слишком простой. Именно поэтому новичку легко увидеть механизм без лишней бизнес-логики.</li>
+<li>Тот же принцип потом применяется к базе данных, текущему пользователю, настройкам, сервисам и проверкам прав.</li>
+<li>Endpoint не создаёт зависимость сам. Он объявляет, что ему нужно, а FastAPI готовит это снаружи.</li>
+<li>Так код легче тестировать: dependency можно заменить, не переписывая endpoint.</li>
+<li>Если ученик поймёт этот пример, ему проще будет понять <code>get_db</code>, <code>get_current_user</code> и service dependencies в следующих главах.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Задача специально простая: dependency возвращает обычную строку, чтобы было видно, что DI работает не только с классами.</li>
 <li>Endpoint получает prefix через <code>Depends(get_log_prefix)</code>, а logger через уже существующий <code>Depends(get_logger)</code>.</li>

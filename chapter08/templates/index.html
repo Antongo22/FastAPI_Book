@@ -501,7 +501,64 @@ async def logout(user: User = Depends(get_current_user), db: Session = Depends(g
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Зачем нужно поле revoked_at</h2>
+<p><code>revoked=True</code> говорит только факт: token отозван. <code>revoked_at</code> добавляет время, когда именно это произошло.</p>
+<ul class="flow-list"><li>Поле полезно для аудита: можно понять, когда пользователь вышел или когда token был заменён.</li>
+<li><code>datetime | None</code> означает: у активного token-а времени отзыва нет, у отозванного - есть.</li>
+<li><code>nullable=True</code> в базе соответствует этой идее: значение может быть пустым.</li>
+<li>Это поле должно появиться в SQLAlchemy-модели и в миграции, если БД уже существует.</li></ul>
+</article>
+<article class="info-box"><h2>Почему revoke лучше вынести в helper</h2>
+<ul class="flow-list"><li>Refresh token отзывается в нескольких местах: при refresh rotation, ручном revoke и logout.</li>
+<li>Если в каждом месте писать <code>token.revoked = True</code> и <code>token.revoked_at = ...</code> вручную, легко забыть одно из полей.</li>
+<li><code>revoke_token</code> делает оба действия вместе, поэтому поведение становится одинаковым.</li>
+<li>Helper принимает ORM-объект <code>RefreshToken</code>, меняет его поля, а commit остаётся у вызывающего кода.</li></ul>
+</article>
+<article class="info-box"><h2>Как меняется refresh flow</h2>
+<ul class="flow-list"><li>Клиент отправляет старый refresh token в <code>/api/auth/refresh</code>.</li>
+<li>Сервер ищет token в таблице и проверяет, что он не отозван и не истёк.</li>
+<li>Старый token помечается как отозванный и получает <code>revoked_at</code>.</li>
+<li>После этого сервер создаёт новую пару: свежий access token и свежий refresh token.</li>
+<li>Если старый token попробуют использовать повторно, проверка <code>stored.revoked</code> должна вернуть ошибку.</li></ul>
+</article>
+<article class="info-box"><h2>Что проверять</h2>
+<ul class="flow-list"><li>После refresh старый refresh token должен иметь <code>revoked=True</code> и непустой <code>revoked_at</code> в БД.</li>
+<li>После ручного <code>/api/auth/revoke</code> поле <code>revoked_at</code> тоже должно заполниться.</li>
+<li>После logout все активные refresh token-ы пользователя должны получить время отзыва.</li>
+<li>Тест должен смотреть не только HTTP status, но и состояние записи в базе.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем refresh-token решение сверху вниз</h2>
+<ul class="flow-list"><li>Imports включают JWT, hashing, SQLAlchemy, datetime и secrets, потому что глава работает и с token-ами, и с базой.</li>
+<li>Таблица <code>User</code> хранит пользователей, таблица <code>RefreshToken</code> хранит долгие refresh token-ы.</li>
+<li><code>revoked</code> отвечает на вопрос “можно ли использовать token”.</li>
+<li><code>revoked_at</code> отвечает на вопрос “когда token перестал быть действительным”.</li>
+<li>Helpers создают access/refresh token-ы и отзывают refresh token-ы.</li>
+<li>Endpoint-ы <code>login</code>, <code>refresh</code>, <code>revoke</code>, <code>logout</code> используют одни и те же helpers.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при refresh rotation</h2>
+<ul class="flow-list"><li>Клиент присылает старый refresh token.</li>
+<li>Сервер ищет его в таблице <code>refresh_tokens</code>.</li>
+<li>Сервер проверяет три условия: token найден, не отозван, срок действия не закончился.</li>
+<li>Если проверка не прошла, сервер возвращает <code>401</code>.</li>
+<li>Если проверка прошла, старый token получает <code>revoked=True</code> и <code>revoked_at=datetime.utcnow()</code>.</li>
+<li>Сервер создаёт новый access token и новый refresh token.</li>
+<li>Клиент должен сохранить новую пару и больше не использовать старый refresh token.</li></ul>
+</article>
+<article class="info-box"><h2>Почему revoked_at важен для обучения</h2>
+<ul class="flow-list"><li>Без <code>revoked_at</code> ученик видит только boolean и не понимает историю события.</li>
+<li>С <code>revoked_at</code> можно открыть БД и увидеть, когда именно token был отозван.</li>
+<li>Это помогает отличить logout, manual revoke и refresh rotation, если потом добавить reason.</li>
+<li>Так появляется привычка хранить не только состояние, но и audit-информацию.</li>
+<li>В production такие поля помогают расследовать подозрительные повторные использования refresh token-а.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Не забудьте обновить миграцию или создать новую Alembic revision.</li>
 <li>Тест должен проверять не только HTTP 401, но и заполнение <code>revoked_at</code> в БД.</li>

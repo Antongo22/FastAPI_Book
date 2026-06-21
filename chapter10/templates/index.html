@@ -473,7 +473,62 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Куда добавлять leave_room</h2>
+<p><code>leave_room</code> - это Socket.IO event, поэтому он добавляется рядом с другими обработчиками <code>@sio.event</code>: <code>join_room</code>, <code>chat_message</code>, <code>direct_message</code>.</p>
+<ul class="flow-list"><li><code>@sio.event</code> говорит Socket.IO: функция ниже обрабатывает событие с таким же именем, как функция.</li>
+<li><code>async def leave_room(sid, data)</code> получает id подключения и payload события от клиента.</li>
+<li><code>sid</code> нужен, чтобы удалить из комнаты именно текущее подключение.</li>
+<li><code>data</code> нужен, чтобы прочитать имя комнаты, из которой клиент хочет выйти.</li></ul>
+</article>
+<article class="info-box"><h2>Как выбирается комната</h2>
+<ul class="flow-list"><li><code>room = data.get("room", "general")</code> берёт комнату из payload.</li>
+<li>Значение <code>general</code> по умолчанию удобно для тестов: можно отправить пустой payload и всё равно получить предсказуемое поведение.</li>
+<li>Имя комнаты должно совпадать с тем, что используется в <code>join_room</code>.</li>
+<li>Если клиент вошёл в <code>python</code>, выходить тоже надо из <code>python</code>, иначе он останется подписанным на старую комнату.</li></ul>
+</article>
+<article class="info-box"><h2>Зачем две операции удаления</h2>
+<ul class="flow-list"><li><code>await sio.leave_room(sid, room)</code> удаляет подключение из внутренней комнаты Socket.IO.</li>
+<li><code>socketio_rooms[room].discard(sid)</code> обновляет учебный словарь, который показывает состояние через <code>/api/chat/info</code>.</li>
+<li>Если забыть <code>sio.leave_room</code>, клиент всё ещё будет получать сообщения комнаты.</li>
+<li>Если забыть <code>discard</code>, реальная отправка может работать, но учебный endpoint будет показывать неправильное состояние.</li></ul>
+</article>
+<article class="info-box"><h2>Почему нужен ответ left_room</h2>
+<ul class="flow-list"><li><code>await sio.emit("left_room", {"room": room}, to=sid)</code> отправляет подтверждение только клиенту, который вышел.</li>
+<li>Клиенту важно получить явный сигнал: сервер команду принял, комната изменена.</li>
+<li>Событие не рассылается всем, потому что это не сообщение чата, а служебное подтверждение.</li>
+<li>Проверять удобно на странице теста сокетов: подключиться, войти в комнату, выйти и увидеть <code>left_room</code> в логе.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем Socket.IO-ответ сверху вниз</h2>
+<ul class="flow-list"><li><code>sio = socketio.AsyncServer(...)</code> создаёт сервер событий Socket.IO.</li>
+<li><code>fastapi_app = FastAPI(...)</code> остаётся для обычных HTTP endpoint-ов главы.</li>
+<li><code>app = socketio.ASGIApp(...)</code> объединяет Socket.IO и FastAPI в одно ASGI-приложение.</li>
+<li><code>socketio_clients</code> хранит имена клиентов по <code>sid</code>.</li>
+<li><code>socketio_rooms</code> хранит учебное состояние комнат, чтобы его можно было посмотреть через HTTP.</li>
+<li>Все функции с <code>@sio.event</code> - обработчики событий, которые клиент отправляет через Socket.IO.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при leave_room</h2>
+<ul class="flow-list"><li>Клиент отправляет событие <code>leave_room</code> с payload, например <code>{"room": "python"}</code>.</li>
+<li>Socket.IO вызывает Python-функцию <code>leave_room(sid, data)</code>.</li>
+<li>Функция читает комнату из <code>data</code>. Если комнаты нет, берёт <code>general</code>.</li>
+<li><code>await sio.leave_room(sid, room)</code> меняет внутреннее состояние Socket.IO.</li>
+<li><code>socketio_rooms[room].discard(sid)</code> меняет учебный словарь, который виден в <code>/api/chat/info</code>.</li>
+<li><code>await sio.emit("left_room", ...)</code> отправляет подтверждение текущему клиенту.</li></ul>
+</article>
+<article class="info-box"><h2>Почему здесь есть await</h2>
+<ul class="flow-list"><li>Socket.IO операции могут делать async-ввод/вывод: отправлять события, менять комнату, взаимодействовать с transport.</li>
+<li>Поэтому handler объявлен как <code>async def</code>.</li>
+<li><code>await sio.leave_room</code> и <code>await sio.emit</code> дают event loop возможность не блокировать другие подключения.</li>
+<li>Если забыть <code>await</code>, операция может не выполниться вовремя или появятся warnings про coroutine.</li>
+<li>Для real-time кода это особенно важно: один медленный клиент не должен останавливать остальных.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Метод <code>leave_room</code> убирает sid из внутренней комнаты Socket.IO.</li>
 <li>Локальный словарь <code>socketio_rooms</code> нужен только для учебного endpoint-а <code>/api/chat/info</code>.</li>

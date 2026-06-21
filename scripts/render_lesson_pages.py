@@ -3284,6 +3284,928 @@ def test_delete_group_removes_group_messages():
 }
 
 
+ANSWER_WALKTHROUGHS = {
+    "chapter01": [
+        {
+            "title": "Куда вставлять новый endpoint",
+            "body": "Новый <code>power</code> ставится в тот же файл, где уже лежит калькулятор: <code>chapter01/app/main.py</code>. Его удобно разместить рядом с остальными маршрутами <code>/api/calculator/*</code>, потому что это часть того же API.",
+            "items": [
+                "<code>from typing import Annotated</code>, <code>FastAPI</code>, <code>Header</code>, <code>HTTPException</code> и <code>BaseModel</code> остаются наверху файла, потому что это зависимости всего приложения.",
+                "<code>app = FastAPI(...)</code> должен быть создан один раз. Именно в этот объект FastAPI записывает все endpoint-ы.",
+                "<code>CalculationRequest</code> уже описывает JSON body с полями <code>a</code> и <code>b</code>, поэтому новую модель для степени делать не нужно.",
+                "<code>@app.post(\"/api/calculator/power\")</code> регистрирует новый POST-маршрут. Декоратор должен стоять прямо над функцией.",
+            ],
+        },
+        {
+            "title": "Почему функция выглядит именно так",
+            "items": [
+                "<code>async def power(...)</code> делает endpoint асинхронным, как остальные функции в главе. Для новичка важно привыкнуть: FastAPI спокойно работает с <code>async</code> endpoint-ами.",
+                "<code>request: CalculationRequest</code> говорит FastAPI: прочитай JSON body, проверь поля <code>a</code> и <code>b</code>, а потом передай в функцию готовый Python-объект.",
+                "<code>request.a ** request.b</code> - обычная операция Python для возведения в степень. Она стоит внутри <code>result</code>, потому что клиенту нужен результат вычисления.",
+                "<code>\"operation\": \"power\"</code> сохраняет тот же формат ответа, что и остальные операции калькулятора. Клиенту проще работать, когда все операции отвечают одинаково.",
+            ],
+        },
+        {
+            "title": "Что не надо менять",
+            "items": [
+                "Команда запуска Uvicorn не меняется, потому что файл, модуль и переменная <code>app</code> остались прежними.",
+                "Middleware с header-ом тоже не меняется: он автоматически сработает для нового endpoint-а, потому что оборачивает всё приложение.",
+                "Swagger не нужно редактировать руками. FastAPI сам добавит новый маршрут в <code>/docs</code>, когда увидит новый декоратор.",
+                "Статические файлы и Jinja2-шаблоны к этому заданию не относятся. Задача про JSON API, поэтому лишний UI-код только путает.",
+            ],
+        },
+        {
+            "title": "Как понять, что решение правильное",
+            "items": [
+                "Откройте <code>/docs</code> и найдите <code>POST /api/calculator/power</code>. Если его нет, значит приложение не перезапустилось или декоратор написан неверно.",
+                "Отправьте <code>{\"a\": 2, \"b\": 3}</code>. Ответ должен содержать <code>\"result\": 8</code>.",
+                "Отправьте <code>{\"a\": 5, \"b\": 0}</code>. Ответ должен содержать <code>\"result\": 1</code>, потому что любое число в нулевой степени равно 1.",
+                "Если убрать поле <code>b</code>, FastAPI должен вернуть ошибку валидации. Это доказывает, что работает Pydantic-модель, а не ручной парсинг JSON.",
+            ],
+        },
+    ],
+    "chapter02": [
+        {
+            "title": "Куда добавлять dependency",
+            "body": "В этой задаче dependency очень простая: она возвращает строку-префикс для логов. Её лучше поставить рядом с другими provider-функциями, например около <code>get_logger</code>.",
+            "items": [
+                "<code>def get_log_prefix() -> str</code> - обычная Python-функция. В FastAPI dependency не обязана быть классом.",
+                "<code>return \"[DI LOG]\"</code> находится внутри dependency, чтобы endpoint не знал, какой именно префикс используется.",
+                "Если завтра префикс изменится, вы поменяете одну dependency, а не все endpoint-ы, где нужен красивый лог.",
+                "Тип <code>-> str</code> не обязателен для запуска, но новичку помогает понять, что именно dependency возвращает.",
+            ],
+        },
+        {
+            "title": "Как FastAPI подставляет prefix",
+            "items": [
+                "В параметре endpoint-а пишется <code>prefix: str = Depends(get_log_prefix)</code>.",
+                "Важно: <code>get_log_prefix</code> передаётся без скобок. Если написать <code>get_log_prefix()</code>, функция вызовется сразу при импорте файла, а не во время запроса.",
+                "FastAPI видит <code>Depends</code>, вызывает dependency перед выполнением endpoint-а и кладёт результат в переменную <code>prefix</code>.",
+                "В этом же endpoint-е используется <code>app_logger: logging.Logger = Depends(get_logger)</code>. Это показывает, что endpoint может получить сразу несколько зависимостей.",
+            ],
+        },
+        {
+            "title": "Что делает endpoint",
+            "items": [
+                "<code>message: str = \"hello\"</code> - query-параметр. Если открыть endpoint без <code>?message=...</code>, будет использовано значение <code>hello</code>.",
+                "<code>formatted_message = f\"{prefix} {message}\"</code> собирает итоговую строку из dependency-префикса и пользовательского текста.",
+                "<code>app_logger.info(formatted_message)</code> показывает практический смысл DI: logger пришёл снаружи, endpoint его только использует.",
+                "<code>return {\"formatted_message\": formatted_message}</code> нужен, чтобы результат был виден прямо в Swagger, даже если ученик не смотрит консоль.",
+            ],
+        },
+        {
+            "title": "Как проверять и где чаще ошибаются",
+            "items": [
+                "Проверьте <code>/api/dependency-injection/pretty-log?message=hello</code>. Должно вернуться <code>[DI LOG] hello</code>.",
+                "Потом проверьте <code>message=FastAPI</code>. Меняется только текст после префикса.",
+                "Если ответ возвращает только <code>hello</code>, значит dependency не используется при сборке строки.",
+                "Если приложение падает при старте, проверьте, что <code>Depends</code> и <code>logging</code> импортированы, а <code>get_logger</code> действительно существует выше или ниже в модуле.",
+            ],
+        },
+    ],
+    "chapter03": [
+        {
+            "title": "Зачем нужен service layer",
+            "body": "Задача добавляет запрос к реальному внешнему API JSONPlaceholder. Endpoint не должен сам знать все детали HTTP-клиента, поэтому логика запроса лежит в <code>ExternalApiService</code>.",
+            "items": [
+                "<code>JSONPLACEHOLDER</code> хранит базовый URL внешнего сервиса в одном месте.",
+                "<code>ExternalApiService.__init__</code> принимает <code>base_url</code>, чтобы в тестах или будущем окружении можно было подменить внешний адрес.",
+                "Метод <code>get_post_comments</code> лежит внутри сервиса, потому что это такая же внешняя операция, как получение поста.",
+                "Endpoint остаётся тонким: он принимает <code>post_id</code>, получает сервис через dependency и возвращает результат сервиса.",
+            ],
+        },
+        {
+            "title": "Как работает httpx-код",
+            "items": [
+                "<code>async with httpx.AsyncClient(...)</code> открывает HTTP-клиент на время запроса и корректно закрывает соединения после выхода из блока.",
+                "<code>base_url=self.base_url</code> позволяет писать короткий путь <code>/posts/{post_id}/comments</code>, а не полный URL каждый раз.",
+                "<code>timeout=10.0</code> нужен, чтобы приложение не висело бесконечно, если внешний сервис тормозит.",
+                "<code>await client.get(...)</code> отправляет GET-запрос асинхронно. Пока внешний API отвечает, event loop может обслуживать другие запросы.",
+                "<code>response.raise_for_status()</code> превращает HTTP 4xx/5xx внешнего API в исключение, которое потом можно обработать единообразно.",
+            ],
+        },
+        {
+            "title": "Как endpoint связан с сервисом",
+            "items": [
+                "<code>post_id: int</code> берётся из path-параметра <code>/post/{post_id}/comments</code>.",
+                "<code>service: ExternalApiService = Depends(get_external_api_service)</code> просит FastAPI создать или вернуть сервис.",
+                "<code>return await service.get_post_comments(post_id)</code> отдаёт клиенту JSON, полученный из внешнего API.",
+                "<code>except httpx.HTTPError as error</code> нужен, чтобы не показывать пользователю внутреннюю ошибку Python.",
+                "<code>raise map_http_error(error) from error</code> сохраняет общий формат обработки ошибок, уже принятый в главе.",
+            ],
+        },
+        {
+            "title": "Как отличить реальную интеграцию от заглушки",
+            "items": [
+                "Сначала откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> напрямую. Вы должны увидеть список комментариев.",
+                "Потом откройте локальный endpoint <code>/api/http-client/post/1/comments</code>. Структура ответа должна быть похожей.",
+                "В коде не должно быть заранее написанного локального списка комментариев. Иначе задача не тренирует outbound HTTP.",
+                "Если внешний сервис вернёт ошибку, ваш endpoint должен пройти через <code>map_http_error</code>, а не падать с traceback.",
+            ],
+        },
+    ],
+    "chapter04": [
+        {
+            "title": "Где создаётся новое исключение",
+            "body": "<code>NotReadyError</code> лучше объявить рядом с другими custom exception-ами главы. Это не HTTP-ответ, а обычный Python-сигнал: внутри приложения произошла понятная ожидаемая ситуация.",
+            "items": [
+                "<code>class NotReadyError(Exception):</code> наследуется от базового <code>Exception</code>, чтобы его можно было бросать через <code>raise</code>.",
+                "<code>pass</code> означает, что классу не нужны дополнительные поля. Сам тип исключения уже несёт смысл: сервис не готов.",
+                "Отдельный класс лучше строки вроде <code>raise Exception(\"not ready\")</code>, потому что FastAPI может привязать handler именно к этому типу.",
+                "Такой подход масштабируется: для разных ошибок можно сделать разные классы и разные HTTP-ответы.",
+            ],
+        },
+        {
+            "title": "Зачем нужен exception handler",
+            "items": [
+                "<code>@app.exception_handler(NotReadyError)</code> регистрирует функцию, которая будет ловить именно <code>NotReadyError</code>.",
+                "Handler принимает <code>request</code>, чтобы при необходимости знать путь, пользователя, headers или request id.",
+                "Handler принимает <code>exc</code>, потому что FastAPI передаёт само исключение. Даже если сейчас оно не используется, сигнатура остаётся стандартной.",
+                "<code>JSONResponse</code> нужен, когда вы хотите вручную выбрать status code и тело ответа.",
+            ],
+        },
+        {
+            "title": "Почему status code 503",
+            "items": [
+                "<code>503 Service Unavailable</code> означает: сервер жив, но нужная часть сервиса временно недоступна.",
+                "Это отличается от <code>500</code>: 500 говорит про неожиданную внутреннюю ошибку, а 503 - про ожидаемую временную недоступность.",
+                "Сообщение <code>Сервис временно недоступен</code> должно лежать в JSON body, чтобы клиент мог показать его пользователю.",
+                "Если добавить в ответ <code>path</code>, ученик видит, какой endpoint привёл к ошибке. Это удобно для отладки.",
+            ],
+        },
+        {
+            "title": "Как проверять",
+            "items": [
+                "Добавьте endpoint, который делает <code>raise NotReadyError()</code>, иначе handler не получится вызвать руками.",
+                "Откройте <code>/api/error-demo/not-ready</code>. Статус должен быть <code>503</code>, а не <code>200</code> и не <code>500</code>.",
+                "Проверьте JSON: там должно быть понятное поле с ошибкой, а не HTML-страница traceback.",
+                "Проверьте другие endpoint-ы главы. Новый handler не должен ломать обычные успешные ответы.",
+            ],
+        },
+    ],
+    "chapter05": [
+        {
+            "title": "Какие части нужны для страницы регистрации",
+            "body": "Здесь задача состоит не из одной функции: нужна Pydantic-модель, GET endpoint для показа формы, POST endpoint для обработки формы и HTML-шаблон.",
+            "items": [
+                "<code>RegistrationForm</code> описывает данные, которые должны пройти серверную проверку.",
+                "<code>GET /register</code> просто показывает пустую форму. Он не должен регистрировать пользователя.",
+                "<code>POST /register</code> принимает поля формы через <code>Form</code>, валидирует их и возвращает HTML.",
+                "<code>register.html</code> отвечает только за отображение полей, ошибок и сообщения об успехе.",
+            ],
+        },
+        {
+            "title": "Как работает Pydantic-модель",
+            "items": [
+                "<code>username</code>, <code>email</code> и <code>password</code> - обычные строки, которые приходят из HTML-формы.",
+                "<code>@field_validator(\"username\", \"email\", \"password\")</code> проверяет, что поля не пустые и не состоят только из пробелов.",
+                "<code>email_has_at</code> специально простой: новичку видно, где живёт правило проверки email.",
+                "<code>password_is_long_enough</code> бросает <code>ValueError</code>, если пароль короче 6 символов. Pydantic превращает это в список ошибок.",
+            ],
+        },
+        {
+            "title": "Почему GET и POST возвращают один шаблон",
+            "items": [
+                "GET возвращает <code>errors={}</code>, <code>values={}</code> и <code>registered=False</code>, потому что пользователь ещё ничего не отправлял.",
+                "POST сначала складывает введённые поля в <code>values</code>, чтобы при ошибке не очищать форму.",
+                "Если Pydantic нашёл ошибки, endpoint возвращает тот же шаблон со status <code>400</code> и словарём <code>errors</code>.",
+                "Если ошибок нет, endpoint возвращает тот же шаблон, но с <code>registered=True</code>, чтобы показать сообщение об успехе.",
+            ],
+        },
+        {
+            "title": "Почему пароль пока не сохраняется",
+            "items": [
+                "Глава 5 учит HTML-формам и серверной валидации, а не полноценной регистрации.",
+                "Пароль нельзя хранить как обычную строку в базе. Это будет разобрано в главах про authentication.",
+                "Здесь цель - понять маршрут формы: browser -> POST -> Form-параметры -> Pydantic -> TemplateResponse.",
+                "Проверять надо короткий пароль, пустые поля, неправильный email и успешную отправку.",
+            ],
+        },
+    ],
+    "chapter06": [
+        {
+            "title": "Где появляется новое поле category",
+            "body": "Поле категории должно пройти через все слои: ORM-модель, Pydantic DTO, create/update schemas, CRUD endpoint-ы и миграцию.",
+            "items": [
+                "<code>Product.category</code> добавляет колонку на уровне SQLAlchemy ORM.",
+                "<code>ProductCreate.category</code> разрешает клиенту передать категорию при создании продукта.",
+                "<code>ProductUpdate.category</code> разрешает поменять категорию при обновлении.",
+                "<code>ProductDto.category</code> возвращает категорию наружу в JSON-ответе.",
+                "Если забыть DTO, поле будет в базе, но клиент его не увидит.",
+            ],
+        },
+        {
+            "title": "Почему нужен default и nullable",
+            "items": [
+                "<code>default=\"general\"</code> даёт понятное значение, если клиент не передал категорию.",
+                "<code>nullable=False</code> говорит базе: у продукта всегда должна быть категория.",
+                "В учебной SQLite-БД таблицы создаются автоматически, но в реальном проекте структура меняется через миграции.",
+                "Если в уже существующей таблице есть старые продукты, миграция должна дать им значение по умолчанию.",
+            ],
+        },
+        {
+            "title": "Зачем нужна Alembic migration",
+            "items": [
+                "<code>upgrade()</code> описывает движение вперёд: добавить колонку <code>category</code>.",
+                "<code>downgrade()</code> описывает откат: удалить колонку, если миграцию нужно отменить.",
+                "Миграция нужна не FastAPI, а базе данных. FastAPI сам не меняет production-схему при каждом запуске.",
+                "Даже если demo-приложение вызывает <code>create_all</code>, главе важно показать правильный промышленный путь.",
+            ],
+        },
+        {
+            "title": "Что проверять после изменения",
+            "items": [
+                "Создайте продукт без <code>category</code>. В ответе должно быть <code>category: \"general\"</code> или выбранное вами значение по умолчанию.",
+                "Создайте продукт с <code>category: \"books\"</code>. Ответ должен вернуть именно <code>books</code>.",
+                "Откройте список продуктов. Категория должна быть у каждого объекта.",
+                "Запустите тесты CRUD с тестовой БД, чтобы убедиться, что изменения не завязаны на локальный файл SQLite.",
+            ],
+        },
+    ],
+    "chapter07": [
+        {
+            "title": "Чем authentication отличается от authorization в ответе",
+            "body": "Login отвечает на вопрос “кто ты?”, а admin endpoint отвечает на вопрос “можно ли тебе сюда?”. Поэтому в решении появляются и token, и проверка роли.",
+            "items": [
+                "<code>RegisterRequest</code> получает роль пользователя при регистрации в учебном примере.",
+                "<code>UserInDb</code> хранит роль на сервере вместе с username, email и hash пароля.",
+                "<code>create_access_token</code> кладёт роль в JWT payload, чтобы сервер мог прочитать её позже.",
+                "<code>get_current_user</code> проверяет token и возвращает пользователя, которому сервер доверяет.",
+            ],
+        },
+        {
+            "title": "Почему роль нельзя брать из запроса к admin endpoint",
+            "items": [
+                "Клиент может отправить любой JSON или query-параметр, например <code>role=admin</code>. Этому нельзя доверять.",
+                "Роль должна прийти из проверенного источника: базы/памяти сервера или подписанного JWT.",
+                "<code>jwt.decode</code> проверяет подпись token-а. Если token подделан, декодирование упадёт.",
+                "После декодирования сервер ищет пользователя в <code>USERS</code>, чтобы убедиться, что такой пользователь всё ещё существует.",
+            ],
+        },
+        {
+            "title": "Как работает require_admin",
+            "items": [
+                "<code>require_admin</code> - отдельная dependency поверх <code>get_current_user</code>.",
+                "Сначала FastAPI вызывает <code>get_current_user</code>, получает текущего пользователя, а потом передаёт его в <code>require_admin</code>.",
+                "Если <code>user.role != \"admin\"</code>, dependency бросает <code>HTTPException(status_code=403)</code>.",
+                "<code>403 Forbidden</code> означает: пользователь известен, но прав недостаточно.",
+                "Если проверка пройдена, dependency возвращает user, и endpoint может спокойно выполнить admin-логику.",
+            ],
+        },
+        {
+            "title": "Что должен доказать тест или ручная проверка",
+            "items": [
+                "Обычный пользователь должен успешно логиниться, но получать <code>403</code> на <code>/api/admin</code>.",
+                "Admin-пользователь должен получать <code>200</code> на <code>/api/admin</code>.",
+                "Запрос без Bearer token должен получить <code>401</code>, потому что authentication не пройдена.",
+                "Так ученик видит три разные ситуации: нет входа, вошёл без прав, вошёл с правами.",
+            ],
+        },
+    ],
+    "chapter08": [
+        {
+            "title": "Зачем нужно поле revoked_at",
+            "body": "<code>revoked=True</code> говорит только факт: token отозван. <code>revoked_at</code> добавляет время, когда именно это произошло.",
+            "items": [
+                "Поле полезно для аудита: можно понять, когда пользователь вышел или когда token был заменён.",
+                "<code>datetime | None</code> означает: у активного token-а времени отзыва нет, у отозванного - есть.",
+                "<code>nullable=True</code> в базе соответствует этой идее: значение может быть пустым.",
+                "Это поле должно появиться в SQLAlchemy-модели и в миграции, если БД уже существует.",
+            ],
+        },
+        {
+            "title": "Почему revoke лучше вынести в helper",
+            "items": [
+                "Refresh token отзывается в нескольких местах: при refresh rotation, ручном revoke и logout.",
+                "Если в каждом месте писать <code>token.revoked = True</code> и <code>token.revoked_at = ...</code> вручную, легко забыть одно из полей.",
+                "<code>revoke_token</code> делает оба действия вместе, поэтому поведение становится одинаковым.",
+                "Helper принимает ORM-объект <code>RefreshToken</code>, меняет его поля, а commit остаётся у вызывающего кода.",
+            ],
+        },
+        {
+            "title": "Как меняется refresh flow",
+            "items": [
+                "Клиент отправляет старый refresh token в <code>/api/auth/refresh</code>.",
+                "Сервер ищет token в таблице и проверяет, что он не отозван и не истёк.",
+                "Старый token помечается как отозванный и получает <code>revoked_at</code>.",
+                "После этого сервер создаёт новую пару: свежий access token и свежий refresh token.",
+                "Если старый token попробуют использовать повторно, проверка <code>stored.revoked</code> должна вернуть ошибку.",
+            ],
+        },
+        {
+            "title": "Что проверять",
+            "items": [
+                "После refresh старый refresh token должен иметь <code>revoked=True</code> и непустой <code>revoked_at</code> в БД.",
+                "После ручного <code>/api/auth/revoke</code> поле <code>revoked_at</code> тоже должно заполниться.",
+                "После logout все активные refresh token-ы пользователя должны получить время отзыва.",
+                "Тест должен смотреть не только HTTP status, но и состояние записи в базе.",
+            ],
+        },
+    ],
+    "chapter09": [
+        {
+            "title": "Где обрабатывать команду /who",
+            "body": "Команда <code>/who</code> должна жить внутри receive loop WebSocket endpoint-а, сразу после получения текста от клиента и до broadcast.",
+            "items": [
+                "<code>message = await websocket.receive_text()</code> ждёт следующее сообщение текущего клиента.",
+                "После этой строки можно проверить, является ли сообщение командой.",
+                "<code>if message == \"/who\"</code> отделяет служебную команду от обычного текста чата.",
+                "Команду нужно обработать до <code>manager.broadcast</code>, иначе она улетит всем как обычное сообщение.",
+            ],
+        },
+        {
+            "title": "Почему ответ отправляется только текущему клиенту",
+            "items": [
+                "<code>await websocket.send_json(...)</code> отправляет JSON именно в текущее соединение.",
+                "<code>manager.broadcast(...)</code> рассылает payload всем активным соединениям.",
+                "Количество подключений - это служебная информация для того, кто спросил. Остальным клиентам она не нужна.",
+                "Так ученик видит разницу между личным ответом и общей рассылкой.",
+            ],
+        },
+        {
+            "title": "Откуда берётся count",
+            "items": [
+                "<code>manager.active_connections</code> - словарь всех открытых WebSocket-соединений.",
+                "<code>len(manager.active_connections)</code> считает количество активных подключений прямо сейчас.",
+                "Это учебная in-memory структура. Если запустить несколько процессов, у каждого будет свой словарь.",
+                "Для одного учебного приложения на одном Uvicorn-процессе этого достаточно.",
+            ],
+        },
+        {
+            "title": "Как проверять",
+            "items": [
+                "Откройте один WebSocket-клиент и отправьте <code>/who</code>. Должен прийти JSON с <code>event: \"connections\"</code>.",
+                "Откройте две вкладки и отправьте <code>/who</code> из одной. Ответ должен прийти только в эту вкладку.",
+                "Отправьте обычный текст. Он должен по-прежнему прийти всем клиентам через broadcast.",
+                "Если <code>/who</code> видят все вкладки, значит команда ошибочно отправляется через <code>broadcast</code>.",
+            ],
+        },
+    ],
+    "chapter10": [
+        {
+            "title": "Куда добавлять leave_room",
+            "body": "<code>leave_room</code> - это Socket.IO event, поэтому он добавляется рядом с другими обработчиками <code>@sio.event</code>: <code>join_room</code>, <code>chat_message</code>, <code>direct_message</code>.",
+            "items": [
+                "<code>@sio.event</code> говорит Socket.IO: функция ниже обрабатывает событие с таким же именем, как функция.",
+                "<code>async def leave_room(sid, data)</code> получает id подключения и payload события от клиента.",
+                "<code>sid</code> нужен, чтобы удалить из комнаты именно текущее подключение.",
+                "<code>data</code> нужен, чтобы прочитать имя комнаты, из которой клиент хочет выйти.",
+            ],
+        },
+        {
+            "title": "Как выбирается комната",
+            "items": [
+                "<code>room = data.get(\"room\", \"general\")</code> берёт комнату из payload.",
+                "Значение <code>general</code> по умолчанию удобно для тестов: можно отправить пустой payload и всё равно получить предсказуемое поведение.",
+                "Имя комнаты должно совпадать с тем, что используется в <code>join_room</code>.",
+                "Если клиент вошёл в <code>python</code>, выходить тоже надо из <code>python</code>, иначе он останется подписанным на старую комнату.",
+            ],
+        },
+        {
+            "title": "Зачем две операции удаления",
+            "items": [
+                "<code>await sio.leave_room(sid, room)</code> удаляет подключение из внутренней комнаты Socket.IO.",
+                "<code>socketio_rooms[room].discard(sid)</code> обновляет учебный словарь, который показывает состояние через <code>/api/chat/info</code>.",
+                "Если забыть <code>sio.leave_room</code>, клиент всё ещё будет получать сообщения комнаты.",
+                "Если забыть <code>discard</code>, реальная отправка может работать, но учебный endpoint будет показывать неправильное состояние.",
+            ],
+        },
+        {
+            "title": "Почему нужен ответ left_room",
+            "items": [
+                "<code>await sio.emit(\"left_room\", {\"room\": room}, to=sid)</code> отправляет подтверждение только клиенту, который вышел.",
+                "Клиенту важно получить явный сигнал: сервер команду принял, комната изменена.",
+                "Событие не рассылается всем, потому что это не сообщение чата, а служебное подтверждение.",
+                "Проверять удобно на странице теста сокетов: подключиться, войти в комнату, выйти и увидеть <code>left_room</code> в логе.",
+            ],
+        },
+    ],
+    "chapter11": [
+        {
+            "title": "Где хранится роль",
+            "body": "Роль должна попасть в JWT при создании token-а, а потом извлекаться сервером при Socket.IO connect. Клиент не должен сам объявлять себя admin в payload события.",
+            "items": [
+                "<code>LoginRequest</code> в учебном варианте может принимать username/password, а роль берётся из серверной demo-логики.",
+                "<code>create_access_token</code> добавляет claim <code>role</code> в payload JWT.",
+                "<code>jwt.encode</code> подписывает payload секретным ключом.",
+                "После подписи клиент не может незаметно изменить <code>role</code>: подпись перестанет совпадать.",
+            ],
+        },
+        {
+            "title": "Как роль попадает в Socket.IO подключение",
+            "items": [
+                "Клиент передаёт token в Socket.IO <code>auth</code>, например <code>{ access_token: token }</code>.",
+                "<code>connect</code> вызывает <code>authorize_socketio</code> до принятия пользовательских событий.",
+                "<code>verify_user_token</code> декодирует JWT и возвращает данные пользователя, включая роль.",
+                "Сервер сохраняет данные в словаре по <code>sid</code>, чтобы последующие events знали, кто подключён.",
+            ],
+        },
+        {
+            "title": "Как работает admin_message",
+            "items": [
+                "<code>admin_message</code> - отдельное Socket.IO событие, которому нужны права admin.",
+                "Внутри handler-а сервер берёт пользователя по <code>sid</code>, а не из <code>data</code> клиента.",
+                "Если <code>role != \"admin\"</code>, событие не выполняет admin-действие и может отправить отказ текущему клиенту.",
+                "Если роль admin, сервер отправляет admin-сообщение выбранным получателям или текущему клиенту по логике главы.",
+            ],
+        },
+        {
+            "title": "Что проверять",
+            "items": [
+                "Подключение без token-а должно быть отклонено на этапе <code>connect</code>.",
+                "Подключение с обычным пользователем должно проходить, но <code>admin_message</code> должен быть запрещён.",
+                "Подключение с admin token-ом должно пройти и разрешить <code>admin_message</code>.",
+                "Так ученик видит разницу между проверкой token-а и проверкой прав на конкретное событие.",
+            ],
+        },
+    ],
+    "chapter12": [
+        {
+            "title": "Почему удаление группы начинается с service layer",
+            "body": "Удаление группы - бизнес-операция. Её должны использовать REST endpoint, Socket.IO event и тесты, поэтому логика живёт в <code>ChatService.delete_group</code>, а не копируется в каждом обработчике.",
+            "items": [
+                "<code>def delete_group(self, group_id: int)</code> принимает id группы, потому что это главный входной параметр операции.",
+                "<code>self.db.get(ChatGroup, group_id)</code> ищет группу по primary key.",
+                "Если группы нет, сервис бросает <code>HTTPException(status_code=404)</code>. Так REST сразу получит правильный HTTP-ответ.",
+                "Если группа есть, сервис удаляет связанные сообщения и саму группу в одной транзакции.",
+            ],
+        },
+        {
+            "title": "Почему сначала удаляются сообщения",
+            "items": [
+                "Сообщения ссылаются на группу через <code>group_id</code>.",
+                "Если удалить группу, а сообщения оставить, в базе появятся записи, которые указывают на несуществующую группу.",
+                "В учебном решении выбран простой вариант: при удалении группы удаляются и её сообщения.",
+                "<code>self.db.query(Message).filter(Message.group_id == group_id).delete()</code> удаляет все сообщения выбранной группы.",
+                "После этого <code>self.db.delete(group)</code> удаляет саму группу, а <code>self.db.commit()</code> сохраняет изменения.",
+            ],
+        },
+        {
+            "title": "Как REST endpoint использует сервис",
+            "items": [
+                "<code>@fastapi_app.delete(\"/api/chat/groups/{group_id}\", status_code=204)</code> регистрирует HTTP DELETE endpoint.",
+                "<code>group_id</code> берётся из URL path.",
+                "<code>service: ChatService = Depends(get_chat_service)</code> даёт endpoint-у готовый сервис с DB session.",
+                "<code>service.delete_group(group_id)</code> выполняет всю бизнес-логику.",
+                "Функция ничего не возвращает, потому что status <code>204 No Content</code> означает успешное удаление без тела ответа.",
+            ],
+        },
+        {
+            "title": "Как Socket.IO event использует тот же сервис",
+            "items": [
+                "<code>async def delete_group(sid, data)</code> получает payload от Socket.IO клиента.",
+                "<code>group_id = int(data[\"group_id\"])</code> явно превращает значение в число, потому что из JSON оно может прийти строкой.",
+                "<code>with SessionLocal() as db</code> открывает короткую SQLAlchemy session на время события.",
+                "<code>ChatService(db)</code> создаёт тот же сервис, который использует REST API.",
+                "<code>await sio.emit(\"group_deleted\", {\"group_id\": group_id})</code> сообщает подключённым клиентам, что группа удалена.",
+            ],
+        },
+        {
+            "title": "Что доказывает тест",
+            "items": [
+                "<code>make_sqlite_override</code> подменяет обычную БД тестовой SQLite-БД, чтобы тест был изолированным.",
+                "Тест создаёт группу, отправляет в неё сообщение, удаляет группу и потом запрашивает сообщения этой группы.",
+                "Ожидаемый результат - пустой список. Это доказывает, что удаление затронуло не только группу, но и связанные сообщения.",
+                "<code>app.dependency_overrides.clear()</code> в <code>finally</code> очищает подмену, чтобы она не влияла на другие тесты.",
+            ],
+        },
+    ],
+}
+
+
+ANSWER_DEEP_DIVES = {
+    "chapter01": [
+        {
+            "title": "Читаем полный ответ сверху вниз",
+            "items": [
+                "Сначала идут импорты. Они нужны до создания приложения, потому что Python должен знать, что такое <code>FastAPI</code>, <code>BaseModel</code>, <code>Header</code> и <code>HTTPException</code>.",
+                "Потом создаётся <code>app = FastAPI(...)</code>. Это центральный объект: все декораторы <code>@app.get</code> и <code>@app.post</code> записывают маршруты именно в него.",
+                "Дальше идут Pydantic-модели. В этой главе важна <code>CalculationRequest</code>: она превращает JSON body в Python-объект с полями <code>a</code> и <code>b</code>.",
+                "После моделей идут middleware и endpoint-ы. Middleware работает вокруг всех маршрутов, а endpoint-ы отвечают за конкретные URL.",
+                "Новый <code>power</code> ставится рядом с другими операциями калькулятора, потому что он использует тот же request body и тот же формат ответа.",
+                "Блок <code>if __name__ == \"__main__\"</code> находится внизу, потому что это только удобный способ запустить файл напрямую. Он не участвует в обработке конкретного запроса.",
+            ],
+        },
+        {
+            "title": "Что происходит при POST /api/calculator/power",
+            "items": [
+                "Клиент отправляет HTTP method <code>POST</code>, path <code>/api/calculator/power</code> и JSON body, например <code>{\"a\": 2, \"b\": 3}</code>.",
+                "Uvicorn принимает сетевой запрос и передаёт его в FastAPI-приложение <code>app</code>.",
+                "FastAPI ищет маршрут, который совпадает и по method, и по path. Для этой задачи это декоратор <code>@app.post(\"/api/calculator/power\")</code>.",
+                "Перед вызовом функции FastAPI смотрит на параметр <code>request: CalculationRequest</code> и понимает: нужно прочитать JSON body.",
+                "Pydantic проверяет, что в body есть числа <code>a</code> и <code>b</code>. Если данных нет или тип неправильный, функция <code>power</code> даже не запускается.",
+                "Если validation прошла, внутри функции <code>request.a</code> и <code>request.b</code> уже обычные Python-значения.",
+                "Функция возвращает словарь, а FastAPI превращает его в JSON response.",
+            ],
+        },
+        {
+            "title": "Почему нельзя просто вернуть число",
+            "items": [
+                "Можно было бы вернуть только <code>8</code>, но тогда формат ответа отличался бы от остальных операций.",
+                "В учебном API все операции возвращают объект с <code>result</code> и <code>operation</code>. Это контракт между сервером и клиентом.",
+                "Контракт важнее удобства одной функции: клиент может одинаково читать <code>result</code> у add, divide и power.",
+                "<code>operation</code> помогает увидеть, какой endpoint сработал, особенно когда ученик проверяет разные запросы в Swagger.",
+                "Если в будущем появится frontend, ему будет проще рисовать историю операций, потому что ответ у всех операций одинаковой формы.",
+            ],
+        },
+    ],
+    "chapter02": [
+        {
+            "title": "Читаем DI-решение сверху вниз",
+            "items": [
+                "Сначала в файле уже есть imports: <code>logging</code>, <code>Depends</code>, <code>FastAPI</code> и другие вещи главы.",
+                "Потом создаются объекты и функции, которые могут быть зависимостями: logger, settings, singleton service, request-scoped service.",
+                "<code>get_log_prefix</code> добавляется в эту же зону, потому что это provider: маленькая функция, которая готовит значение для endpoint-а.",
+                "Provider не обязан знать про HTTP. Он просто возвращает строку. Это делает код проще для проверки и переиспользования.",
+                "Endpoint <code>pretty_log</code> добавляется в секцию маршрутов <code>/api/dependency-injection/*</code>.",
+                "В сигнатуре endpoint-а рядом стоят обычный query-параметр <code>message</code> и dependency-параметры <code>prefix</code>, <code>app_logger</code>.",
+            ],
+        },
+        {
+            "title": "Что FastAPI делает перед входом в pretty_log",
+            "items": [
+                "FastAPI видит обычный параметр <code>message: str = \"hello\"</code> и ищет его в query string.",
+                "FastAPI видит <code>Depends(get_log_prefix)</code> и вызывает <code>get_log_prefix()</code> сам.",
+                "Результат <code>\"[DI LOG]\"</code> кладётся в переменную <code>prefix</code>.",
+                "FastAPI видит <code>Depends(get_logger)</code>, вызывает logger dependency и кладёт результат в <code>app_logger</code>.",
+                "Только после подготовки всех параметров вызывается тело функции <code>pretty_log</code>.",
+                "Поэтому внутри endpoint-а уже не надо думать, откуда взять prefix и logger. Они уже пришли готовыми.",
+            ],
+        },
+        {
+            "title": "Почему это учебный пример DI, а не просто лишняя функция",
+            "items": [
+                "Да, для строки <code>[DI LOG]</code> dependency выглядит слишком простой. Именно поэтому новичку легко увидеть механизм без лишней бизнес-логики.",
+                "Тот же принцип потом применяется к базе данных, текущему пользователю, настройкам, сервисам и проверкам прав.",
+                "Endpoint не создаёт зависимость сам. Он объявляет, что ему нужно, а FastAPI готовит это снаружи.",
+                "Так код легче тестировать: dependency можно заменить, не переписывая endpoint.",
+                "Если ученик поймёт этот пример, ему проще будет понять <code>get_db</code>, <code>get_current_user</code> и service dependencies в следующих главах.",
+            ],
+        },
+    ],
+    "chapter03": [
+        {
+            "title": "Читаем HTTP-интеграцию сверху вниз",
+            "items": [
+                "<code>import httpx</code> нужен, потому что исходящий HTTP-запрос делает не FastAPI, а клиентская библиотека httpx.",
+                "<code>JSONPLACEHOLDER</code> вынесен в константу, чтобы внешний адрес не был размазан по методам сервиса.",
+                "<code>CreatePostRequest</code> относится к другому endpoint-у главы, но остаётся в полном ответе, чтобы файл был целиком рабочим.",
+                "<code>ExternalApiService</code> собирает в одном месте все обращения к JSONPlaceholder.",
+                "<code>get_external_api_service</code> - dependency, которая отдаёт endpoint-ам готовый service object.",
+                "<code>map_http_error</code> стоит отдельно, потому что ошибку внешнего API надо превращать в ошибку вашего API единообразно.",
+            ],
+        },
+        {
+            "title": "Что происходит при запросе comments",
+            "items": [
+                "Клиент вызывает локальный URL <code>/api/http-client/post/1/comments</code>, а не внешний JSONPlaceholder напрямую.",
+                "FastAPI берёт <code>post_id=1</code> из path.",
+                "FastAPI вызывает <code>get_external_api_service</code> и передаёт результат в параметр <code>service</code>.",
+                "Endpoint вызывает <code>await service.get_post_comments(post_id)</code>.",
+                "Сервис открывает <code>httpx.AsyncClient</code> с <code>base_url=JSONPLACEHOLDER</code>.",
+                "Сервис отправляет внешний запрос на <code>/posts/1/comments</code>.",
+                "Внешний JSON возвращается из сервиса в endpoint, а endpoint отдаёт его клиенту.",
+            ],
+        },
+        {
+            "title": "Зачем нужен try/except вокруг await",
+            "items": [
+                "Внешний сервис может быть недоступен, вернуть 404, 500 или ответить слишком медленно.",
+                "Если не перехватить <code>httpx.HTTPError</code>, клиент вашего API увидит внутреннюю ошибку приложения.",
+                "<code>except httpx.HTTPError as error</code> ловит сетевые ошибки и ошибки status code после <code>raise_for_status()</code>.",
+                "<code>map_http_error(error)</code> превращает техническую ошибку httpx в понятный <code>HTTPException</code> FastAPI.",
+                "<code>from error</code> сохраняет связь исключений для отладки, но клиенту наружу отдаётся аккуратный HTTP-ответ.",
+            ],
+        },
+    ],
+    "chapter04": [
+        {
+            "title": "Читаем error handling сверху вниз",
+            "items": [
+                "Imports нужны для трёх разных задач: FastAPI-маршруты, JSON-ответы и типы ошибок.",
+                "<code>app = FastAPI(...)</code> создаёт приложение, на которое потом навешиваются middleware, handlers и endpoints.",
+                "Custom exception classes объявляются до handlers, чтобы decorators могли сослаться на эти классы.",
+                "Middleware стоит отдельно, потому что оно не ловит одну конкретную ошибку, а оборачивает каждый запрос.",
+                "Exception handlers стоят до или после endpoint-ов не так критично, но новичку проще читать их до endpoint-ов: сначала правила ошибок, потом места, где ошибки возникают.",
+                "Endpoint <code>not_ready</code> нужен только для демонстрации: он специально бросает <code>NotReadyError</code>.",
+            ],
+        },
+        {
+            "title": "Что происходит при raise NotReadyError",
+            "items": [
+                "Endpoint начинает выполняться и доходит до строки <code>raise NotReadyError()</code>.",
+                "Обычный <code>return</code> уже не выполняется: исключение прерывает функцию.",
+                "FastAPI смотрит, есть ли handler для типа <code>NotReadyError</code>.",
+                "Он находит функцию с decorator <code>@app.exception_handler(NotReadyError)</code>.",
+                "Handler возвращает <code>JSONResponse</code> со status <code>503</code>.",
+                "Middleware получает уже готовый ответ, добавляет header времени обработки и отдаёт его клиенту.",
+            ],
+        },
+        {
+            "title": "Что сломается, если убрать отдельные части",
+            "items": [
+                "Если убрать класс <code>NotReadyError</code>, endpoint не сможет его бросить.",
+                "Если убрать decorator <code>@app.exception_handler(NotReadyError)</code>, ошибка станет обычной необработанной ошибкой.",
+                "Если вернуть обычный dict из handler без <code>JSONResponse</code>, будет сложнее явно задать status <code>503</code>.",
+                "Если поставить status <code>500</code>, клиент не поймёт, что это временная ожидаемая недоступность.",
+                "Если не добавить endpoint для проверки, ученику придётся искусственно вызывать ошибку из тестов, а руками проверить будет сложнее.",
+            ],
+        },
+    ],
+    "chapter05": [
+        {
+            "title": "Читаем решение формы сверху вниз",
+            "items": [
+                "Imports делятся на группы: pathlib для путей, FastAPI для routes/forms, Jinja2 для шаблонов, Pydantic для validation.",
+                "<code>BASE_DIR</code>, <code>app.mount</code> и <code>Jinja2Templates</code> нужны именно в главе с HTML. В чистых API-главах такой код лишний.",
+                "<code>ContactForm</code> остаётся, потому что это существующая форма урока.",
+                "<code>RegistrationForm</code> добавляется рядом с ней, потому что это такая же Pydantic-модель для данных формы.",
+                "GET endpoint-ы показывают страницы, POST endpoint-ы принимают отправленные формы.",
+                "Шаблон <code>register.html</code> нужен отдельно, потому что FastAPI не генерирует HTML-форму автоматически.",
+            ],
+        },
+        {
+            "title": "Что происходит при плохом пароле",
+            "items": [
+                "Браузер отправляет <code>POST /register</code> с полями формы.",
+                "FastAPI кладёт поля в параметры <code>username</code>, <code>email</code>, <code>password</code> благодаря <code>Form</code>.",
+                "Endpoint собирает словарь <code>values</code>, чтобы сохранить введённые данные.",
+                "<code>RegistrationForm(**values)</code> запускает Pydantic-валидацию.",
+                "Validator <code>password_is_long_enough</code> видит короткий пароль и бросает <code>ValueError</code>.",
+                "<code>except ValidationError</code> собирает ошибки в словарь по именам полей.",
+                "Endpoint возвращает тот же шаблон со status <code>400</code>, ошибками и введёнными значениями.",
+            ],
+        },
+        {
+            "title": "Как шаблон связан с endpoint-ом",
+            "items": [
+                "Endpoint передаёт в шаблон <code>errors</code>, <code>values</code> и <code>registered</code>.",
+                "Шаблон читает <code>values.get(\"username\", \"\")</code>, чтобы поле не очищалось после ошибки.",
+                "Шаблон проверяет <code>errors.get(\"password\")</code> и показывает текст ошибки рядом с password.",
+                "Если <code>registered=True</code>, шаблон показывает сообщение об успешной регистрации.",
+                "HTML сам ничего не валидирует надёжно. Главная проверка находится на сервере в Pydantic-модели.",
+            ],
+        },
+    ],
+    "chapter06": [
+        {
+            "title": "Читаем DB-ответ сверху вниз",
+            "items": [
+                "Imports SQLAlchemy нужны для engine, session, base class, колонок и типов колонок.",
+                "<code>DATABASE_URL</code> задаёт адрес базы. По умолчанию используется SQLite-файл главы.",
+                "<code>engine</code> знает, как подключаться к базе, а <code>SessionLocal</code> создаёт sessions для операций.",
+                "<code>Base</code> - родитель для ORM-моделей. Через него SQLAlchemy знает, какие таблицы существуют.",
+                "<code>Product</code> описывает таблицу, а <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductDto</code> описывают JSON снаружи.",
+                "Endpoint-ы не должны напрямую знать все детали таблицы. Они работают через session и модели.",
+            ],
+        },
+        {
+            "title": "Почему category проходит через несколько классов",
+            "items": [
+                "ORM-модель отвечает за хранение в базе: без <code>Product.category</code> колонка не появится в таблице.",
+                "Create schema отвечает за входные данные при создании: без <code>ProductCreate.category</code> клиент не сможет прислать категорию.",
+                "Update schema отвечает за частичное изменение: без <code>ProductUpdate.category</code> категорию нельзя будет обновить.",
+                "DTO отвечает за выходной JSON: без <code>ProductDto.category</code> клиент не увидит категорию в ответе.",
+                "Migration отвечает за реальную схему уже существующей базы: без Alembic production-база не узнает про новую колонку.",
+            ],
+        },
+        {
+            "title": "Что происходит при создании продукта",
+            "items": [
+                "Клиент отправляет <code>POST /api/products</code> с JSON body.",
+                "FastAPI валидирует body через <code>ProductCreate</code>.",
+                "Endpoint создаёт ORM-объект <code>Product(**request.model_dump())</code> или аналогичную конструкцию.",
+                "SQLAlchemy session добавляет объект через <code>db.add</code>.",
+                "<code>db.commit()</code> сохраняет строку в SQLite.",
+                "<code>db.refresh(product)</code> подтягивает id и значения по умолчанию из базы.",
+                "FastAPI возвращает объект через <code>ProductDto</code>, и в JSON появляется <code>category</code>.",
+            ],
+        },
+    ],
+    "chapter07": [
+        {
+            "title": "Читаем auth-ответ сверху вниз",
+            "items": [
+                "Imports нужны для JWT, password hashing, OAuth2 dependency, Pydantic-моделей и HTTP-ошибок.",
+                "Константы <code>SECRET_KEY</code>, <code>ALGORITHM</code> и время жизни token-а определяют, как создаётся JWT.",
+                "<code>pwd_context</code> отвечает за hash пароля. Даже в учебнике пароль не должен сравниваться как обычная строка.",
+                "Pydantic-модели описывают вход и выход auth endpoint-ов.",
+                "<code>create_access_token</code> собирает payload и подписывает JWT.",
+                "<code>get_current_user</code> превращает Bearer token обратно в пользователя.",
+                "<code>require_admin</code> добавляет вторую проверку: не просто вошёл, а вошёл с нужной ролью.",
+            ],
+        },
+        {
+            "title": "Что происходит при запросе /api/admin",
+            "items": [
+                "Клиент отправляет header <code>Authorization: Bearer ...</code>.",
+                "OAuth2 dependency достаёт token из header-а.",
+                "<code>get_current_user</code> декодирует token, проверяет подпись и ищет пользователя.",
+                "Если token плохой, запрос заканчивается <code>401 Unauthorized</code>.",
+                "Если token хороший, FastAPI передаёт user в <code>require_admin</code>.",
+                "Если user не admin, dependency бросает <code>403 Forbidden</code>.",
+                "Если user admin, endpoint <code>admin_area</code> выполняется и возвращает успешный JSON.",
+            ],
+        },
+        {
+            "title": "Почему 401 и 403 разные",
+            "items": [
+                "<code>401</code> означает: сервер не смог подтвердить личность пользователя.",
+                "<code>403</code> означает: сервер знает пользователя, но не разрешает действие.",
+                "Для новичка это важная граница: authentication проверяет вход, authorization проверяет права.",
+                "Если всё возвращать как 401, будет непонятно, пользователь не вошёл или вошёл без нужной роли.",
+                "Если всё возвращать как 403, клиент не поймёт, что ему сначала нужно получить token.",
+            ],
+        },
+    ],
+    "chapter08": [
+        {
+            "title": "Читаем refresh-token решение сверху вниз",
+            "items": [
+                "Imports включают JWT, hashing, SQLAlchemy, datetime и secrets, потому что глава работает и с token-ами, и с базой.",
+                "Таблица <code>User</code> хранит пользователей, таблица <code>RefreshToken</code> хранит долгие refresh token-ы.",
+                "<code>revoked</code> отвечает на вопрос “можно ли использовать token”.",
+                "<code>revoked_at</code> отвечает на вопрос “когда token перестал быть действительным”.",
+                "Helpers создают access/refresh token-ы и отзывают refresh token-ы.",
+                "Endpoint-ы <code>login</code>, <code>refresh</code>, <code>revoke</code>, <code>logout</code> используют одни и те же helpers.",
+            ],
+        },
+        {
+            "title": "Что происходит при refresh rotation",
+            "items": [
+                "Клиент присылает старый refresh token.",
+                "Сервер ищет его в таблице <code>refresh_tokens</code>.",
+                "Сервер проверяет три условия: token найден, не отозван, срок действия не закончился.",
+                "Если проверка не прошла, сервер возвращает <code>401</code>.",
+                "Если проверка прошла, старый token получает <code>revoked=True</code> и <code>revoked_at=datetime.utcnow()</code>.",
+                "Сервер создаёт новый access token и новый refresh token.",
+                "Клиент должен сохранить новую пару и больше не использовать старый refresh token.",
+            ],
+        },
+        {
+            "title": "Почему revoked_at важен для обучения",
+            "items": [
+                "Без <code>revoked_at</code> ученик видит только boolean и не понимает историю события.",
+                "С <code>revoked_at</code> можно открыть БД и увидеть, когда именно token был отозван.",
+                "Это помогает отличить logout, manual revoke и refresh rotation, если потом добавить reason.",
+                "Так появляется привычка хранить не только состояние, но и audit-информацию.",
+                "В production такие поля помогают расследовать подозрительные повторные использования refresh token-а.",
+            ],
+        },
+    ],
+    "chapter09": [
+        {
+            "title": "Читаем WebSocket-ответ сверху вниз",
+            "items": [
+                "Imports нужны для <code>WebSocket</code>, <code>WebSocketDisconnect</code> и генерации id через <code>uuid4</code>.",
+                "<code>ConnectionManager</code> держит словарь активных подключений.",
+                "Метод <code>connect</code> принимает соединение, сохраняет его и отправляет клиенту служебное сообщение.",
+                "Метод <code>disconnect</code> удаляет соединение, когда клиент ушёл.",
+                "Метод <code>broadcast</code> проходит по всем соединениям и отправляет одинаковый payload.",
+                "WebSocket endpoint содержит бесконечный receive loop, потому что соединение живёт дольше одного HTTP request.",
+            ],
+        },
+        {
+            "title": "Что происходит внутри receive loop",
+            "items": [
+                "<code>while True</code> означает: пока соединение открыто, сервер ждёт новые сообщения.",
+                "<code>message = await websocket.receive_text()</code> останавливает выполнение до следующего сообщения клиента.",
+                "После получения текста сервер проверяет, является ли он командой <code>/who</code>.",
+                "Если это <code>/who</code>, сервер отвечает только текущему <code>websocket</code>.",
+                "Если это обычный текст, сервер вызывает <code>manager.broadcast</code>.",
+                "Если клиент закрывает вкладку, возникает <code>WebSocketDisconnect</code>, и endpoint переходит в cleanup.",
+            ],
+        },
+        {
+            "title": "Почему /who не должен быть broadcast",
+            "items": [
+                "<code>/who</code> - команда управления, а не сообщение чата.",
+                "Если отправить её всем, другие пользователи увидят техническую команду, которую они не вводили.",
+                "Личный ответ через <code>websocket.send_json</code> показывает, что сервер может отвечать не только broadcast-ом.",
+                "Так глава готовит ученика к личным сообщениям, комнатам и авторизации в следующих главах.",
+                "Обычные сообщения всё равно остаются broadcast, поэтому существующее поведение чата не ломается.",
+            ],
+        },
+    ],
+    "chapter10": [
+        {
+            "title": "Читаем Socket.IO-ответ сверху вниз",
+            "items": [
+                "<code>sio = socketio.AsyncServer(...)</code> создаёт сервер событий Socket.IO.",
+                "<code>fastapi_app = FastAPI(...)</code> остаётся для обычных HTTP endpoint-ов главы.",
+                "<code>app = socketio.ASGIApp(...)</code> объединяет Socket.IO и FastAPI в одно ASGI-приложение.",
+                "<code>socketio_clients</code> хранит имена клиентов по <code>sid</code>.",
+                "<code>socketio_rooms</code> хранит учебное состояние комнат, чтобы его можно было посмотреть через HTTP.",
+                "Все функции с <code>@sio.event</code> - обработчики событий, которые клиент отправляет через Socket.IO.",
+            ],
+        },
+        {
+            "title": "Что происходит при leave_room",
+            "items": [
+                "Клиент отправляет событие <code>leave_room</code> с payload, например <code>{\"room\": \"python\"}</code>.",
+                "Socket.IO вызывает Python-функцию <code>leave_room(sid, data)</code>.",
+                "Функция читает комнату из <code>data</code>. Если комнаты нет, берёт <code>general</code>.",
+                "<code>await sio.leave_room(sid, room)</code> меняет внутреннее состояние Socket.IO.",
+                "<code>socketio_rooms[room].discard(sid)</code> меняет учебный словарь, который виден в <code>/api/chat/info</code>.",
+                "<code>await sio.emit(\"left_room\", ...)</code> отправляет подтверждение текущему клиенту.",
+            ],
+        },
+        {
+            "title": "Почему здесь есть await",
+            "items": [
+                "Socket.IO операции могут делать async-ввод/вывод: отправлять события, менять комнату, взаимодействовать с transport.",
+                "Поэтому handler объявлен как <code>async def</code>.",
+                "<code>await sio.leave_room</code> и <code>await sio.emit</code> дают event loop возможность не блокировать другие подключения.",
+                "Если забыть <code>await</code>, операция может не выполниться вовремя или появятся warnings про coroutine.",
+                "Для real-time кода это особенно важно: один медленный клиент не должен останавливать остальных.",
+            ],
+        },
+    ],
+    "chapter11": [
+        {
+            "title": "Читаем авторизованный Socket.IO ответ сверху вниз",
+            "items": [
+                "JWT-константы и helpers идут в начале, потому что они нужны и HTTP login, и Socket.IO connect.",
+                "<code>create_access_token</code> создаёт token с username и role.",
+                "<code>verify_user_token</code> делает обратное: проверяет token и возвращает данные пользователя.",
+                "<code>authorize_socketio</code> адаптирует проверку JWT под Socket.IO auth payload.",
+                "<code>authorized_clients</code> хранит подтверждённых пользователей по <code>sid</code>.",
+                "Socket.IO events после connect уже не должны доверять данным клиента о username/role.",
+            ],
+        },
+        {
+            "title": "Что происходит при connect",
+            "items": [
+                "Клиент подключается и передаёт <code>auth: { access_token: token }</code>.",
+                "Socket.IO вызывает <code>connect(sid, environ, auth)</code>.",
+                "<code>authorize_socketio</code> достаёт token из <code>auth</code>.",
+                "<code>verify_user_token</code> проверяет подпись и срок действия JWT.",
+                "Если token плохой, <code>connect</code> возвращает <code>False</code>, и подключение отклоняется.",
+                "Если token хороший, сервер сохраняет пользователя в <code>authorized_clients</code> и отправляет <code>authorized</code>.",
+            ],
+        },
+        {
+            "title": "Почему admin_message проверяется отдельно",
+            "items": [
+                "Успешный connect означает только “пользователь известен”. Это authentication.",
+                "Право отправлять admin-событие - отдельное правило. Это authorization.",
+                "Обычный пользователь может быть валидно подключён, но всё равно не иметь права на <code>admin_message</code>.",
+                "Поэтому handler события должен проверить <code>role</code> перед выполнением действия.",
+                "Это тот же принцип, что <code>require_admin</code> в REST-главе, только применённый к Socket.IO event.",
+            ],
+        },
+    ],
+    "chapter12": [
+        {
+            "title": "Читаем итоговое решение сверху вниз",
+            "items": [
+                "Сначала идут imports для FastAPI, SQLAlchemy, Pydantic, datetime и Socket.IO.",
+                "Потом создаются engine и SessionLocal, потому что они нужны всем операциям с БД.",
+                "ORM-модели <code>ChatGroup</code> и <code>Message</code> описывают таблицы.",
+                "Pydantic DTO описывают JSON-ответы REST API.",
+                "<code>ChatService</code> содержит бизнес-логику: создать группу, отправить сообщение, получить сообщения, удалить группу.",
+                "REST endpoint-ы вызывают service через dependency.",
+                "Socket.IO events тоже создают service, но открывают session вручную на время события.",
+            ],
+        },
+        {
+            "title": "Что происходит при DELETE /api/chat/groups/{group_id}",
+            "items": [
+                "Клиент вызывает HTTP DELETE endpoint с id группы в URL.",
+                "FastAPI достаёт <code>group_id</code> из path.",
+                "Dependency <code>get_chat_service</code> создаёт service с DB session.",
+                "Endpoint вызывает <code>service.delete_group(group_id)</code>.",
+                "Service ищет группу. Если её нет, возвращается <code>404</code>.",
+                "Service удаляет сообщения этой группы, потом саму группу, потом делает commit.",
+                "Endpoint возвращает status <code>204</code>, потому что удаление прошло успешно и тело ответа не нужно.",
+            ],
+        },
+        {
+            "title": "Что происходит при Socket.IO delete_group",
+            "items": [
+                "Клиент отправляет Socket.IO event <code>delete_group</code> с <code>group_id</code>.",
+                "Handler получает <code>data</code> и превращает <code>group_id</code> в int.",
+                "Handler открывает SQLAlchemy session через <code>with SessionLocal() as db</code>.",
+                "Handler создаёт <code>ChatService(db)</code> и вызывает тот же <code>delete_group</code>.",
+                "После успешного удаления сервер отправляет событие <code>group_deleted</code>.",
+                "REST и Socket.IO используют одну бизнес-логику, поэтому поведение не расходится.",
+            ],
+        },
+        {
+            "title": "Почему тест устроен именно так",
+            "items": [
+                "Тест сначала подменяет production-БД на тестовую через <code>dependency_overrides</code>.",
+                "Потом создаёт группу через настоящий REST endpoint, а не руками через SQLAlchemy.",
+                "Потом создаёт сообщение этой группы, чтобы проверить не пустой случай.",
+                "Потом удаляет группу через новый DELETE endpoint.",
+                "Потом запрашивает сообщения группы и ожидает пустой список.",
+                "Так тест проверяет весь путь: API -> dependency -> service -> database -> API response.",
+            ],
+        },
+    ],
+}
+
+
 PRACTICE_STEPS = {
     "chapter02": [
         "Откройте <code>chapter02/app/main.py</code> и найдите существующий endpoint <code>logger_demo</code>. Он показывает, как endpoint уже получает logger через <code>Depends</code>.",
@@ -4281,7 +5203,16 @@ def render_lesson(service: str, data: dict) -> str:
                 {render_solution_sections(FULL_SOLUTIONS[service])}
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                {render_extra_sections(ANSWER_WALKTHROUGHS[service])}
+
+                {render_extra_sections(ANSWER_DEEP_DIVES[service])}
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         {list_items(data["answer_notes"])}
                     </ul>

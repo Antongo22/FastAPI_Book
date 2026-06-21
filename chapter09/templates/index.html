@@ -351,7 +351,62 @@ async def websocket_endpoint(websocket: WebSocket):
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Где обрабатывать команду /who</h2>
+<p>Команда <code>/who</code> должна жить внутри receive loop WebSocket endpoint-а, сразу после получения текста от клиента и до broadcast.</p>
+<ul class="flow-list"><li><code>message = await websocket.receive_text()</code> ждёт следующее сообщение текущего клиента.</li>
+<li>После этой строки можно проверить, является ли сообщение командой.</li>
+<li><code>if message == "/who"</code> отделяет служебную команду от обычного текста чата.</li>
+<li>Команду нужно обработать до <code>manager.broadcast</code>, иначе она улетит всем как обычное сообщение.</li></ul>
+</article>
+<article class="info-box"><h2>Почему ответ отправляется только текущему клиенту</h2>
+<ul class="flow-list"><li><code>await websocket.send_json(...)</code> отправляет JSON именно в текущее соединение.</li>
+<li><code>manager.broadcast(...)</code> рассылает payload всем активным соединениям.</li>
+<li>Количество подключений - это служебная информация для того, кто спросил. Остальным клиентам она не нужна.</li>
+<li>Так ученик видит разницу между личным ответом и общей рассылкой.</li></ul>
+</article>
+<article class="info-box"><h2>Откуда берётся count</h2>
+<ul class="flow-list"><li><code>manager.active_connections</code> - словарь всех открытых WebSocket-соединений.</li>
+<li><code>len(manager.active_connections)</code> считает количество активных подключений прямо сейчас.</li>
+<li>Это учебная in-memory структура. Если запустить несколько процессов, у каждого будет свой словарь.</li>
+<li>Для одного учебного приложения на одном Uvicorn-процессе этого достаточно.</li></ul>
+</article>
+<article class="info-box"><h2>Как проверять</h2>
+<ul class="flow-list"><li>Откройте один WebSocket-клиент и отправьте <code>/who</code>. Должен прийти JSON с <code>event: "connections"</code>.</li>
+<li>Откройте две вкладки и отправьте <code>/who</code> из одной. Ответ должен прийти только в эту вкладку.</li>
+<li>Отправьте обычный текст. Он должен по-прежнему прийти всем клиентам через broadcast.</li>
+<li>Если <code>/who</code> видят все вкладки, значит команда ошибочно отправляется через <code>broadcast</code>.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем WebSocket-ответ сверху вниз</h2>
+<ul class="flow-list"><li>Imports нужны для <code>WebSocket</code>, <code>WebSocketDisconnect</code> и генерации id через <code>uuid4</code>.</li>
+<li><code>ConnectionManager</code> держит словарь активных подключений.</li>
+<li>Метод <code>connect</code> принимает соединение, сохраняет его и отправляет клиенту служебное сообщение.</li>
+<li>Метод <code>disconnect</code> удаляет соединение, когда клиент ушёл.</li>
+<li>Метод <code>broadcast</code> проходит по всем соединениям и отправляет одинаковый payload.</li>
+<li>WebSocket endpoint содержит бесконечный receive loop, потому что соединение живёт дольше одного HTTP request.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит внутри receive loop</h2>
+<ul class="flow-list"><li><code>while True</code> означает: пока соединение открыто, сервер ждёт новые сообщения.</li>
+<li><code>message = await websocket.receive_text()</code> останавливает выполнение до следующего сообщения клиента.</li>
+<li>После получения текста сервер проверяет, является ли он командой <code>/who</code>.</li>
+<li>Если это <code>/who</code>, сервер отвечает только текущему <code>websocket</code>.</li>
+<li>Если это обычный текст, сервер вызывает <code>manager.broadcast</code>.</li>
+<li>Если клиент закрывает вкладку, возникает <code>WebSocketDisconnect</code>, и endpoint переходит в cleanup.</li></ul>
+</article>
+<article class="info-box"><h2>Почему /who не должен быть broadcast</h2>
+<ul class="flow-list"><li><code>/who</code> - команда управления, а не сообщение чата.</li>
+<li>Если отправить её всем, другие пользователи увидят техническую команду, которую они не вводили.</li>
+<li>Личный ответ через <code>websocket.send_json</code> показывает, что сервер может отвечать не только broadcast-ом.</li>
+<li>Так глава готовит ученика к личным сообщениям, комнатам и авторизации в следующих главах.</li>
+<li>Обычные сообщения всё равно остаются broadcast, поэтому существующее поведение чата не ломается.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Команды, предназначенные только отправителю, не нужно рассылать через broadcast.</li>
 <li>Так появляется первая серверная логика поверх обычного транспорта.</li>

@@ -361,7 +361,62 @@ async def success():
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Где создаётся новое исключение</h2>
+<p><code>NotReadyError</code> лучше объявить рядом с другими custom exception-ами главы. Это не HTTP-ответ, а обычный Python-сигнал: внутри приложения произошла понятная ожидаемая ситуация.</p>
+<ul class="flow-list"><li><code>class NotReadyError(Exception):</code> наследуется от базового <code>Exception</code>, чтобы его можно было бросать через <code>raise</code>.</li>
+<li><code>pass</code> означает, что классу не нужны дополнительные поля. Сам тип исключения уже несёт смысл: сервис не готов.</li>
+<li>Отдельный класс лучше строки вроде <code>raise Exception("not ready")</code>, потому что FastAPI может привязать handler именно к этому типу.</li>
+<li>Такой подход масштабируется: для разных ошибок можно сделать разные классы и разные HTTP-ответы.</li></ul>
+</article>
+<article class="info-box"><h2>Зачем нужен exception handler</h2>
+<ul class="flow-list"><li><code>@app.exception_handler(NotReadyError)</code> регистрирует функцию, которая будет ловить именно <code>NotReadyError</code>.</li>
+<li>Handler принимает <code>request</code>, чтобы при необходимости знать путь, пользователя, headers или request id.</li>
+<li>Handler принимает <code>exc</code>, потому что FastAPI передаёт само исключение. Даже если сейчас оно не используется, сигнатура остаётся стандартной.</li>
+<li><code>JSONResponse</code> нужен, когда вы хотите вручную выбрать status code и тело ответа.</li></ul>
+</article>
+<article class="info-box"><h2>Почему status code 503</h2>
+<ul class="flow-list"><li><code>503 Service Unavailable</code> означает: сервер жив, но нужная часть сервиса временно недоступна.</li>
+<li>Это отличается от <code>500</code>: 500 говорит про неожиданную внутреннюю ошибку, а 503 - про ожидаемую временную недоступность.</li>
+<li>Сообщение <code>Сервис временно недоступен</code> должно лежать в JSON body, чтобы клиент мог показать его пользователю.</li>
+<li>Если добавить в ответ <code>path</code>, ученик видит, какой endpoint привёл к ошибке. Это удобно для отладки.</li></ul>
+</article>
+<article class="info-box"><h2>Как проверять</h2>
+<ul class="flow-list"><li>Добавьте endpoint, который делает <code>raise NotReadyError()</code>, иначе handler не получится вызвать руками.</li>
+<li>Откройте <code>/api/error-demo/not-ready</code>. Статус должен быть <code>503</code>, а не <code>200</code> и не <code>500</code>.</li>
+<li>Проверьте JSON: там должно быть понятное поле с ошибкой, а не HTML-страница traceback.</li>
+<li>Проверьте другие endpoint-ы главы. Новый handler не должен ломать обычные успешные ответы.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем error handling сверху вниз</h2>
+<ul class="flow-list"><li>Imports нужны для трёх разных задач: FastAPI-маршруты, JSON-ответы и типы ошибок.</li>
+<li><code>app = FastAPI(...)</code> создаёт приложение, на которое потом навешиваются middleware, handlers и endpoints.</li>
+<li>Custom exception classes объявляются до handlers, чтобы decorators могли сослаться на эти классы.</li>
+<li>Middleware стоит отдельно, потому что оно не ловит одну конкретную ошибку, а оборачивает каждый запрос.</li>
+<li>Exception handlers стоят до или после endpoint-ов не так критично, но новичку проще читать их до endpoint-ов: сначала правила ошибок, потом места, где ошибки возникают.</li>
+<li>Endpoint <code>not_ready</code> нужен только для демонстрации: он специально бросает <code>NotReadyError</code>.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при raise NotReadyError</h2>
+<ul class="flow-list"><li>Endpoint начинает выполняться и доходит до строки <code>raise NotReadyError()</code>.</li>
+<li>Обычный <code>return</code> уже не выполняется: исключение прерывает функцию.</li>
+<li>FastAPI смотрит, есть ли handler для типа <code>NotReadyError</code>.</li>
+<li>Он находит функцию с decorator <code>@app.exception_handler(NotReadyError)</code>.</li>
+<li>Handler возвращает <code>JSONResponse</code> со status <code>503</code>.</li>
+<li>Middleware получает уже готовый ответ, добавляет header времени обработки и отдаёт его клиенту.</li></ul>
+</article>
+<article class="info-box"><h2>Что сломается, если убрать отдельные части</h2>
+<ul class="flow-list"><li>Если убрать класс <code>NotReadyError</code>, endpoint не сможет его бросить.</li>
+<li>Если убрать decorator <code>@app.exception_handler(NotReadyError)</code>, ошибка станет обычной необработанной ошибкой.</li>
+<li>Если вернуть обычный dict из handler без <code>JSONResponse</code>, будет сложнее явно задать status <code>503</code>.</li>
+<li>Если поставить status <code>500</code>, клиент не поймёт, что это временная ожидаемая недоступность.</li>
+<li>Если не добавить endpoint для проверки, ученику придётся искусственно вызывать ошибку из тестов, а руками проверить будет сложнее.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>HTTP 503 подходит для временной недоступности зависимости или сервиса.</li>
 <li>Если ошибка ожидаемая, её полезно покрыть тестом на status code и JSON-body.</li>

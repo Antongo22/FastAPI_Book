@@ -463,7 +463,63 @@ async def api_contact(form: ContactForm):
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Какие части нужны для страницы регистрации</h2>
+<p>Здесь задача состоит не из одной функции: нужна Pydantic-модель, GET endpoint для показа формы, POST endpoint для обработки формы и HTML-шаблон.</p>
+<ul class="flow-list"><li><code>RegistrationForm</code> описывает данные, которые должны пройти серверную проверку.</li>
+<li><code>GET /register</code> просто показывает пустую форму. Он не должен регистрировать пользователя.</li>
+<li><code>POST /register</code> принимает поля формы через <code>Form</code>, валидирует их и возвращает HTML.</li>
+<li><code>register.html</code> отвечает только за отображение полей, ошибок и сообщения об успехе.</li></ul>
+</article>
+<article class="info-box"><h2>Как работает Pydantic-модель</h2>
+<ul class="flow-list"><li><code>username</code>, <code>email</code> и <code>password</code> - обычные строки, которые приходят из HTML-формы.</li>
+<li><code>@field_validator("username", "email", "password")</code> проверяет, что поля не пустые и не состоят только из пробелов.</li>
+<li><code>email_has_at</code> специально простой: новичку видно, где живёт правило проверки email.</li>
+<li><code>password_is_long_enough</code> бросает <code>ValueError</code>, если пароль короче 6 символов. Pydantic превращает это в список ошибок.</li></ul>
+</article>
+<article class="info-box"><h2>Почему GET и POST возвращают один шаблон</h2>
+<ul class="flow-list"><li>GET возвращает <code>errors={}</code>, <code>values={}</code> и <code>registered=False</code>, потому что пользователь ещё ничего не отправлял.</li>
+<li>POST сначала складывает введённые поля в <code>values</code>, чтобы при ошибке не очищать форму.</li>
+<li>Если Pydantic нашёл ошибки, endpoint возвращает тот же шаблон со status <code>400</code> и словарём <code>errors</code>.</li>
+<li>Если ошибок нет, endpoint возвращает тот же шаблон, но с <code>registered=True</code>, чтобы показать сообщение об успехе.</li></ul>
+</article>
+<article class="info-box"><h2>Почему пароль пока не сохраняется</h2>
+<ul class="flow-list"><li>Глава 5 учит HTML-формам и серверной валидации, а не полноценной регистрации.</li>
+<li>Пароль нельзя хранить как обычную строку в базе. Это будет разобрано в главах про authentication.</li>
+<li>Здесь цель - понять маршрут формы: browser -> POST -> Form-параметры -> Pydantic -> TemplateResponse.</li>
+<li>Проверять надо короткий пароль, пустые поля, неправильный email и успешную отправку.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем решение формы сверху вниз</h2>
+<ul class="flow-list"><li>Imports делятся на группы: pathlib для путей, FastAPI для routes/forms, Jinja2 для шаблонов, Pydantic для validation.</li>
+<li><code>BASE_DIR</code>, <code>app.mount</code> и <code>Jinja2Templates</code> нужны именно в главе с HTML. В чистых API-главах такой код лишний.</li>
+<li><code>ContactForm</code> остаётся, потому что это существующая форма урока.</li>
+<li><code>RegistrationForm</code> добавляется рядом с ней, потому что это такая же Pydantic-модель для данных формы.</li>
+<li>GET endpoint-ы показывают страницы, POST endpoint-ы принимают отправленные формы.</li>
+<li>Шаблон <code>register.html</code> нужен отдельно, потому что FastAPI не генерирует HTML-форму автоматически.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при плохом пароле</h2>
+<ul class="flow-list"><li>Браузер отправляет <code>POST /register</code> с полями формы.</li>
+<li>FastAPI кладёт поля в параметры <code>username</code>, <code>email</code>, <code>password</code> благодаря <code>Form</code>.</li>
+<li>Endpoint собирает словарь <code>values</code>, чтобы сохранить введённые данные.</li>
+<li><code>RegistrationForm(**values)</code> запускает Pydantic-валидацию.</li>
+<li>Validator <code>password_is_long_enough</code> видит короткий пароль и бросает <code>ValueError</code>.</li>
+<li><code>except ValidationError</code> собирает ошибки в словарь по именам полей.</li>
+<li>Endpoint возвращает тот же шаблон со status <code>400</code>, ошибками и введёнными значениями.</li></ul>
+</article>
+<article class="info-box"><h2>Как шаблон связан с endpoint-ом</h2>
+<ul class="flow-list"><li>Endpoint передаёт в шаблон <code>errors</code>, <code>values</code> и <code>registered</code>.</li>
+<li>Шаблон читает <code>values.get("username", "")</code>, чтобы поле не очищалось после ошибки.</li>
+<li>Шаблон проверяет <code>errors.get("password")</code> и показывает текст ошибки рядом с password.</li>
+<li>Если <code>registered=True</code>, шаблон показывает сообщение об успешной регистрации.</li>
+<li>HTML сам ничего не валидирует надёжно. Главная проверка находится на сервере в Pydantic-модели.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>GET-handler должен показывать пустую форму, POST-handler - валидировать и возвращать тот же шаблон.</li>
 <li>Не храните пароль в открытом виде: в auth-главах он будет хешироваться.</li>

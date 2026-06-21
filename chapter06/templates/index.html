@@ -443,7 +443,64 @@ def downgrade():
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Где появляется новое поле category</h2>
+<p>Поле категории должно пройти через все слои: ORM-модель, Pydantic DTO, create/update schemas, CRUD endpoint-ы и миграцию.</p>
+<ul class="flow-list"><li><code>Product.category</code> добавляет колонку на уровне SQLAlchemy ORM.</li>
+<li><code>ProductCreate.category</code> разрешает клиенту передать категорию при создании продукта.</li>
+<li><code>ProductUpdate.category</code> разрешает поменять категорию при обновлении.</li>
+<li><code>ProductDto.category</code> возвращает категорию наружу в JSON-ответе.</li>
+<li>Если забыть DTO, поле будет в базе, но клиент его не увидит.</li></ul>
+</article>
+<article class="info-box"><h2>Почему нужен default и nullable</h2>
+<ul class="flow-list"><li><code>default="general"</code> даёт понятное значение, если клиент не передал категорию.</li>
+<li><code>nullable=False</code> говорит базе: у продукта всегда должна быть категория.</li>
+<li>В учебной SQLite-БД таблицы создаются автоматически, но в реальном проекте структура меняется через миграции.</li>
+<li>Если в уже существующей таблице есть старые продукты, миграция должна дать им значение по умолчанию.</li></ul>
+</article>
+<article class="info-box"><h2>Зачем нужна Alembic migration</h2>
+<ul class="flow-list"><li><code>upgrade()</code> описывает движение вперёд: добавить колонку <code>category</code>.</li>
+<li><code>downgrade()</code> описывает откат: удалить колонку, если миграцию нужно отменить.</li>
+<li>Миграция нужна не FastAPI, а базе данных. FastAPI сам не меняет production-схему при каждом запуске.</li>
+<li>Даже если demo-приложение вызывает <code>create_all</code>, главе важно показать правильный промышленный путь.</li></ul>
+</article>
+<article class="info-box"><h2>Что проверять после изменения</h2>
+<ul class="flow-list"><li>Создайте продукт без <code>category</code>. В ответе должно быть <code>category: "general"</code> или выбранное вами значение по умолчанию.</li>
+<li>Создайте продукт с <code>category: "books"</code>. Ответ должен вернуть именно <code>books</code>.</li>
+<li>Откройте список продуктов. Категория должна быть у каждого объекта.</li>
+<li>Запустите тесты CRUD с тестовой БД, чтобы убедиться, что изменения не завязаны на локальный файл SQLite.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем DB-ответ сверху вниз</h2>
+<ul class="flow-list"><li>Imports SQLAlchemy нужны для engine, session, base class, колонок и типов колонок.</li>
+<li><code>DATABASE_URL</code> задаёт адрес базы. По умолчанию используется SQLite-файл главы.</li>
+<li><code>engine</code> знает, как подключаться к базе, а <code>SessionLocal</code> создаёт sessions для операций.</li>
+<li><code>Base</code> - родитель для ORM-моделей. Через него SQLAlchemy знает, какие таблицы существуют.</li>
+<li><code>Product</code> описывает таблицу, а <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductDto</code> описывают JSON снаружи.</li>
+<li>Endpoint-ы не должны напрямую знать все детали таблицы. Они работают через session и модели.</li></ul>
+</article>
+<article class="info-box"><h2>Почему category проходит через несколько классов</h2>
+<ul class="flow-list"><li>ORM-модель отвечает за хранение в базе: без <code>Product.category</code> колонка не появится в таблице.</li>
+<li>Create schema отвечает за входные данные при создании: без <code>ProductCreate.category</code> клиент не сможет прислать категорию.</li>
+<li>Update schema отвечает за частичное изменение: без <code>ProductUpdate.category</code> категорию нельзя будет обновить.</li>
+<li>DTO отвечает за выходной JSON: без <code>ProductDto.category</code> клиент не увидит категорию в ответе.</li>
+<li>Migration отвечает за реальную схему уже существующей базы: без Alembic production-база не узнает про новую колонку.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при создании продукта</h2>
+<ul class="flow-list"><li>Клиент отправляет <code>POST /api/products</code> с JSON body.</li>
+<li>FastAPI валидирует body через <code>ProductCreate</code>.</li>
+<li>Endpoint создаёт ORM-объект <code>Product(**request.model_dump())</code> или аналогичную конструкцию.</li>
+<li>SQLAlchemy session добавляет объект через <code>db.add</code>.</li>
+<li><code>db.commit()</code> сохраняет строку в SQLite.</li>
+<li><code>db.refresh(product)</code> подтягивает id и значения по умолчанию из базы.</li>
+<li>FastAPI возвращает объект через <code>ProductDto</code>, и в JSON появляется <code>category</code>.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Менять нужно и ORM-модель, и DTO, иначе поле либо не сохранится, либо не попадёт в публичный ответ.</li>
 <li>В миграции используйте <code>op.add_column</code>, а в downgrade - <code>op.drop_column</code>.</li>

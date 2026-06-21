@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from html import unescape
+from pathlib import Path
 
 from chapter01.app.main import app as chapter01_app
 from chapter02.app.main import app as chapter02_app
@@ -15,6 +16,8 @@ from chapter11.app.main import app as chapter11_app
 from chapter12.app.main import app as chapter12_app
 from gateway.app.main import app as gateway_app
 
+
+ROOT = Path(__file__).resolve().parent.parent
 
 CHAPTER_APPS = [
     chapter01_app,
@@ -61,6 +64,36 @@ FULL_ANSWER_CONTEXT_MARKERS = [
     (chapter12_app, ["import socketio", "class ChatService", "def delete_group", "from fastapi.testclient import TestClient"]),
 ]
 
+ANSWER_WALKTHROUGH_MARKERS = [
+    (chapter01_app, ["Куда вставлять новый endpoint", "Что не надо менять", "Swagger не нужно редактировать руками"]),
+    (chapter02_app, ["Куда добавлять dependency", "Как FastAPI подставляет prefix", "передаётся без скобок"]),
+    (chapter03_app, ["Зачем нужен service layer", "Как работает httpx-код", "Как отличить реальную интеграцию от заглушки"]),
+    (chapter04_app, ["Где создаётся новое исключение", "Почему status code 503", "JSONResponse"]),
+    (chapter05_app, ["Какие части нужны для страницы регистрации", "Почему GET и POST возвращают один шаблон", "Пароль нельзя хранить"]),
+    (chapter06_app, ["Где появляется новое поле category", "Зачем нужна Alembic migration", "Если забыть DTO"]),
+    (chapter07_app, ["Чем authentication отличается от authorization", "Почему роль нельзя брать из запроса", "Как работает require_admin"]),
+    (chapter08_app, ["Зачем нужно поле revoked_at", "Почему revoke лучше вынести в helper", "Как меняется refresh flow"]),
+    (chapter09_app, ["Где обрабатывать команду /who", "Почему ответ отправляется только текущему клиенту", "Откуда берётся count"]),
+    (chapter10_app, ["Куда добавлять leave_room", "Зачем две операции удаления", "Почему нужен ответ left_room"]),
+    (chapter11_app, ["Где хранится роль", "Как роль попадает в Socket.IO подключение", "Как работает admin_message"]),
+    (chapter12_app, ["Почему удаление группы начинается с service layer", "Как REST endpoint использует сервис", "Что доказывает тест"]),
+]
+
+ANSWER_DEEP_DIVE_MARKERS = [
+    (chapter01_app, ["Читаем полный ответ сверху вниз", "Что происходит при POST /api/calculator/power", "Почему нельзя просто вернуть число"]),
+    (chapter02_app, ["Читаем DI-решение сверху вниз", "Что FastAPI делает перед входом в pretty_log", "Почему это учебный пример DI"]),
+    (chapter03_app, ["Читаем HTTP-интеграцию сверху вниз", "Что происходит при запросе comments", "Зачем нужен try/except вокруг await"]),
+    (chapter04_app, ["Читаем error handling сверху вниз", "Что происходит при raise NotReadyError", "Что сломается, если убрать отдельные части"]),
+    (chapter05_app, ["Читаем решение формы сверху вниз", "Что происходит при плохом пароле", "Как шаблон связан с endpoint-ом"]),
+    (chapter06_app, ["Читаем DB-ответ сверху вниз", "Почему category проходит через несколько классов", "Что происходит при создании продукта"]),
+    (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
+    (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при refresh rotation", "Почему revoked_at важен для обучения"]),
+    (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит внутри receive loop", "Почему /who не должен быть broadcast"]),
+    (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при leave_room", "Почему здесь есть await"]),
+    (chapter11_app, ["Читаем авторизованный Socket.IO ответ сверху вниз", "Что происходит при connect", "Почему admin_message проверяется отдельно"]),
+    (chapter12_app, ["Читаем итоговое решение сверху вниз", "Что происходит при DELETE /api/chat/groups/{group_id}", "Почему тест устроен именно так"]),
+]
+
 
 def html_section(text: str, start_marker: str, end_marker: str) -> str:
     return text.split(start_marker, maxsplit=1)[1].split(end_marker, maxsplit=1)[0]
@@ -98,10 +131,13 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         assert "Практика по уровням" not in response.text
         assert "Контрольные вопросы" in response.text
         assert "Полное решение задачи" in response.text
+        assert "Полный разбор ответа" in response.text
+        assert "Разбор ответа ещё подробнее" not in response.text
+        assert "Этот блок читается медленно" not in response.text
+        assert "Короткое резюме решения" in response.text
         assert "Единственная" not in response.text
         assert "единственной" not in response.text
         assert "Короткая версия решения" not in response.text
-        assert "Разбор решения" in response.text
 
 
 def test_code_tab_does_not_show_task_answers():
@@ -122,6 +158,42 @@ def test_answers_include_full_code_context_not_only_fragments():
 
         for marker in markers:
             assert marker in answers, f"answer is missing full-code context marker: {marker}"
+
+
+def test_answers_include_detailed_walkthroughs_for_beginners():
+    for app, markers in ANSWER_WALKTHROUGH_MARKERS:
+        response = TestClient(app).get("/")
+        assert response.status_code == 200
+        answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
+
+        assert "что стоит на своём месте" in answers
+        for marker in markers:
+            assert marker in answers, f"answer walkthrough is missing marker: {marker}"
+
+
+def test_answers_include_even_deeper_step_by_step_explanations():
+    for app, markers in ANSWER_DEEP_DIVE_MARKERS:
+        response = TestClient(app).get("/")
+        assert response.status_code == 200
+        answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
+
+        assert "Разбор ответа ещё подробнее" not in answers
+        assert "Этот блок читается медленно" not in answers
+        for marker in markers:
+            assert marker in answers, f"deep answer walkthrough is missing marker: {marker}"
+
+
+def test_shared_css_prevents_inline_code_from_breaking_cards():
+    css_files = [ROOT / "gateway/static/site.css"]
+    css_files.extend(ROOT / f"chapter{number:02}/static/site.css" for number in range(1, 13))
+
+    for css_file in css_files:
+        css = css_file.read_text(encoding="utf-8")
+        assert "minmax(min(100%, 280px), 1fr)" in css, f"{css_file} should avoid cramped card columns"
+        assert "min-width: 0;" in css, f"{css_file} should keep grid children shrinkable"
+        assert "overflow-wrap: anywhere;" in css, f"{css_file} should wrap long inline code"
+        assert "word-break: break-word;" in css, f"{css_file} should break very long tokens"
+        assert "pre code" in css and "white-space: pre;" in css, f"{css_file} should preserve code blocks"
 
 
 def test_chapter01_page_explains_headers():

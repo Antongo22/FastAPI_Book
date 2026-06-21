@@ -560,7 +560,82 @@ def test_delete_group_removes_group_messages():
 </article>
 
                 <article class="info-box">
-                    <h2>Разбор решения</h2>
+                    <h2>Полный разбор ответа</h2>
+                    <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
+                </article>
+
+                <article class="info-box"><h2>Почему удаление группы начинается с service layer</h2>
+<p>Удаление группы - бизнес-операция. Её должны использовать REST endpoint, Socket.IO event и тесты, поэтому логика живёт в <code>ChatService.delete_group</code>, а не копируется в каждом обработчике.</p>
+<ul class="flow-list"><li><code>def delete_group(self, group_id: int)</code> принимает id группы, потому что это главный входной параметр операции.</li>
+<li><code>self.db.get(ChatGroup, group_id)</code> ищет группу по primary key.</li>
+<li>Если группы нет, сервис бросает <code>HTTPException(status_code=404)</code>. Так REST сразу получит правильный HTTP-ответ.</li>
+<li>Если группа есть, сервис удаляет связанные сообщения и саму группу в одной транзакции.</li></ul>
+</article>
+<article class="info-box"><h2>Почему сначала удаляются сообщения</h2>
+<ul class="flow-list"><li>Сообщения ссылаются на группу через <code>group_id</code>.</li>
+<li>Если удалить группу, а сообщения оставить, в базе появятся записи, которые указывают на несуществующую группу.</li>
+<li>В учебном решении выбран простой вариант: при удалении группы удаляются и её сообщения.</li>
+<li><code>self.db.query(Message).filter(Message.group_id == group_id).delete()</code> удаляет все сообщения выбранной группы.</li>
+<li>После этого <code>self.db.delete(group)</code> удаляет саму группу, а <code>self.db.commit()</code> сохраняет изменения.</li></ul>
+</article>
+<article class="info-box"><h2>Как REST endpoint использует сервис</h2>
+<ul class="flow-list"><li><code>@fastapi_app.delete("/api/chat/groups/{group_id}", status_code=204)</code> регистрирует HTTP DELETE endpoint.</li>
+<li><code>group_id</code> берётся из URL path.</li>
+<li><code>service: ChatService = Depends(get_chat_service)</code> даёт endpoint-у готовый сервис с DB session.</li>
+<li><code>service.delete_group(group_id)</code> выполняет всю бизнес-логику.</li>
+<li>Функция ничего не возвращает, потому что status <code>204 No Content</code> означает успешное удаление без тела ответа.</li></ul>
+</article>
+<article class="info-box"><h2>Как Socket.IO event использует тот же сервис</h2>
+<ul class="flow-list"><li><code>async def delete_group(sid, data)</code> получает payload от Socket.IO клиента.</li>
+<li><code>group_id = int(data["group_id"])</code> явно превращает значение в число, потому что из JSON оно может прийти строкой.</li>
+<li><code>with SessionLocal() as db</code> открывает короткую SQLAlchemy session на время события.</li>
+<li><code>ChatService(db)</code> создаёт тот же сервис, который использует REST API.</li>
+<li><code>await sio.emit("group_deleted", {"group_id": group_id})</code> сообщает подключённым клиентам, что группа удалена.</li></ul>
+</article>
+<article class="info-box"><h2>Что доказывает тест</h2>
+<ul class="flow-list"><li><code>make_sqlite_override</code> подменяет обычную БД тестовой SQLite-БД, чтобы тест был изолированным.</li>
+<li>Тест создаёт группу, отправляет в неё сообщение, удаляет группу и потом запрашивает сообщения этой группы.</li>
+<li>Ожидаемый результат - пустой список. Это доказывает, что удаление затронуло не только группу, но и связанные сообщения.</li>
+<li><code>app.dependency_overrides.clear()</code> в <code>finally</code> очищает подмену, чтобы она не влияла на другие тесты.</li></ul>
+</article>
+
+                <article class="info-box"><h2>Читаем итоговое решение сверху вниз</h2>
+<ul class="flow-list"><li>Сначала идут imports для FastAPI, SQLAlchemy, Pydantic, datetime и Socket.IO.</li>
+<li>Потом создаются engine и SessionLocal, потому что они нужны всем операциям с БД.</li>
+<li>ORM-модели <code>ChatGroup</code> и <code>Message</code> описывают таблицы.</li>
+<li>Pydantic DTO описывают JSON-ответы REST API.</li>
+<li><code>ChatService</code> содержит бизнес-логику: создать группу, отправить сообщение, получить сообщения, удалить группу.</li>
+<li>REST endpoint-ы вызывают service через dependency.</li>
+<li>Socket.IO events тоже создают service, но открывают session вручную на время события.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при DELETE /api/chat/groups/{group_id}</h2>
+<ul class="flow-list"><li>Клиент вызывает HTTP DELETE endpoint с id группы в URL.</li>
+<li>FastAPI достаёт <code>group_id</code> из path.</li>
+<li>Dependency <code>get_chat_service</code> создаёт service с DB session.</li>
+<li>Endpoint вызывает <code>service.delete_group(group_id)</code>.</li>
+<li>Service ищет группу. Если её нет, возвращается <code>404</code>.</li>
+<li>Service удаляет сообщения этой группы, потом саму группу, потом делает commit.</li>
+<li>Endpoint возвращает status <code>204</code>, потому что удаление прошло успешно и тело ответа не нужно.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при Socket.IO delete_group</h2>
+<ul class="flow-list"><li>Клиент отправляет Socket.IO event <code>delete_group</code> с <code>group_id</code>.</li>
+<li>Handler получает <code>data</code> и превращает <code>group_id</code> в int.</li>
+<li>Handler открывает SQLAlchemy session через <code>with SessionLocal() as db</code>.</li>
+<li>Handler создаёт <code>ChatService(db)</code> и вызывает тот же <code>delete_group</code>.</li>
+<li>После успешного удаления сервер отправляет событие <code>group_deleted</code>.</li>
+<li>REST и Socket.IO используют одну бизнес-логику, поэтому поведение не расходится.</li></ul>
+</article>
+<article class="info-box"><h2>Почему тест устроен именно так</h2>
+<ul class="flow-list"><li>Тест сначала подменяет production-БД на тестовую через <code>dependency_overrides</code>.</li>
+<li>Потом создаёт группу через настоящий REST endpoint, а не руками через SQLAlchemy.</li>
+<li>Потом создаёт сообщение этой группы, чтобы проверить не пустой случай.</li>
+<li>Потом удаляет группу через новый DELETE endpoint.</li>
+<li>Потом запрашивает сообщения группы и ожидает пустой список.</li>
+<li>Так тест проверяет весь путь: API -> dependency -> service -> database -> API response.</li></ul>
+</article>
+
+                <article class="info-box">
+                    <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
                         <li>Сначала напишите тест на ожидаемое поведение service method, затем подключайте Socket.IO событие.</li>
 <li>Решите явно: сообщения удаляются каскадно или получают <code>group_id=None</code>. Для учебного чата проще каскадное удаление.</li>
