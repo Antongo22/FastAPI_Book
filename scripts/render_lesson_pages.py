@@ -5020,7 +5020,6 @@ def render_lesson(service: str, data: dict) -> str:
     number = data["number"]
     port = data["port"]
     guide = BEGINNER_GUIDES[service]
-    study_notes = CHAPTER_STUDY_NOTES[service]
     prev_link = f'http://localhost:{port - 1}' if number > 1 else "http://localhost:8000"
     next_link = f'http://localhost:{port + 1}' if number < 12 else "http://localhost:8000"
     prev_label = "Предыдущая глава" if number > 1 else "Главная"
@@ -5057,54 +5056,13 @@ def render_lesson(service: str, data: dict) -> str:
         </section>
 
         <nav class="lesson-tabs" aria-label="Разделы главы">
-            <button class="active" data-tab-target="#course">Учебник</button>
-            <button data-tab-target="#theory">Теория</button>
+            <button class="active" data-tab-target="#theory">Теория</button>
             <button data-tab-target="#code">Разбор кода</button>
             <button data-tab-target="#task">Практика</button>
             <button data-tab-target="#answers">Ответы</button>
         </nav>
 
-        <section id="course" class="tab-panel active">
-            <div class="section-grid">
-                <article class="info-box">
-                    <h2>Как пользоваться этой главой</h2>
-                    {paragraphs(study_notes)}
-                    <div class="callout">Если вы только начинаете: не перепрыгивайте сразу к ответу. Сначала запустите пример, затем откройте код рядом с этой страницей и проговаривайте каждую строку обычными словами.</div>
-                </article>
-
-                <article class="info-box">
-                    <h2>Учебный план</h2>
-                    <ol class="flow-list">
-                        {list_items(lesson_plan(service, data))}
-                    </ol>
-                </article>
-
-                <article class="info-box">
-                    <h2>Структура файлов главы</h2>
-                    <dl class="line-breakdown">
-                        {render_file_structure(chapter_files(service, data))}
-                    </dl>
-                </article>
-
-                <article class="info-box">
-                    <h2>Команды запуска</h2>
-                    <p>Эти команды выполняются из корня проекта <code>FastAPI_Book</code>. Если виртуальное окружение уже создано, повторно создавать его не нужно.</p>
-                </article>
-
-                <div class="section-grid">
-                    {titled_code_blocks(run_commands(service, data))}
-                </div>
-
-                <article class="info-box">
-                    <h2>Что открыть в браузере</h2>
-                    <div class="endpoint-grid">
-                        {endpoint_cards(browser_targets(data))}
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section id="theory" class="tab-panel">
+        <section id="theory" class="tab-panel active">
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>

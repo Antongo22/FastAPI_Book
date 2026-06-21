@@ -113,10 +113,12 @@ def test_all_chapter_pages_render_navigation_and_deep_sections():
         response = TestClient(app).get("/")
         assert response.status_code == 200
         assert "← На главную" in response.text
-        assert "Учебник" in response.text
-        assert "Учебный план" in response.text
-        assert "Структура файлов главы" in response.text
-        assert "Команды запуска" in response.text
+        assert '>Учебник</button>' not in response.text
+        assert 'data-tab-target="#course"' not in response.text
+        assert '<section id="course"' not in response.text
+        assert '<button class="active" data-tab-target="#theory">Теория</button>' in response.text
+        assert '<section id="theory" class="tab-panel active">' in response.text
+        assert "Как пользоваться этой главой" not in response.text
         assert "Как проходит запрос" in response.text
         assert "Разбор кода" in response.text
         assert "Endpoint-ы для проверки" in response.text
