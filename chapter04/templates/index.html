@@ -112,7 +112,7 @@ async def demo_error_handler(request, exc: DemoError):
 <dt><code>exc</code></dt><dd>Это ошибка, которую кто-то бросил через <code>raise DemoError(...)</code>.</dd>
 <dt><code>JSONResponse(...)</code></dt><dd>Создаём ответ вручную: выбираем status code и тело JSON.</dd>
 <dt><code>status_code=500</code></dt><dd>Говорим клиенту, что произошла серверная ошибка.</dd>
-<dt><code>content={...}</code></dt><dd>Тело ответа. Клиент получит именно этот JSON.</dd>
+<dt><code>content=&#123;...&#125;</code></dt><dd>Тело ответа. Клиент получит именно этот JSON.</dd>
 <dt><code>str(exc)</code></dt><dd>Превращаем исключение в строку, чтобы показать сообщение.</dd>
 <dt><code>str(request.url.path)</code></dt><dd>Добавляем путь, на котором произошла ошибка. Это помогает отладке.</dd>
                     </dl>

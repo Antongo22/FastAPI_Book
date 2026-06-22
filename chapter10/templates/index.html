@@ -210,8 +210,8 @@ async def disconnect(sid):
                     <h2>Критерии готовности</h2>
                     <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
                     <div class="endpoint-grid">
-                        <article class="endpoint-card"><strong><code>Socket.IO join_room</code></strong><span>Клиент отправляет <code>{ room: "python" }</code> и получает <code>joined_room</code>.</span></article>
-<article class="endpoint-card"><strong><code>Socket.IO leave_room</code></strong><span>Клиент отправляет <code>{ room: "python" }</code> и получает <code>left_room</code>.</span></article>
+                        <article class="endpoint-card"><strong><code>Socket.IO join_room</code></strong><span>Клиент отправляет <code>&#123; room: "python" &#125;</code> и получает <code>joined_room</code>.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO leave_room</code></strong><span>Клиент отправляет <code>&#123; room: "python" &#125;</code> и получает <code>left_room</code>.</span></article>
 <article class="endpoint-card"><strong><code>Room state</code></strong><span>После выхода sid удаляется из учебного словаря комнат.</span></article>
                     </div>
                 </article>
@@ -406,8 +406,8 @@ async def direct_message(sid, data):
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO join_room</code></strong><span>Отправьте <code>{ room: "python" }</code> и получите событие <code>joined_room</code>.</span></article>
-<article class="endpoint-card"><strong><code>Socket.IO leave_room</code></strong><span>Отправьте <code>{ room: "python" }</code> и получите событие <code>left_room</code>.</span></article></div>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO join_room</code></strong><span>Отправьте <code>&#123; room: "python" &#125;</code> и получите событие <code>joined_room</code>.</span></article>
+<article class="endpoint-card"><strong><code>Socket.IO leave_room</code></strong><span>Отправьте <code>&#123; room: "python" &#125;</code> и получите событие <code>left_room</code>.</span></article></div>
 </article>
 
                 <article class="info-box">
@@ -435,7 +435,7 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <li>Если забыть <code>discard</code>, реальная отправка может работать, но учебный endpoint будет показывать неправильное состояние.</li></ul>
 </article>
 <article class="info-box"><h2>Почему нужен ответ left_room</h2>
-<ul class="flow-list"><li><code>await sio.emit("left_room", {"room": room}, to=sid)</code> отправляет подтверждение только клиенту, который вышел.</li>
+<ul class="flow-list"><li><code>await sio.emit("left_room", &#123;"room": room&#125;, to=sid)</code> отправляет подтверждение только клиенту, который вышел.</li>
 <li>Клиенту важно получить явный сигнал: сервер команду принял, комната изменена.</li>
 <li>Событие не рассылается всем, потому что это не сообщение чата, а служебное подтверждение.</li>
 <li>Проверять удобно на странице теста сокетов: подключиться, войти в комнату, выйти и увидеть <code>left_room</code> в логе.</li></ul>
@@ -450,7 +450,7 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <li>Все функции с <code>@sio.event</code> - обработчики событий, которые клиент отправляет через Socket.IO.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при leave_room</h2>
-<ul class="flow-list"><li>Клиент отправляет событие <code>leave_room</code> с payload, например <code>{"room": "python"}</code>.</li>
+<ul class="flow-list"><li>Клиент отправляет событие <code>leave_room</code> с payload, например <code>&#123;"room": "python"&#125;</code>.</li>
 <li>Socket.IO вызывает Python-функцию <code>leave_room(sid, data)</code>.</li>
 <li>Функция читает комнату из <code>data</code>. Если комнаты нет, берёт <code>general</code>.</li>
 <li><code>await sio.leave_room(sid, room)</code> меняет внутреннее состояние Socket.IO.</li>

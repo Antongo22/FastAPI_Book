@@ -344,7 +344,7 @@ async def logger_demo(
 <dt><code>settings: AppSettings = Depends(get_settings)</code></dt><dd>Endpoint просит настройки. FastAPI вызывает <code>get_settings</code> и кладёт результат в <code>settings</code>.</dd>
 <dt><code>Depends(get_current_user)</code></dt><dd>FastAPI сначала вызовет <code>get_current_user</code>, а уже готовый объект положит в параметр <code>user</code>.</dd>
 <dt><code>app_logger: logging.Logger = Depends(get_logger)</code></dt><dd>Endpoint получает logger через DI и не создаёт его внутри функции.</dd>
-<dt><code>return {"username": ...}</code></dt><dd>Endpoint возвращает обычный JSON, но данные для него пришли через dependency.</dd>
+<dt><code>return &#123;"username": ...&#125;</code></dt><dd>Endpoint возвращает обычный JSON, но данные для него пришли через dependency.</dd>
                     </dl>
                 </article>
 
@@ -610,7 +610,7 @@ async def pretty_log(
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
 <p>Вызовите endpoint с разными сообщениями. В JSON должна вернуться строка с префиксом, а в консоли приложения должна появиться такая же запись лога.</p>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/dependency-injection/pretty-log?message=hello</code></strong><span>Ответ содержит <code>{"formatted_message":"[DI LOG] hello"}</code>.</span></article>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /api/dependency-injection/pretty-log?message=hello</code></strong><span>Ответ содержит <code>&#123;"formatted_message":"[DI LOG] hello"&#125;</code>.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/dependency-injection/pretty-log?message=FastAPI</code></strong><span>Сообщение меняется, а префикс остаётся тем же.</span></article>
 <article class="endpoint-card"><strong><code>Консоль</code></strong><span>В логах приложения видно готовую строку, которую собрал endpoint.</span></article></div>
 </article>
@@ -635,9 +635,9 @@ async def pretty_log(
 </article>
 <article class="info-box"><h2>Что делает endpoint</h2>
 <ul class="flow-list"><li><code>message: str = "hello"</code> - query-параметр. Если открыть endpoint без <code>?message=...</code>, будет использовано значение <code>hello</code>.</li>
-<li><code>formatted_message = f"{prefix} {message}"</code> собирает итоговую строку из dependency-префикса и пользовательского текста.</li>
+<li><code>formatted_message = f"&#123;prefix&#125; &#123;message&#125;"</code> собирает итоговую строку из dependency-префикса и пользовательского текста.</li>
 <li><code>app_logger.info(formatted_message)</code> показывает практический смысл DI: logger пришёл снаружи, endpoint его только использует.</li>
-<li><code>return {"formatted_message": formatted_message}</code> нужен, чтобы результат был виден прямо в Swagger, даже если ученик не смотрит консоль.</li></ul>
+<li><code>return &#123;"formatted_message": formatted_message&#125;</code> нужен, чтобы результат был виден прямо в Swagger, даже если ученик не смотрит консоль.</li></ul>
 </article>
 <article class="info-box"><h2>Как проверять и где чаще ошибаются</h2>
 <ul class="flow-list"><li>Проверьте <code>/api/dependency-injection/pretty-log?message=hello</code>. Должно вернуться <code>[DI LOG] hello</code>.</li>

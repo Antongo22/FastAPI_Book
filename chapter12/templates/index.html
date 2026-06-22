@@ -164,14 +164,14 @@ async def chat_message(sid, data):
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">Добавьте удаление группы чата: метод <code>ChatService.delete_group</code>, endpoint <code>DELETE /api/chat/groups/{group_id}</code>, Socket.IO событие <code>delete_group</code> и тест, который доказывает, что сообщения удалённой группы больше не возвращаются.</div>
+                    <div class="callout">Добавьте удаление группы чата: метод <code>ChatService.delete_group</code>, endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>, Socket.IO событие <code>delete_group</code> и тест, который доказывает, что сообщения удалённой группы больше не возвращаются.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
                     <ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
 <li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
-<li>Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.</li>
+<li>Добавить endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>.</li>
 <li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
 <li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
                 </article>
@@ -180,7 +180,7 @@ async def chat_message(sid, data):
                     <h2>Критерии готовности</h2>
                     <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
                     <div class="endpoint-grid">
-                        <article class="endpoint-card"><strong><code>DELETE /api/chat/groups/{group_id}</code></strong><span>Удаление существующей группы возвращает HTTP 204.</span></article>
+                        <article class="endpoint-card"><strong><code>DELETE /api/chat/groups/&#123;group_id&#125;</code></strong><span>Удаление существующей группы возвращает HTTP 204.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/chat/messages</code></strong><span>После удаления группы сообщения этой группы больше не возвращаются.</span></article>
 <article class="endpoint-card"><strong><code>Socket.IO delete_group</code></strong><span>Событие вызывает тот же <code>ChatService.delete_group</code> и отправляет <code>group_deleted</code>.</span></article>
                     </div>
@@ -210,7 +210,7 @@ async def chat_message(sid, data):
 <p>Задача про удаление группы должна быть решена на всех уровнях: service method, REST endpoint, Socket.IO событие и тест.</p>
 <ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
 <li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
-<li>Добавить endpoint <code>DELETE /api/chat/groups/{group_id}</code>.</li>
+<li>Добавить endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>.</li>
 <li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
 <li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
 </article>
@@ -516,7 +516,7 @@ def test_delete_group_removes_group_messages():
 <li>После этого <code>self.db.delete(group)</code> удаляет саму группу, а <code>self.db.commit()</code> сохраняет изменения.</li></ul>
 </article>
 <article class="info-box"><h2>Как REST endpoint использует сервис</h2>
-<ul class="flow-list"><li><code>@fastapi_app.delete("/api/chat/groups/{group_id}", status_code=204)</code> регистрирует HTTP DELETE endpoint.</li>
+<ul class="flow-list"><li><code>@fastapi_app.delete("/api/chat/groups/&#123;group_id&#125;", status_code=204)</code> регистрирует HTTP DELETE endpoint.</li>
 <li><code>group_id</code> берётся из URL path.</li>
 <li><code>service: ChatService = Depends(get_chat_service)</code> даёт endpoint-у готовый сервис с DB session.</li>
 <li><code>service.delete_group(group_id)</code> выполняет всю бизнес-логику.</li>
@@ -527,7 +527,7 @@ def test_delete_group_removes_group_messages():
 <li><code>group_id = int(data["group_id"])</code> явно превращает значение в число, потому что из JSON оно может прийти строкой.</li>
 <li><code>with SessionLocal() as db</code> открывает короткую SQLAlchemy session на время события.</li>
 <li><code>ChatService(db)</code> создаёт тот же сервис, который использует REST API.</li>
-<li><code>await sio.emit("group_deleted", {"group_id": group_id})</code> сообщает подключённым клиентам, что группа удалена.</li></ul>
+<li><code>await sio.emit("group_deleted", &#123;"group_id": group_id&#125;)</code> сообщает подключённым клиентам, что группа удалена.</li></ul>
 </article>
 <article class="info-box"><h2>Что доказывает тест</h2>
 <ul class="flow-list"><li><code>make_sqlite_override</code> подменяет обычную БД тестовой SQLite-БД, чтобы тест был изолированным.</li>
@@ -545,7 +545,7 @@ def test_delete_group_removes_group_messages():
 <li>REST endpoint-ы вызывают service через dependency.</li>
 <li>Socket.IO events тоже создают service, но открывают session вручную на время события.</li></ul>
 </article>
-<article class="info-box"><h2>Что происходит при DELETE /api/chat/groups/{group_id}</h2>
+<article class="info-box"><h2>Что происходит при DELETE /api/chat/groups/&#123;group_id&#125;</h2>
 <ul class="flow-list"><li>Клиент вызывает HTTP DELETE endpoint с id группы в URL.</li>
 <li>FastAPI достаёт <code>group_id</code> из path.</li>
 <li>Dependency <code>get_chat_service</code> создаёт service с DB session.</li>

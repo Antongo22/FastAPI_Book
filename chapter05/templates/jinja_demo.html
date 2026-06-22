@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+    <main class="chapter-shell">
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="/">К уроку</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>{{ title }}</h1>
+            <p>Привет, {{ student_name }}. Эту строку собрал серверный шаблон Jinja2.</p>
+        </section>
+
+        {% if show_hint %}
+        <section class="info-box">
+            <h2>Подсказка</h2>
+            <p>Все значения ниже пришли из Python-словаря, который endpoint передал в template context.</p>
+        </section>
+        {% endif %}
+
+        <section class="info-box">
+            <h2>Что показывает шаблон</h2>
+            <ul class="flow-list">
+                {% for topic in topics %}
+                <li>
+                    <strong>{{ topic.name }}</strong>
+                    <code>{{ topic.template }}</code>
+                    <span>{{ topic.description }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+    </main>
+</body>
+</html>

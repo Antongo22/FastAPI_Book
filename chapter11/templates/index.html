@@ -40,7 +40,7 @@
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
                     <ul class="flow-list">
-                        <li><strong>Socket.IO auth</strong> - объект, который клиент передаёт при подключении: <code>{ access_token: token }</code>.</li>
+                        <li><strong>Socket.IO auth</strong> - объект, который клиент передаёт при подключении: <code>&#123; access_token: token &#125;</code>.</li>
 <li><strong>connect event</strong> - место, где сервер решает принять или отклонить подключение.</li>
 <li><strong>return False</strong> - способ отказать Socket.IO-клиенту при невалидном token-е.</li>
 <li><strong>JWT claims</strong> - username и роль можно брать из подписанного token-а.</li>
@@ -132,7 +132,7 @@ async def connect(sid, environ, auth):
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
                         <dt><code>def authorize_socketio(auth)</code></dt><dd>Helper получает auth payload от Socket.IO клиента и возвращает username или <code>None</code>.</dd>
-<dt><code>(auth or {}).get("access_token")</code></dt><dd>Безопасно читаем token, даже если клиент вообще не передал auth.</dd>
+<dt><code>(auth or &#123;&#125;).get("access_token")</code></dt><dd>Безопасно читаем token, даже если клиент вообще не передал auth.</dd>
 <dt><code>verify_token(str(token))</code></dt><dd>Проверяем подпись JWT и достаём username.</dd>
 <dt><code>@sio.event</code></dt><dd>Регистрируем Socket.IO событие.</dd>
 <dt><code>async def connect(sid, environ, auth)</code></dt><dd>Socket.IO вызывает эту функцию при попытке подключения.</dd>
@@ -189,7 +189,7 @@ async def connect(sid, environ, auth):
                     <h2>Критерии готовности</h2>
                     <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
                     <div class="endpoint-grid">
-                        <article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Пользователь подключается с <code>auth: { access_token }</code>.</span></article>
+                        <article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Пользователь подключается с <code>auth: &#123; access_token &#125;</code>.</span></article>
 <article class="endpoint-card"><strong><code>admin_message</code></strong><span>Обычный пользователь получает событие <code>forbidden</code>.</span></article>
 <article class="endpoint-card"><strong><code>admin_message</code></strong><span>Admin-пользователь получает событие <code>admin_message</code>.</span></article>
                     </div>
@@ -342,7 +342,7 @@ async def admin_message(sid, data):
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Обычный пользователь подключается с <code>auth: { access_token }</code>.</span></article>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO connect</code></strong><span>Обычный пользователь подключается с <code>auth: &#123; access_token &#125;</code>.</span></article>
 <article class="endpoint-card"><strong><code>Socket.IO admin_message</code></strong><span>Обычный пользователь получает событие <code>forbidden</code>.</span></article>
 <article class="endpoint-card"><strong><code>Socket.IO admin_message</code></strong><span>Admin получает событие <code>admin_message</code>.</span></article></div>
 </article>
@@ -360,7 +360,7 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <li>После подписи клиент не может незаметно изменить <code>role</code>: подпись перестанет совпадать.</li></ul>
 </article>
 <article class="info-box"><h2>Как роль попадает в Socket.IO подключение</h2>
-<ul class="flow-list"><li>Клиент передаёт token в Socket.IO <code>auth</code>, например <code>{ access_token: token }</code>.</li>
+<ul class="flow-list"><li>Клиент передаёт token в Socket.IO <code>auth</code>, например <code>&#123; access_token: token &#125;</code>.</li>
 <li><code>connect</code> вызывает <code>authorize_socketio</code> до принятия пользовательских событий.</li>
 <li><code>verify_user_token</code> декодирует JWT и возвращает данные пользователя, включая роль.</li>
 <li>Сервер сохраняет данные в словаре по <code>sid</code>, чтобы последующие events знали, кто подключён.</li></ul>
@@ -387,7 +387,7 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <li>Socket.IO events после connect уже не должны доверять данным клиента о username/role.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при connect</h2>
-<ul class="flow-list"><li>Клиент подключается и передаёт <code>auth: { access_token: token }</code>.</li>
+<ul class="flow-list"><li>Клиент подключается и передаёт <code>auth: &#123; access_token: token &#125;</code>.</li>
 <li>Socket.IO вызывает <code>connect(sid, environ, auth)</code>.</li>
 <li><code>authorize_socketio</code> достаёт token из <code>auth</code>.</li>
 <li><code>verify_user_token</code> проверяет подпись и срок действия JWT.</li>

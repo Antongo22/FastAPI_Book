@@ -42,10 +42,10 @@
                     <ul class="flow-list">
                         <li><strong>REST</strong> - стиль построения API, где клиент обращается к понятным URL, использует HTTP-методы и получает ответ со status code.</li>
 <li><strong>HTTP request</strong> - запрос клиента: method, path, headers и иногда body. Например: <code>POST /api/calculator/add</code> с JSON-телом.</li>
-<li><strong>HTTP response</strong> - ответ сервера: status code, headers и body. Например: <code>200 OK</code> и JSON <code>{"result": 15}</code>.</li>
+<li><strong>HTTP response</strong> - ответ сервера: status code, headers и body. Например: <code>200 OK</code> и JSON <code>&#123;"result": 15&#125;</code>.</li>
 <li><strong>HTTP method</strong> - действие запроса. <code>GET</code> обычно читает данные, <code>POST</code> отправляет данные на сервер.</li>
 <li><strong>Path</strong> - адрес внутри сайта или API. В <code>http://localhost:8001/api/calculator/add</code> path - это <code>/api/calculator/add</code>.</li>
-<li><strong>JSON body</strong> - данные, которые клиент отправляет серверу. В этой главе body выглядит так: <code>{"a": 10, "b": 5}</code>.</li>
+<li><strong>JSON body</strong> - данные, которые клиент отправляет серверу. В этой главе body выглядит так: <code>&#123;"a": 10, "b": 5&#125;</code>.</li>
 <li><strong>Header</strong> - строка служебной информации в request или response. Header не является основными данными, но помогает клиенту и серверу договориться о формате, авторизации, кеше и других деталях.</li>
 <li><strong>Status code</strong> - короткий числовой итог запроса: <code>200</code> успех, <code>400</code> плохие данные клиента, <code>422</code> ошибка валидации, <code>500</code> ошибка сервера.</li>
 <li><strong>FastAPI app</strong> - объект приложения, который хранит маршруты, middleware и настройки документации.</li>
@@ -69,12 +69,12 @@
 <li><strong>Path</strong>: часть URL без домена и порта, например <code>/api/calculator/add</code>.</li>
 <li><strong>Headers</strong>: служебные подсказки. Header <code>Content-Type: application/json</code> говорит серверу, что body написан в JSON.</li>
 <li><strong>Body</strong> и <strong>headers</strong> - разные вещи. Body несёт данные калькулятора, headers объясняют, как эти данные читать.</li>
-<li><strong>Body</strong>: данные запроса. Для сложения это <code>{"a": 10, "b": 5}</code>.</li></ul>
+<li><strong>Body</strong>: данные запроса. Для сложения это <code>&#123;"a": 10, "b": 5&#125;</code>.</li></ul>
 </article>
 <article class="info-box"><h2>Из чего состоит HTTP response</h2>
 <ul class="flow-list"><li><strong>Status code</strong>: короткий результат запроса. <code>200</code> значит успех, <code>400</code> - ошибка в данных клиента, <code>422</code> - JSON не прошёл проверку Pydantic.</li>
 <li><strong>Headers</strong>: служебная информация ответа. В главе middleware добавляет header <code>X-FastAPI-Book-Chapter: 01</code>.</li>
-<li><strong>Body</strong>: полезные данные ответа. В успешном калькуляторе это JSON <code>{"result": 15, "operation": "add"}</code>.</li></ul>
+<li><strong>Body</strong>: полезные данные ответа. В успешном калькуляторе это JSON <code>&#123;"result": 15, "operation": "add"&#125;</code>.</li></ul>
 </article>
 <article class="info-box"><h2>Headers подробнее</h2>
 <p>Header - это пара <code>name: value</code>. Например: <code>Content-Type: application/json</code>. Имя header-а говорит, о какой настройке речь, а значение даёт конкретную информацию.</p>
@@ -100,7 +100,7 @@
                         <li>Вы запускаете сервер командой <code>uvicorn chapter01.app.main:app --reload --port 8001</code>.</li>
 <li>Uvicorn импортирует модуль <code>chapter01.app.main</code> и находит в нём переменную <code>app</code>.</li>
 <li>Uvicorn начинает слушать порт <code>8001</code>. Это значит: он ждёт HTTP-запросы на <code>http://localhost:8001</code>.</li>
-<li>Клиент отправляет <code>POST /api/calculator/add</code> с header <code>Content-Type: application/json</code> и body <code>{"a": 10, "b": 5}</code>.</li>
+<li>Клиент отправляет <code>POST /api/calculator/add</code> с header <code>Content-Type: application/json</code> и body <code>&#123;"a": 10, "b": 5&#125;</code>.</li>
 <li>Uvicorn принимает сетевой запрос и передаёт его FastAPI-приложению через ASGI.</li>
 <li>FastAPI смотрит на method <code>POST</code> и path <code>/api/calculator/add</code>, затем выбирает функцию <code>add</code>.</li>
 <li>Перед вызовом функции FastAPI читает JSON body и просит Pydantic собрать <code>CalculationRequest</code>.</li>
@@ -241,7 +241,7 @@ if __name__ == &quot;__main__&quot;:
 <dt><code>request: CalculationRequest</code></dt><dd>Параметр функции. FastAPI создаст объект <code>CalculationRequest</code> из JSON-тела запроса и положит его в переменную <code>request</code>.</dd>
 <dt><code>if request.b == 0:</code></dt><dd>Обычная проверка Python: если второе число равно нулю, делить нельзя.</dd>
 <dt><code>raise HTTPException(...)</code></dt><dd>Останавливаем выполнение функции и возвращаем клиенту ошибку HTTP 400. Это лучше, чем дать Python упасть с делением на ноль.</dd>
-<dt><code>return {"result": ...}</code></dt><dd>Возвращаем словарь. FastAPI сам превратит его в JSON-ответ.</dd>
+<dt><code>return &#123;"result": ...&#125;</code></dt><dd>Возвращаем словарь. FastAPI сам превратит его в JSON-ответ.</dd>
 <dt><code>@app.get("/api/headers/demo")</code></dt><dd>Учебный endpoint для просмотра request headers. Его удобно открыть в Swagger и попробовать разные значения.</dd>
 <dt><code>user_agent: Annotated[str | None, Header()]</code></dt><dd>Просим FastAPI взять header <code>User-Agent</code>. Если header отсутствует, значение будет <code>None</code>.</dd>
 <dt><code>x_demo_client: Annotated[str | None, Header()]</code></dt><dd>Просим FastAPI взять custom header <code>X-Demo-Client</code>. В параметре Python используется underscore, а в HTTP header - дефис.</dd>
@@ -310,8 +310,8 @@ if __name__ == &quot;__main__&quot;:
                     <h2>Критерии готовности</h2>
                     <p>Задача считается сделанной только когда выполняются все проверки ниже.</p>
                     <div class="endpoint-grid">
-                        <article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 2, "b": 3}</code> -> <code>{"result": 8, "operation": "power"}</code>.</span></article>
-<article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 5, "b": 0}</code> -> <code>{"result": 1, "operation": "power"}</code>.</span></article>
+                        <article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>&#123;"a": 2, "b": 3&#125;</code> -> <code>&#123;"result": 8, "operation": "power"&#125;</code>.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>&#123;"a": 5, "b": 0&#125;</code> -> <code>&#123;"result": 1, "operation": "power"&#125;</code>.</span></article>
 <article class="endpoint-card"><strong><code>Swagger</code></strong><span>Новый endpoint виден в документации после перезапуска приложения.</span></article>
                     </div>
                 </article>
@@ -425,8 +425,8 @@ if __name__ == &quot;__main__&quot;:
 </article>
 <article class="info-box"><h2>3. Как проверить</h2>
 <p>Запустите главу и выполните запросы через Swagger или curl.</p>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 2, "b": 3}</code> → <code>{"result": 8, "operation": "power"}</code></span></article>
-<article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>{"a": 5, "b": 0}</code> → <code>{"result": 1, "operation": "power"}</code></span></article></div>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>&#123;"a": 2, "b": 3&#125;</code> → <code>&#123;"result": 8, "operation": "power"&#125;</code></span></article>
+<article class="endpoint-card"><strong><code>POST /api/calculator/power</code></strong><span>Body: <code>&#123;"a": 5, "b": 0&#125;</code> → <code>&#123;"result": 1, "operation": "power"&#125;</code></span></article></div>
 </article>
 
                 <article class="info-box">
@@ -455,8 +455,8 @@ if __name__ == &quot;__main__&quot;:
 </article>
 <article class="info-box"><h2>Как понять, что решение правильное</h2>
 <ul class="flow-list"><li>Откройте <code>/docs</code> и найдите <code>POST /api/calculator/power</code>. Если его нет, значит приложение не перезапустилось или декоратор написан неверно.</li>
-<li>Отправьте <code>{"a": 2, "b": 3}</code>. Ответ должен содержать <code>"result": 8</code>.</li>
-<li>Отправьте <code>{"a": 5, "b": 0}</code>. Ответ должен содержать <code>"result": 1</code>, потому что любое число в нулевой степени равно 1.</li>
+<li>Отправьте <code>&#123;"a": 2, "b": 3&#125;</code>. Ответ должен содержать <code>"result": 8</code>.</li>
+<li>Отправьте <code>&#123;"a": 5, "b": 0&#125;</code>. Ответ должен содержать <code>"result": 1</code>, потому что любое число в нулевой степени равно 1.</li>
 <li>Если убрать поле <code>b</code>, FastAPI должен вернуть ошибку валидации. Это доказывает, что работает Pydantic-модель, а не ручной парсинг JSON.</li></ul>
 </article>
 
@@ -469,7 +469,7 @@ if __name__ == &quot;__main__&quot;:
 <li>Блок <code>if __name__ == "__main__"</code> находится внизу, потому что это только удобный способ запустить файл напрямую. Он не участвует в обработке конкретного запроса.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при POST /api/calculator/power</h2>
-<ul class="flow-list"><li>Клиент отправляет HTTP method <code>POST</code>, path <code>/api/calculator/power</code> и JSON body, например <code>{"a": 2, "b": 3}</code>.</li>
+<ul class="flow-list"><li>Клиент отправляет HTTP method <code>POST</code>, path <code>/api/calculator/power</code> и JSON body, например <code>&#123;"a": 2, "b": 3&#125;</code>.</li>
 <li>Uvicorn принимает сетевой запрос и передаёт его в FastAPI-приложение <code>app</code>.</li>
 <li>FastAPI ищет маршрут, который совпадает и по method, и по path. Для этой задачи это декоратор <code>@app.post("/api/calculator/power")</code>.</li>
 <li>Перед вызовом функции FastAPI смотрит на параметр <code>request: CalculationRequest</code> и понимает: нужно прочитать JSON body.</li>

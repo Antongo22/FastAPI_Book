@@ -7,17 +7,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def protect_jinja(value: object) -> str:
+    return str(value).replace("{", "&#123;").replace("}", "&#125;")
+
+
 def paragraphs(items: list[str]) -> str:
-    return "\n".join(f"<p>{item}</p>" for item in items)
+    return "\n".join(f"<p>{protect_jinja(item)}</p>" for item in items)
 
 
 def list_items(items: list[str]) -> str:
-    return "\n".join(f"<li>{item}</li>" for item in items)
+    return "\n".join(f"<li>{protect_jinja(item)}</li>" for item in items)
 
 
 def endpoint_cards(items: list[tuple[str, str]]) -> str:
     return "\n".join(
-        f'<article class="endpoint-card"><strong><code>{escape(method)}</code></strong><span>{description}</span></article>'
+        f'<article class="endpoint-card"><strong><code>{protect_jinja(escape(method))}</code></strong><span>{protect_jinja(description)}</span></article>'
         for method, description in items
     )
 
@@ -28,7 +32,7 @@ def code_block(code: str) -> str:
 
 def definition_items(items: list[tuple[str, str]]) -> str:
     return "\n".join(
-        f"<dt>{term}</dt><dd>{description}</dd>"
+        f"<dt>{protect_jinja(term)}</dt><dd>{protect_jinja(description)}</dd>"
         for term, description in items
     )
 
@@ -40,9 +44,9 @@ def render_solution_sections(sections: list[dict[str, object]]) -> str:
         code = section.get("code")
         items = section.get("items")
         checks = section.get("checks")
-        block = [f'<article class="info-box"><h2>{index}. {section["title"]}</h2>']
+        block = [f'<article class="info-box"><h2>{index}. {protect_jinja(section["title"])}</h2>']
         if body:
-            block.append(f"<p>{body}</p>")
+            block.append(f"<p>{protect_jinja(body)}</p>")
         if items:
             block.append(f'<ul class="flow-list">{list_items(items)}</ul>')
         if code:
@@ -57,7 +61,7 @@ def render_solution_sections(sections: list[dict[str, object]]) -> str:
 def render_extra_sections(sections: list[dict[str, object]]) -> str:
     rendered = []
     for section in sections:
-        block = [f'<article class="info-box"><h2>{section["title"]}</h2>']
+        block = [f'<article class="info-box"><h2>{protect_jinja(section["title"])}</h2>']
         body = section.get("body")
         items = section.get("items")
         code = section.get("code")
@@ -99,7 +103,7 @@ def render_single_task(service: str, data: dict) -> str:
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">{data["task"]}</div>
+                    <div class="callout">{protect_jinja(data["task"])}</div>
                 </article>
 
                 <article class="info-box">
@@ -119,7 +123,7 @@ def render_single_task(service: str, data: dict) -> str:
 
 def titled_code_blocks(items: list[tuple[str, str]]) -> str:
     return "\n".join(
-        f'<article class="info-box command-box"><h2>{title}</h2>{code_block(code)}</article>'
+        f'<article class="info-box command-box"><h2>{protect_jinja(title)}</h2>{code_block(code)}</article>'
         for title, code in items
     )
 
@@ -724,63 +728,62 @@ async def not_ready_handler(request, exc: NotReadyError):
     "chapter05": {
         "number": 5,
         "port": 8005,
-        "title": "Глава 5: Jinja2 UI",
-        "subtitle": "Серверные HTML-шаблоны, формы, Form-параметры и Pydantic-валидация вместо Razor Pages.",
-        "outcome": "После главы вы понимаете, как FastAPI отдаёт HTML, принимает формы и показывает ошибки пользователю.",
+        "title": "Глава 5: Jinja2 basics",
+        "subtitle": "Минимальные серверные шаблоны: переменные, условие if, цикл for и передача данных из FastAPI в HTML.",
+        "outcome": "После главы вы понимаете, как Python готовит данные, а Jinja2 показывает их через {{ }}, {% if %} и {% for %}.",
         "concepts": [
             "<strong>Jinja2Templates</strong> - подключение папки HTML-шаблонов.",
             "<strong>TemplateResponse</strong> - ответ, который рендерит шаблон на сервере.",
-            "<strong>request</strong> - обязательный объект в context для Starlette templates.",
-            "<strong>Form</strong> - чтение данных из HTML-формы вместо JSON-body.",
-            "<strong>Pydantic validation</strong> - единая проверка формы перед сохранением или отправкой.",
+            "<strong>context</strong> - обычный Python-словарь с данными для шаблона.",
+            "<strong>{{ variable }}</strong> - вставка значения переменной в HTML.",
+            "<strong>{% if condition %}</strong> - показать кусок HTML только при выполнении условия.",
+            "<strong>{% for item in items %}</strong> - повторить кусок HTML для каждого элемента списка.",
         ],
         "flow": [
-            "Пользователь открывает <code>/contact</code>, FastAPI рендерит HTML-форму.",
-            "Браузер отправляет <code>POST /contact</code> с <code>application/x-www-form-urlencoded</code>.",
-            "FastAPI передаёт поля в параметры <code>Form</code>.",
-            "Pydantic-модель проверяет пустые строки и формат email.",
-            "При ошибке тот же шаблон рендерится со status 400 и списком ошибок.",
-            "При успехе страница показывает сообщение о принятой форме.",
+            "Пользователь открывает <code>/jinja-demo</code>.",
+            "Endpoint собирает простой словарь: заголовок, имя ученика, список тем и флаг подсказки.",
+            "FastAPI вызывает <code>templates.TemplateResponse(...)</code>.",
+            "Jinja2 открывает файл <code>jinja_demo.html</code> и подставляет значения из словаря.",
+            "<code>{{ title }}</code> печатает одну строку.",
+            "<code>{% if show_hint %}</code> решает, показывать ли блок подсказки.",
+            "<code>{% for topic in topics %}</code> создаёт один пункт списка для каждой темы.",
+            "Браузер получает уже готовый HTML. В браузере Python-код не выполняется.",
         ],
         "endpoints": [
             ("GET /", "Страница урока."),
-            ("GET /contact", "HTML-форма контакта."),
-            ("POST /contact", "Обработка формы и вывод ошибок."),
-            ("POST /api/contact", "JSON API-версия той же проверки."),
+            ("GET /jinja-demo", "Минимальная HTML-страница с переменными, if и for."),
+            ("GET /api/template-data", "Те же данные в JSON, чтобы сравнить Python-словарь и HTML-вывод."),
         ],
         "code": '''
-@app.post("/contact", response_class=HTMLResponse, include_in_schema=False)
-async def submit_contact(
-    request: Request,
-    name: str = Form(""),
-    email: str = Form(""),
-    message: str = Form(""),
-):
-    values = {"name": name, "email": email, "message": message}
-    ContactForm(**values)
+@app.get("/jinja-demo", response_class=HTMLResponse, include_in_schema=False)
+async def jinja_demo(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "jinja_demo.html",
+        {
+            "title": "Jinja2 demo",
+            "student_name": "Анна",
+            "topics": LESSON_TOPICS,
+            "show_hint": True,
+        },
+    )
         ''',
         "code_notes": [
-            "HTML-форма и JSON API могут использовать одну Pydantic-модель, чтобы правила не расходились.",
-            "Ошибки формы лучше возвращать на ту же страницу, сохраняя введённые пользователем значения.",
-            "Для файлов и сложных форм понадобится <code>python-multipart</code>, он уже есть в requirements.",
+            "Python здесь отвечает за данные: он создаёт строки, список и флаг <code>show_hint</code>.",
+            "Jinja2 отвечает за отображение: где напечатать строку, где повторить блок, где спрятать блок.",
+            "HTML в этой главе специально простой. Главная тема - связь endpoint-а и шаблона.",
         ],
-        "task": "Добавьте страницу регистрации с полями <code>username</code>, <code>email</code>, <code>password</code> и серверной проверкой, что пароль не короче 6 символов.",
+        "task": "Добавьте в demo список <code>homework_steps</code> из трёх строк и выведите его в <code>jinja_demo.html</code> через цикл <code>{% for step in homework_steps %}</code>. Никаких форм, паролей и валидации: только передать список из Python в Jinja2 и показать его на странице.",
         "answer": '''
-class RegistrationForm(BaseModel):
-    username: str
-    email: str
-    password: str
-
-    @field_validator("password")
-    @classmethod
-    def password_is_long_enough(cls, value: str) -> str:
-        if len(value) < 6:
-            raise ValueError("Пароль должен быть не короче 6 символов")
-        return value
+"homework_steps": [
+    "Открыть страницу /jinja-demo",
+    "Найти блок со списком",
+    "Понять, откуда пришёл каждый пункт",
+]
         ''',
         "answer_notes": [
-            "GET-handler должен показывать пустую форму, POST-handler - валидировать и возвращать тот же шаблон.",
-            "Не храните пароль в открытом виде: в auth-главах он будет хешироваться.",
+            "Список добавляется в context рядом с <code>topics</code>.",
+            "В шаблоне нужен обычный Jinja-цикл: открыть <code>{% for %}</code>, вывести <code>{{ step }}</code>, закрыть <code>{% endfor %}</code>.",
         ],
     },
     "chapter06": {
@@ -1777,30 +1780,53 @@ async def success():
     "chapter05": [
         {
             "title": "Что добавляем",
-            "body": "Для полноценной страницы регистрации нужны три части: Pydantic-модель формы, GET-handler для показа страницы и POST-handler для обработки отправки.",
+            "body": "Нужно сделать одну простую вещь: передать из Python ещё один список и вывести его в HTML через Jinja-цикл. Это тренирует главный навык главы: endpoint готовит данные, шаблон их показывает.",
             "items": [
-                "Добавить модель <code>RegistrationForm</code> в <code>chapter05/app/main.py</code>.",
-                "Добавить <code>GET /register</code> и <code>POST /register</code>.",
-                "Создать шаблон <code>chapter05/templates/register.html</code>.",
+                "Добавить ключ <code>homework_steps</code> в context, который получает шаблон.",
+                "Вернуть этот же список из <code>/api/template-data</code>, чтобы данные можно было проверить как JSON.",
+                "В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>{% for step in homework_steps %}</code>.",
             ],
         },
         {
-            "title": "Полный код Python-части",
+            "title": "Полный код chapter05/app/main.py",
             "code": '''
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, ValidationError, field_validator
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+LESSON_TOPICS = [
+    {
+        "name": "Переменная",
+        "template": "{{ title }}",
+        "description": "Jinja2 берёт значение из context и вставляет его в HTML.",
+    },
+    {
+        "name": "Условие if",
+        "template": "{% if show_hint %}",
+        "description": "Блок показывается только тогда, когда значение истинное.",
+    },
+    {
+        "name": "Цикл for",
+        "template": "{% for topic in topics %}",
+        "description": "Один HTML-фрагмент повторяется для каждого элемента списка.",
+    },
+]
+
+HOMEWORK_STEPS = [
+    "Открыть страницу /jinja-demo",
+    "Найти блок Домашние шаги",
+    "Сравнить пункты на странице с Python-списком",
+]
+
 app = FastAPI(
-    title="Глава 5: Jinja2 UI",
-    description="Templates, forms, validation",
+    title="Глава 5: Jinja2 basics",
+    description="Templates, variables, if, for",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -1809,185 +1835,108 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
-class ContactForm(BaseModel):
-    name: str
-    email: str
-    message: str
-
-    @field_validator("name", "email", "message")
-    @classmethod
-    def not_empty(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Поле обязательно")
-        return value.strip()
-
-    @field_validator("email")
-    @classmethod
-    def email_has_at(cls, value: str) -> str:
-        if "@" not in value:
-            raise ValueError("Email должен содержать @")
-        return value
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index(request: Request):
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
-class RegistrationForm(BaseModel):
-    username: str
-    email: str
-    password: str
-
-    @field_validator("username", "email", "password")
-    @classmethod
-    def not_empty(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Поле обязательно")
-        return value.strip()
-
-    @field_validator("email")
-    @classmethod
-    def email_has_at(cls, value: str) -> str:
-        if "@" not in value:
-            raise ValueError("Email должен содержать @")
-        return value
-
-    @field_validator("password")
-    @classmethod
-    def password_is_long_enough(cls, value: str) -> str:
-        if len(value) < 6:
-            raise ValueError("Пароль должен быть не короче 6 символов")
-        return value
+@app.get("/swagger", include_in_schema=False)
+async def swagger():
+    return RedirectResponse(url="/docs")
 
 
-@app.get("/contact", response_class=HTMLResponse, include_in_schema=False)
-async def contact_page(request: Request):
-    return templates.TemplateResponse(
-        request,
-        "contact.html",
-        {"request": request, "errors": {}, "values": {}, "sent": False},
-    )
+def demo_context(request: Request) -> dict:
+    return {
+        "request": request,
+        "title": "Jinja2 demo",
+        "student_name": "Анна",
+        "topics": LESSON_TOPICS,
+        "homework_steps": HOMEWORK_STEPS,
+        "show_hint": True,
+    }
 
 
-@app.post("/contact", response_class=HTMLResponse, include_in_schema=False)
-async def submit_contact(
-    request: Request,
-    name: str = Form(""),
-    email: str = Form(""),
-    message: str = Form(""),
-):
-    values = {"name": name, "email": email, "message": message}
-    try:
-        ContactForm(**values)
-    except ValidationError as error:
-        errors = {str(item["loc"][0]): item["msg"] for item in error.errors()}
-        return templates.TemplateResponse(
-            request,
-            "contact.html",
-            {"request": request, "errors": errors, "values": values, "sent": False},
-            status_code=400,
-        )
-    return templates.TemplateResponse(
-        request,
-        "contact.html",
-        {"request": request, "errors": {}, "values": values, "sent": True},
-    )
+@app.get("/jinja-demo", response_class=HTMLResponse, include_in_schema=False)
+async def jinja_demo(request: Request):
+    return templates.TemplateResponse(request, "jinja_demo.html", demo_context(request))
 
 
-@app.get("/register", response_class=HTMLResponse, include_in_schema=False)
-async def register_page(request: Request):
-    return templates.TemplateResponse(
-        request,
-        "register.html",
-        {"request": request, "errors": {}, "values": {}, "registered": False},
-    )
-
-
-@app.post("/register", response_class=HTMLResponse, include_in_schema=False)
-async def submit_register(
-    request: Request,
-    username: str = Form(""),
-    email: str = Form(""),
-    password: str = Form(""),
-):
-    values = {"username": username, "email": email, "password": password}
-    try:
-        RegistrationForm(**values)
-    except ValidationError as error:
-        errors = {str(item["loc"][0]): item["msg"] for item in error.errors()}
-        return templates.TemplateResponse(
-            request,
-            "register.html",
-            {"request": request, "errors": errors, "values": values, "registered": False},
-            status_code=400,
-        )
-    return templates.TemplateResponse(
-        request,
-        "register.html",
-        {"request": request, "errors": {}, "values": values, "registered": True},
-    )
-
-
-@app.post("/api/contact")
-async def api_contact(form: ContactForm):
-    return {"message": "Форма принята", "data": form.model_dump()}
+@app.get("/api/template-data")
+async def template_data():
+    return {
+        "title": "Jinja2 demo",
+        "student_name": "Анна",
+        "topics": LESSON_TOPICS,
+        "homework_steps": HOMEWORK_STEPS,
+        "show_hint": True,
+    }
             ''',
         },
         {
-            "title": "Полный шаблон chapter05/templates/register.html",
+            "title": "Полный шаблон chapter05/templates/jinja_demo.html",
             "code": '''
 <!doctype html>
 <html lang="ru">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Регистрация</title>
+    <title>{{ title }}</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
     <main class="chapter-shell">
-        <nav class="top-nav">
-            <a class="nav-link light" href="/">← К уроку</a>
+        <nav class="top-nav" aria-label="Навигация урока">
+            <a class="nav-link light" href="http://localhost:8000">← На главную</a>
+            <div class="top-nav__links">
+                <a class="nav-link light" href="/">К уроку</a>
+                <a class="nav-link secondary" href="/docs">Swagger</a>
+            </div>
         </nav>
 
         <section class="hero">
-            <h1>Регистрация</h1>
-            <p>Jinja2-шаблон показывает значения формы, ошибки валидации и успешную отправку.</p>
+            <h1>{{ title }}</h1>
+            <p>Привет, {{ student_name }}. Эту строку собрал серверный шаблон Jinja2.</p>
         </section>
 
-        {% if registered %}
-            <article class="info-box">
-                <h2>Готово</h2>
-                <p>Пользователь {{ values.get("username") }} успешно зарегистрирован.</p>
-            </article>
+        {% if show_hint %}
+        <section class="info-box">
+            <h2>Подсказка</h2>
+            <p>Все значения ниже пришли из Python-словаря, который endpoint передал в template context.</p>
+        </section>
         {% endif %}
 
-        <article class="info-box">
-            <form method="post" action="/register">
-                <label>Username
-                    <input name="username" value="{{ values.get('username', '') }}">
-                    {% if errors.get('username') %}
-                        <span class="error">{{ errors.get('username') }}</span>
-                    {% endif %}
-                </label>
+        <section class="info-box">
+            <h2>Что показывает шаблон</h2>
+            <ul class="flow-list">
+                {% for topic in topics %}
+                <li>
+                    <strong>{{ topic.name }}</strong>
+                    <code>{{ topic.template }}</code>
+                    <span>{{ topic.description }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
 
-                <label>Email
-                    <input name="email" value="{{ values.get('email', '') }}">
-                    {% if errors.get('email') %}
-                        <span class="error">{{ errors.get('email') }}</span>
-                    {% endif %}
-                </label>
-
-                <label>Password
-                    <input name="password" type="password">
-                    {% if errors.get('password') %}
-                        <span class="error">{{ errors.get('password') }}</span>
-                    {% endif %}
-                </label>
-
-                <button type="submit">Зарегистрироваться</button>
-            </form>
-        </article>
+        <section class="info-box">
+            <h2>Домашние шаги</h2>
+            <ol class="flow-list">
+                {% for step in homework_steps %}
+                <li>{{ step }}</li>
+                {% endfor %}
+            </ol>
+        </section>
     </main>
 </body>
 </html>
             ''',
+        },
+        {
+            "title": "Как проверить",
+            "checks": [
+                ("GET /jinja-demo", "На странице есть блок <code>Домашние шаги</code> и три пункта из списка."),
+                ("GET /api/template-data", "В JSON есть ключ <code>homework_steps</code> с теми же тремя строками."),
+            ],
         },
     ],
     "chapter06": [
@@ -3445,40 +3394,42 @@ ANSWER_WALKTHROUGHS = {
     ],
     "chapter05": [
         {
-            "title": "Какие части нужны для страницы регистрации",
-            "body": "Здесь задача состоит не из одной функции: нужна Pydantic-модель, GET endpoint для показа формы, POST endpoint для обработки формы и HTML-шаблон.",
+            "title": "Что именно добавляем в Python",
+            "body": "В Python-части не нужно создавать новую страницу, форму или модель. Нужно только подготовить ещё один список и положить его в context.",
             "items": [
-                "<code>RegistrationForm</code> описывает данные, которые должны пройти серверную проверку.",
-                "<code>GET /register</code> просто показывает пустую форму. Он не должен регистрировать пользователя.",
-                "<code>POST /register</code> принимает поля формы через <code>Form</code>, валидирует их и возвращает HTML.",
-                "<code>register.html</code> отвечает только за отображение полей, ошибок и сообщения об успехе.",
+                "<code>HOMEWORK_STEPS</code> - обычный Python-список строк. В нём нет магии Jinja2.",
+                "Ключ <code>homework_steps</code> добавляется в словарь, который возвращает <code>demo_context</code>.",
+                "Тот же ключ добавляется в ответ <code>/api/template-data</code>, чтобы ученик мог увидеть исходные данные без HTML.",
+                "Endpoint <code>/jinja-demo</code> не меняет бизнес-логику: он просто передаёт шаблону обновлённый context.",
             ],
         },
         {
-            "title": "Как работает Pydantic-модель",
+            "title": "Что именно добавляем в шаблон",
             "items": [
-                "<code>username</code>, <code>email</code> и <code>password</code> - обычные строки, которые приходят из HTML-формы.",
-                "<code>@field_validator(\"username\", \"email\", \"password\")</code> проверяет, что поля не пустые и не состоят только из пробелов.",
-                "<code>email_has_at</code> специально простой: новичку видно, где живёт правило проверки email.",
-                "<code>password_is_long_enough</code> бросает <code>ValueError</code>, если пароль короче 6 символов. Pydantic превращает это в список ошибок.",
+                "Новый блок начинается с обычного заголовка <code>&lt;h2&gt;Домашние шаги&lt;/h2&gt;</code>.",
+                "<code>&lt;ol&gt;</code> означает нумерованный список. Это базовый HTML: браузер сам поставит 1, 2, 3.",
+                "<code>{% for step in homework_steps %}</code> говорит Jinja2: возьми список <code>homework_steps</code> и перебери его.",
+                "<code>&lt;li&gt;{{ step }}&lt;/li&gt;</code> печатает один пункт списка.",
+                "<code>{% endfor %}</code> закрывает цикл. Без закрытия Jinja2 не поймёт, где заканчивается повторяемый кусок.",
             ],
         },
         {
-            "title": "Почему GET и POST возвращают один шаблон",
+            "title": "Как работает for",
             "items": [
-                "GET возвращает <code>errors={}</code>, <code>values={}</code> и <code>registered=False</code>, потому что пользователь ещё ничего не отправлял.",
-                "POST сначала складывает введённые поля в <code>values</code>, чтобы при ошибке не очищать форму.",
-                "Если Pydantic нашёл ошибки, endpoint возвращает тот же шаблон со status <code>400</code> и словарём <code>errors</code>.",
-                "Если ошибок нет, endpoint возвращает тот же шаблон, но с <code>registered=True</code>, чтобы показать сообщение об успехе.",
+                "Если в списке три строки, HTML-блок внутри цикла появится три раза.",
+                "На первом проходе <code>step</code> равен первой строке списка.",
+                "На втором проходе <code>step</code> равен второй строке списка.",
+                "На третьем проходе <code>step</code> равен третьей строке списка.",
+                "После последнего элемента Jinja2 выходит из цикла и продолжает читать шаблон ниже.",
             ],
         },
         {
-            "title": "Почему пароль пока не сохраняется",
+            "title": "Как проверить",
             "items": [
-                "Глава 5 учит HTML-формам и серверной валидации, а не полноценной регистрации.",
-                "Пароль нельзя хранить как обычную строку в базе. Это будет разобрано в главах про authentication.",
-                "Здесь цель - понять маршрут формы: browser -> POST -> Form-параметры -> Pydantic -> TemplateResponse.",
-                "Проверять надо короткий пароль, пустые поля, неправильный email и успешную отправку.",
+                "Откройте <code>http://localhost:8005/jinja-demo</code> и найдите блок <code>Домашние шаги</code>.",
+                "Проверьте, что на странице видны все три пункта из <code>HOMEWORK_STEPS</code>.",
+                "Откройте <code>http://localhost:8005/api/template-data</code> и найдите там ключ <code>homework_steps</code>.",
+                "Если JSON содержит список, но HTML его не показывает, ошибка почти всегда в имени переменной внутри шаблона.",
             ],
         },
     ],
@@ -3914,36 +3865,36 @@ ANSWER_DEEP_DIVES = {
     ],
     "chapter05": [
         {
-            "title": "Читаем решение формы сверху вниз",
+            "title": "Читаем простой Jinja-ответ сверху вниз",
             "items": [
-                "Imports делятся на группы: pathlib для путей, FastAPI для routes/forms, Jinja2 для шаблонов, Pydantic для validation.",
-                "<code>BASE_DIR</code>, <code>app.mount</code> и <code>Jinja2Templates</code> нужны именно в главе с HTML. В чистых API-главах такой код лишний.",
-                "<code>ContactForm</code> остаётся, потому что это существующая форма урока.",
-                "<code>RegistrationForm</code> добавляется рядом с ней, потому что это такая же Pydantic-модель для данных формы.",
-                "GET endpoint-ы показывают страницы, POST endpoint-ы принимают отправленные формы.",
-                "Шаблон <code>register.html</code> нужен отдельно, потому что FastAPI не генерирует HTML-форму автоматически.",
+                "<code>Path</code> нужен только для аккуратного пути к папкам <code>templates</code> и <code>static</code> в этой HTML-главе.",
+                "<code>LESSON_TOPICS</code> и <code>HOMEWORK_STEPS</code> - обычные списки Python. Они могли бы прийти из базы данных, но для обучения список проще.",
+                "<code>FastAPI(...)</code> создаёт приложение так же, как в API-главах.",
+                "<code>app.mount(\"/static\", ...)</code> нужен, чтобы страница могла загрузить CSS. Без CSS HTML всё равно откроется, но будет без оформления.",
+                "<code>Jinja2Templates(...)</code> говорит FastAPI, где искать HTML-файлы.",
+                "<code>demo_context</code> собирает все данные страницы в одном месте, чтобы endpoint оставался коротким.",
             ],
         },
         {
-            "title": "Что происходит при плохом пароле",
+            "title": "Что происходит при GET /jinja-demo",
             "items": [
-                "Браузер отправляет <code>POST /register</code> с полями формы.",
-                "FastAPI кладёт поля в параметры <code>username</code>, <code>email</code>, <code>password</code> благодаря <code>Form</code>.",
-                "Endpoint собирает словарь <code>values</code>, чтобы сохранить введённые данные.",
-                "<code>RegistrationForm(**values)</code> запускает Pydantic-валидацию.",
-                "Validator <code>password_is_long_enough</code> видит короткий пароль и бросает <code>ValueError</code>.",
-                "<code>except ValidationError</code> собирает ошибки в словарь по именам полей.",
-                "Endpoint возвращает тот же шаблон со status <code>400</code>, ошибками и введёнными значениями.",
+                "Браузер просит адрес <code>/jinja-demo</code>.",
+                "FastAPI находит функцию <code>jinja_demo</code> по decorator <code>@app.get(\"/jinja-demo\")</code>.",
+                "Функция вызывает <code>demo_context(request)</code> и получает словарь с <code>title</code>, <code>student_name</code>, <code>topics</code>, <code>homework_steps</code> и <code>show_hint</code>.",
+                "<code>TemplateResponse</code> берёт файл <code>jinja_demo.html</code>.",
+                "Когда Jinja2 видит <code>{{ title }}</code>, он ищет ключ <code>title</code> в словаре и печатает значение.",
+                "Когда Jinja2 видит <code>{% if show_hint %}</code>, он проверяет значение <code>show_hint</code>. У нас там <code>True</code>, поэтому подсказка появляется.",
+                "Когда Jinja2 видит <code>{% for step in homework_steps %}</code>, он повторяет HTML для каждого пункта списка.",
             ],
         },
         {
-            "title": "Как шаблон связан с endpoint-ом",
+            "title": "Почему for лучше копирования HTML",
             "items": [
-                "Endpoint передаёт в шаблон <code>errors</code>, <code>values</code> и <code>registered</code>.",
-                "Шаблон читает <code>values.get(\"username\", \"\")</code>, чтобы поле не очищалось после ошибки.",
-                "Шаблон проверяет <code>errors.get(\"password\")</code> и показывает текст ошибки рядом с password.",
-                "Если <code>registered=True</code>, шаблон показывает сообщение об успешной регистрации.",
-                "HTML сам ничего не валидирует надёжно. Главная проверка находится на сервере в Pydantic-модели.",
+                "Без цикла пришлось бы руками писать три одинаковых <code>&lt;li&gt;</code>.",
+                "Если завтра пунктов станет пять, без цикла придётся редактировать HTML вручную.",
+                "С циклом меняется только Python-список. Шаблон остаётся таким же.",
+                "Это главный смысл серверных шаблонов: данные живут в Python, а внешний вид живёт в HTML-файле.",
+                "Для новичка важно запомнить разделение: endpoint не должен собирать HTML строками, а шаблон не должен делать сложную бизнес-логику.",
             ],
         },
     ],
@@ -4249,9 +4200,9 @@ TASK_CRITERIA = {
         ("Остальные endpoint-ы", "Успешные endpoint-ы продолжают возвращать HTTP 200."),
     ],
     "chapter05": [
-        ("GET /register", "Открывается HTML-форма регистрации."),
-        ("POST /register", "Пароль короче 6 символов возвращает страницу с ошибкой."),
-        ("POST /register", "Валидные данные показывают успешную регистрацию."),
+        ("GET /jinja-demo", "На странице появился блок <code>Домашние шаги</code>."),
+        ("homework_steps", "Список приходит из Python context, а не написан вручную тремя отдельными HTML-строками."),
+        ("for", "Пункты выводятся через <code>{% for step in homework_steps %}</code> и <code>{% endfor %}</code>."),
     ],
     "chapter06": [
         ("POST /api/products", "Можно создать продукт с полем <code>category</code>."),
@@ -4444,23 +4395,21 @@ BEGINNER_GUIDES = {
         "plain": [
             "До этого мы в основном возвращали JSON. Здесь FastAPI возвращает обычную HTML-страницу.",
             "Jinja2 - это шаблонизатор: HTML-файл с местами, куда сервер подставляет данные.",
-            "Форма отправляет не JSON, а специальные form-поля. Поэтому используются параметры <code>Form</code>.",
+            "Самая простая схема такая: Python создаёт словарь, Jinja2 берёт значения из словаря и вставляет их в HTML.",
+            "В этой главе мы специально не трогаем формы, регистрацию и сложную валидацию. Сначала нужно понять переменные, <code>if</code> и <code>for</code>.",
         ],
         "line_by_line": [
-            ("<code>@app.post(\"/contact\", response_class=HTMLResponse)</code>", "Этот endpoint принимает отправку формы и возвращает HTML, а не JSON."),
-            ("<code>include_in_schema=False</code>", "Прячем HTML endpoint из Swagger, потому что это страница для браузера, а не API для клиента."),
-            ("<code>request: Request</code>", "Объект запроса нужен Jinja2-шаблону."),
-            ("<code>name: str = Form(\"\")</code>", "Берём поле <code>name</code> из HTML-формы. Если его нет, используем пустую строку."),
-            ("<code>email: str = Form(\"\")</code>", "То же самое для email."),
-            ("<code>message: str = Form(\"\")</code>", "То же самое для текста сообщения."),
-            ("<code>values = {...}</code>", "Складываем введённые данные в словарь, чтобы при ошибке вернуть их обратно на страницу."),
-            ("<code>ContactForm(**values)</code>", "Передаём словарь в Pydantic-модель. Две звёздочки означают 'развернуть словарь в именованные аргументы'."),
-            ("<code>ValidationError</code>", "Если Pydantic нашёл ошибку, мы ловим её и показываем рядом с полями формы."),
+            ("<code>LESSON_TOPICS</code>", "Обычный Python-список словарей. Его удобно выводить циклом в HTML."),
+            ("<code>templates.TemplateResponse(...)</code>", "Говорим FastAPI: возьми HTML-файл, подставь данные и верни готовую страницу."),
+            ("<code>\"topics\": LESSON_TOPICS</code>", "Ключ <code>topics</code> станет доступен в шаблоне как переменная <code>topics</code>."),
+            ("<code>{{ title }}</code>", "Две фигурные скобки печатают значение переменной."),
+            ("<code>{% if show_hint %}</code>", "Конструкция с процентами не печатает текст, а управляет логикой шаблона."),
+            ("<code>{% for topic in topics %}</code>", "Цикл берёт список <code>topics</code> и по очереди кладёт каждый элемент в переменную <code>topic</code>."),
         ],
         "mistakes": [
-            "Забыть установить <code>python-multipart</code>, без него FastAPI не принимает формы.",
-            "Не передать <code>request</code> в шаблон.",
-            "При ошибке очистить форму, заставив пользователя вводить всё заново.",
+            "Забыть передать <code>request</code> в context. Для Starlette/FastAPI templates он нужен.",
+            "Назвать ключ в Python <code>homework_steps</code>, а в шаблоне случайно написать <code>homework_step</code>. Jinja2 не найдёт такую переменную.",
+            "Писать в шаблоне Python-синтаксис <code>for step in homework_steps:</code>. В Jinja2 нужно <code>{% for step in homework_steps %}</code>.",
         ],
     },
     "chapter06": {
@@ -4727,8 +4676,8 @@ REQUEST_EXAMPLES = {
         ("Ошибка валидации", 'curl -i "http://localhost:8004/api/error-demo/validation?age=-1"'),
     ],
     "chapter05": [
-        ("Отправить форму из terminal", 'curl -X POST http://localhost:8005/contact \\\n  -H "Content-Type: application/x-www-form-urlencoded" \\\n  -d "name=Anna&email=anna@example.com&message=Hello"'),
-        ("Проверить HTML-страницу", "open http://localhost:8005/contact"),
+        ("Открыть HTML-страницу", "open http://localhost:8005/jinja-demo"),
+        ("Посмотреть исходные данные как JSON", "curl http://localhost:8005/api/template-data"),
     ],
     "chapter06": [
         ("Создать товар", 'curl -X POST http://localhost:8006/api/products \\\n  -H "Content-Type: application/json" \\\n  -d \'{"name":"Keyboard","description":"USB","price":"49.90","stock":10}\''),
@@ -4803,10 +4752,10 @@ CONTROL_QUESTIONS = {
         "Когда стоит вернуть 400, 404, 422 и 500?",
     ],
     "chapter05": [
-        "Почему для HTML-формы используется <code>Form</code>, а не Pydantic-модель тела JSON напрямую?",
         "Зачем шаблону нужен объект <code>request</code>?",
-        "Как сохранить введённые значения после ошибки валидации?",
-        "Почему endpoint формы можно скрыть из OpenAPI через <code>include_in_schema=False</code>?",
+        "Чем отличается <code>{{ title }}</code> от <code>{% for topic in topics %}</code>?",
+        "Почему список удобнее выводить через <code>for</code>, а не копировать <code>&lt;li&gt;</code> руками?",
+        "Где лучше хранить данные для шаблона: в Python context или прямо в HTML?",
     ],
     "chapter06": [
         "Какая разница между ORM-моделью <code>Product</code> и DTO <code>ProductDto</code>?",
@@ -4957,7 +4906,7 @@ def chapter_files(service: str, data: dict) -> list[tuple[str, str]]:
         (f"{service}/Dockerfile", "Инструкция сборки контейнера для этой главы."),
     ]
     if service == "chapter05":
-        files.insert(2, ("chapter05/templates/contact.html", "Отдельная HTML-форма, которая показывает binding и ошибки валидации."))
+        files.insert(2, ("chapter05/templates/jinja_demo.html", "Минимальный Jinja2-шаблон с переменной, условием if и циклом for."))
     if service == "chapter06":
         files.extend([
             ("chapter06/alembic.ini", "Настройки Alembic для миграций базы данных."),
@@ -5030,7 +4979,7 @@ def render_lesson(service: str, data: dict) -> str:
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{data["title"]}</title>
+    <title>{protect_jinja(data["title"])}</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
@@ -5046,12 +4995,12 @@ def render_lesson(service: str, data: dict) -> str:
         </nav>
 
         <section class="hero">
-            <h1>{data["title"]}</h1>
-            <p>{data["subtitle"]}</p>
+            <h1>{protect_jinja(data["title"])}</h1>
+            <p>{protect_jinja(data["subtitle"])}</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> {port}</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:{port}/docs</code></span>
-                <span><strong>Результат:</strong> {data["outcome"]}</span>
+                <span><strong>Результат:</strong> {protect_jinja(data["outcome"])}</span>
             </div>
         </section>
 
@@ -5101,7 +5050,7 @@ def render_lesson(service: str, data: dict) -> str:
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>{data.get("code_title", "Ключевой фрагмент")}</h2>
+                    <h2>{protect_jinja(data.get("code_title", "Ключевой фрагмент"))}</h2>
                     {code_block(data["code"])}
                 </article>
 
@@ -5184,12 +5133,12 @@ def render_lesson(service: str, data: dict) -> str:
 """
 
 
-CONTACT_TEMPLATE = """<!doctype html>
+JINJA_DEMO_TEMPLATE = """<!doctype html>
 <html lang="ru">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Форма контакта</title>
+    <title>{{ title }}</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
@@ -5203,35 +5152,28 @@ CONTACT_TEMPLATE = """<!doctype html>
         </nav>
 
         <section class="hero">
-            <h1>Форма контакта</h1>
-            <p>Пример binding HTML-формы на сервере, сохранения введённых значений и вывода ошибок рядом с полями.</p>
+            <h1>{{ title }}</h1>
+            <p>Привет, {{ student_name }}. Эту строку собрал серверный шаблон Jinja2.</p>
         </section>
 
-        {% if sent %}
-        <section class="info-box success">
-            <h2>Форма принята</h2>
-            <p>Сообщение от {{ values.name }} принято: {{ values.message }}</p>
+        {% if show_hint %}
+        <section class="info-box">
+            <h2>Подсказка</h2>
+            <p>Все значения ниже пришли из Python-словаря, который endpoint передал в template context.</p>
         </section>
         {% endif %}
 
         <section class="info-box">
-            <h2>Данные формы</h2>
-            <p>Отправьте пустые поля или email без символа @, чтобы увидеть серверную валидацию Pydantic.</p>
-            <form method="post" action="/contact">
-                <label>Имя
-                    <input name="name" value="{{ values.get('name', '') }}">
-                    {% if errors.get('name') %}<span class="error">{{ errors.get('name') }}</span>{% endif %}
-                </label>
-                <label>Email
-                    <input name="email" value="{{ values.get('email', '') }}">
-                    {% if errors.get('email') %}<span class="error">{{ errors.get('email') }}</span>{% endif %}
-                </label>
-                <label>Сообщение
-                    <textarea name="message">{{ values.get('message', '') }}</textarea>
-                    {% if errors.get('message') %}<span class="error">{{ errors.get('message') }}</span>{% endif %}
-                </label>
-                <button type="submit">Отправить</button>
-            </form>
+            <h2>Что показывает шаблон</h2>
+            <ul class="flow-list">
+                {% for topic in topics %}
+                <li>
+                    <strong>{{ topic.name }}</strong>
+                    <code>{{ topic.template }}</code>
+                    <span>{{ topic.description }}</span>
+                </li>
+                {% endfor %}
+            </ul>
         </section>
     </main>
 </body>
@@ -5243,7 +5185,7 @@ def main() -> None:
     for service, data in LESSONS.items():
         (ROOT / service / "templates" / "index.html").write_text(render_lesson(service, data), encoding="utf-8")
 
-    (ROOT / "chapter05" / "templates" / "contact.html").write_text(CONTACT_TEMPLATE, encoding="utf-8")
+    (ROOT / "chapter05" / "templates" / "jinja_demo.html").write_text(JINJA_DEMO_TEMPLATE, encoding="utf-8")
 
 
 if __name__ == "__main__":

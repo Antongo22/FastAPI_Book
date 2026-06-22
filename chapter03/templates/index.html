@@ -65,8 +65,8 @@
                 <article class="info-box">
                     <h2>Endpoint-ы для проверки</h2>
                     <div class="endpoint-grid">
-                        <article class="endpoint-card"><strong><code>GET /api/http-client/direct/{post_id}</code></strong><span>Прямой запрос к JSONPlaceholder без сервиса.</span></article>
-<article class="endpoint-card"><strong><code>GET /api/http-client/post/{post_id}</code></strong><span>То же самое через сервисный слой.</span></article>
+                        <article class="endpoint-card"><strong><code>GET /api/http-client/direct/&#123;post_id&#125;</code></strong><span>Прямой запрос к JSONPlaceholder без сервиса.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/http-client/post/&#123;post_id&#125;</code></strong><span>То же самое через сервисный слой.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/http-client/posts</code></strong><span>Получение списка постов.</span></article>
 <article class="endpoint-card"><strong><code>POST /api/http-client/post</code></strong><span>Создание демо-поста во внешнем API.</span></article>
                     </div>
@@ -151,14 +151,14 @@
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">Потренируйтесь на реальном открытом тестовом API, а не на локальной заглушке. Используйте JSONPlaceholder: <code>https://jsonplaceholder.typicode.com/posts/1/comments</code>. Добавьте в свой сервис метод, который ходит во внешний endpoint <code>/posts/{post_id}/comments</code>, и откройте его через ваш FastAPI endpoint <code>GET /api/http-client/post/{post_id}/comments</code>.</div>
+                    <div class="callout">Потренируйтесь на реальном открытом тестовом API, а не на локальной заглушке. Используйте JSONPlaceholder: <code>https://jsonplaceholder.typicode.com/posts/1/comments</code>. Добавьте в свой сервис метод, который ходит во внешний endpoint <code>/posts/&#123;post_id&#125;/comments</code>, и откройте его через ваш FastAPI endpoint <code>GET /api/http-client/post/&#123;post_id&#125;/comments</code>.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
                     <ul class="flow-list"><li>Сначала проверьте внешний сервис без своего кода: откройте <code>https://jsonplaceholder.typicode.com/posts/1/comments</code> в браузере или выполните curl.</li>
 <li>Посмотрите на JSON: это список комментариев, у каждого есть <code>postId</code>, <code>id</code>, <code>name</code>, <code>email</code> и <code>body</code>.</li>
-<li>После этого добавляйте метод в <code>ExternalApiService</code>. Метод должен обращаться именно к внешнему пути <code>/posts/{post_id}/comments</code>.</li>
+<li>После этого добавляйте метод в <code>ExternalApiService</code>. Метод должен обращаться именно к внешнему пути <code>/posts/&#123;post_id&#125;/comments</code>.</li>
 <li>Не возвращайте локальный список и не копируйте пример JSON в код. Ваш FastAPI endpoint должен быть прокладкой между клиентом и открытым внешним API.</li>
 <li>В endpoint-е используйте существующую dependency <code>get_external_api_service</code>, чтобы сохранить учебную архитектуру главы.</li>
 <li>Проверьте два сценария: внешний URL напрямую и ваш локальный endpoint через Swagger.</li></ul>
@@ -198,7 +198,7 @@
                 <article class="info-box"><h2>1. Что добавляем</h2>
 <p>Решение должно реально сходить в открытый внешний сервис JSONPlaceholder. Не создавайте локальный список комментариев и не возвращайте заранее написанный JSON: смысл задачи - потренироваться на стороннем HTTP API.</p>
 <ul class="flow-list"><li>Публичный base URL уже есть в главе: <code>JSONPLACEHOLDER = "https://jsonplaceholder.typicode.com"</code>.</li>
-<li>Метод сервиса должен вызвать внешний путь <code>/posts/{post_id}/comments</code> через <code>httpx.AsyncClient</code>.</li>
+<li>Метод сервиса должен вызвать внешний путь <code>/posts/&#123;post_id&#125;/comments</code> через <code>httpx.AsyncClient</code>.</li>
 <li>FastAPI endpoint должен остаться тонким: принять <code>post_id</code>, вызвать метод сервиса и обработать <code>httpx.HTTPError</code>.</li>
 <li>Для ошибок используйте тот же <code>map_http_error</code>, что и в остальных endpoint-ах главы.</li></ul>
 </article>
@@ -330,13 +330,13 @@ async def get_post_comments(
 </article>
 <article class="info-box"><h2>Как работает httpx-код</h2>
 <ul class="flow-list"><li><code>async with httpx.AsyncClient(...)</code> открывает HTTP-клиент на время запроса и корректно закрывает соединения после выхода из блока.</li>
-<li><code>base_url=self.base_url</code> позволяет писать короткий путь <code>/posts/{post_id}/comments</code>, а не полный URL каждый раз.</li>
+<li><code>base_url=self.base_url</code> позволяет писать короткий путь <code>/posts/&#123;post_id&#125;/comments</code>, а не полный URL каждый раз.</li>
 <li><code>timeout=10.0</code> нужен, чтобы приложение не висело бесконечно, если внешний сервис тормозит.</li>
 <li><code>await client.get(...)</code> отправляет GET-запрос асинхронно. Пока внешний API отвечает, event loop может обслуживать другие запросы.</li>
 <li><code>response.raise_for_status()</code> превращает HTTP 4xx/5xx внешнего API в исключение, которое потом можно обработать единообразно.</li></ul>
 </article>
 <article class="info-box"><h2>Как endpoint связан с сервисом</h2>
-<ul class="flow-list"><li><code>post_id: int</code> берётся из path-параметра <code>/post/{post_id}/comments</code>.</li>
+<ul class="flow-list"><li><code>post_id: int</code> берётся из path-параметра <code>/post/&#123;post_id&#125;/comments</code>.</li>
 <li><code>service: ExternalApiService = Depends(get_external_api_service)</code> просит FastAPI создать или вернуть сервис.</li>
 <li><code>return await service.get_post_comments(post_id)</code> отдаёт клиенту JSON, полученный из внешнего API.</li>
 <li><code>except httpx.HTTPError as error</code> нужен, чтобы не показывать пользователю внутреннюю ошибку Python.</li>

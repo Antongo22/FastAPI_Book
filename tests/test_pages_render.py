@@ -39,7 +39,7 @@ TASK_ANSWER_MARKERS = [
     ("chapter02", chapter02_app, ["pretty-log", "get_log_prefix"]),
     ("chapter03", chapter03_app, ["get_post_comments", "/comments"]),
     ("chapter04", chapter04_app, ["NotReadyError", "not-ready"]),
-    ("chapter05", chapter05_app, ["RegistrationForm", "/register", "register.html"]),
+    ("chapter05", chapter05_app, ["HOMEWORK_STEPS"]),
     ("chapter06", chapter06_app, ["category"]),
     ("chapter07", chapter07_app, ["require_admin", "admin_area"]),
     ("chapter08", chapter08_app, ["revoked_at"]),
@@ -54,7 +54,7 @@ FULL_ANSWER_CONTEXT_MARKERS = [
     (chapter02_app, ["import logging", "app = FastAPI", "def get_log_prefix", "async def pretty_log"]),
     (chapter03_app, ["import httpx", "JSONPLACEHOLDER", "class ExternalApiService", "async def get_post_comments"]),
     (chapter04_app, ["import time", "app = FastAPI", "class NotReadyError", "async def not_ready"]),
-    (chapter05_app, ["from pathlib import Path", "Jinja2Templates", "class RegistrationForm", "<!doctype html>"]),
+    (chapter05_app, ["from pathlib import Path", "Jinja2Templates", "HOMEWORK_STEPS", "{% for step in homework_steps %}"]),
     (chapter06_app, ["import os", "class Product", "class ProductDto", "def upgrade()"]),
     (chapter07_app, ["import os", "OAuth2PasswordBearer", "def require_admin", "async def admin_area"]),
     (chapter08_app, ["import secrets", "class RefreshToken", "revoked_at", "def revoke_token"]),
@@ -69,7 +69,7 @@ ANSWER_WALKTHROUGH_MARKERS = [
     (chapter02_app, ["Куда добавлять dependency", "Как FastAPI подставляет prefix", "передаётся без скобок"]),
     (chapter03_app, ["Зачем нужен service layer", "Как работает httpx-код", "Как отличить реальную интеграцию от заглушки"]),
     (chapter04_app, ["Где создаётся новое исключение", "Почему status code 503", "JSONResponse"]),
-    (chapter05_app, ["Какие части нужны для страницы регистрации", "Почему GET и POST возвращают один шаблон", "Пароль нельзя хранить"]),
+    (chapter05_app, ["Что именно добавляем в Python", "Что именно добавляем в шаблон", "Как работает for"]),
     (chapter06_app, ["Где появляется новое поле category", "Зачем нужна Alembic migration", "Если забыть DTO"]),
     (chapter07_app, ["Чем authentication отличается от authorization", "Почему роль нельзя брать из запроса", "Как работает require_admin"]),
     (chapter08_app, ["Зачем нужно поле revoked_at", "Почему revoke лучше вынести в helper", "Как меняется refresh flow"]),
@@ -84,7 +84,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter02_app, ["Читаем DI-решение сверху вниз", "Что FastAPI делает перед входом в pretty_log", "Почему это учебный пример DI"]),
     (chapter03_app, ["Читаем HTTP-интеграцию сверху вниз", "Что происходит при запросе comments", "Зачем нужен try/except вокруг await"]),
     (chapter04_app, ["Читаем error handling сверху вниз", "Что происходит при raise NotReadyError", "Что сломается, если убрать отдельные части"]),
-    (chapter05_app, ["Читаем решение формы сверху вниз", "Что происходит при плохом пароле", "Как шаблон связан с endpoint-ом"]),
+    (chapter05_app, ["Читаем простой Jinja-ответ сверху вниз", "Что происходит при GET /jinja-demo", "Почему for лучше копирования HTML"]),
     (chapter06_app, ["Читаем DB-ответ сверху вниз", "Почему category проходит через несколько классов", "Что происходит при создании продукта"]),
     (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
     (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при refresh rotation", "Почему revoked_at важен для обучения"]),
@@ -303,11 +303,21 @@ def test_socket_code_tabs_do_not_repeat_full_answer_blocks():
     assert "async def chat_message" not in chapter10_code
 
 
-def test_chapter_form_render():
-    response = TestClient(chapter05_app).get("/contact")
+def test_chapter05_jinja_demo_render():
+    response = TestClient(chapter05_app).get("/jinja-demo")
     assert response.status_code == 200
-    assert "Форма контакта" in response.text
+    assert "Jinja2 demo" in response.text
+    assert "Цикл for" in response.text
     assert "← На главную" in response.text
+
+
+def test_chapter05_is_not_registration_or_form_lesson_anymore():
+    response = TestClient(chapter05_app).get("/")
+    assert response.status_code == 200
+    assert "RegistrationForm" not in response.text
+    assert "/register" not in response.text
+    assert "/contact" not in response.text
+    assert "Пароль" not in response.text
 
 
 def test_chapter10_uses_socketio_wording_without_old_comparison():
