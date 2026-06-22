@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Глава 6: SQLAlchemy, DTO и SQLite</title>
+    <title>Глава 6: SQLModel, SQLite и CRUD</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
@@ -19,12 +19,12 @@
         </nav>
 
         <section class="hero">
-            <h1>Глава 6: SQLAlchemy, DTO и SQLite</h1>
-            <p>Engine, Session, ORM-модель, Pydantic DTO, CRUD endpoint-ы и минимальная Alembic-миграция.</p>
+            <h1>Глава 6: SQLModel, SQLite и CRUD</h1>
+            <p>SQLModel-модели, Field, Session, select, CRUD endpoint-ы и минимальная Alembic-миграция.</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8006</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8006/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы умеете связать FastAPI с SQLite и отделять публичные DTO от внутренних ORM-классов.</span>
+                <span><strong>Результат:</strong> После главы вы умеете связать FastAPI с SQLite через SQLModel и понимаете, как одна модель может описывать и таблицу, и JSON-схему.</span>
             </div>
         </section>
 
@@ -40,26 +40,50 @@
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
                     <ul class="flow-list">
-                        <li><strong>Engine</strong> - подключение SQLAlchemy к базе данных.</li>
-<li><strong>Session</strong> - unit of work: через неё читаем, добавляем, изменяем и удаляем строки.</li>
-<li><strong>DeclarativeBase</strong> - база для ORM-классов.</li>
-<li><strong>Mapped / mapped_column</strong> - типизированное описание колонок SQLAlchemy 2.</li>
-<li><strong>DTO</strong> - Pydantic-модели для входного и выходного JSON.</li>
+                        <li><strong>SQLModel</strong> - библиотека поверх Pydantic и SQLAlchemy: один стиль моделей для API и таблиц.</li>
+<li><strong>table=True</strong> - признак, что класс должен стать таблицей в базе данных.</li>
+<li><strong>Field</strong> - описание поля: валидация для API и настройки колонки для базы.</li>
+<li><strong>Session</strong> - рабочая область для операций с БД: читать, добавить, commit, refresh, удалить.</li>
+<li><strong>select</strong> - SQLModel-способ собрать запрос к таблице.</li>
+<li><strong>Column(JSON)</strong> - когда поле нужно хранить в базе как JSON-структуру.</li>
+<li><strong>Relationship</strong> - связь между таблицами, например продукт и отзывы.</li>
 <li><strong>Alembic</strong> - инструмент миграций схемы БД.</li>
                     </ul>
                 </article>
 
-                
+                <article class="info-box"><h2>Alembic команды пошагово</h2>
+<p>Миграция - это Python-файл с инструкциями для изменения структуры базы данных. Например: добавить колонку, удалить колонку, создать таблицу.</p>
+<p>Команды Alembic запускаются из папки главы <code>chapter06</code>, потому что там лежит <code>alembic.ini</code>.</p>
+<p><code>alembic revision</code> создаёт новый файл миграции. <code>alembic upgrade head</code> применяет миграции к базе. <code>alembic downgrade -1</code> откатывает последнюю миграцию назад.</p>
+<pre><code>{% raw %}cd chapter06
+
+# Посмотреть, на какой миграции сейчас находится база
+alembic current
+
+# Создать пустой файл миграции, куда вы вручную вставите upgrade/downgrade
+alembic revision -m &quot;add product category&quot;
+
+# Применить все новые миграции до последней версии
+alembic upgrade head
+
+# Посмотреть историю миграций
+alembic history
+
+# Откатить последнюю миграцию назад
+alembic downgrade -1{% endraw %}</code></pre>
+</article>
 
                 <article class="info-box">
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
-                        <li>При старте приложения создаётся engine и sessionmaker.</li>
-<li>Dependency <code>get_db</code> открывает Session на время запроса.</li>
+                        <li>При старте приложения создаётся SQLModel engine для SQLite.</li>
+<li>Класс <code>Product(SQLModel, table=True)</code> описывает таблицу <code>products</code>.</li>
+<li>Классы <code>ProductCreate</code>, <code>ProductUpdate</code> и <code>ProductRead</code> описывают внешний JSON API.</li>
+<li>Dependency <code>get_db</code> открывает SQLModel <code>Session</code> на время запроса.</li>
 <li>Endpoint получает Session через <code>Depends</code>.</li>
-<li>ORM-модель <code>Product</code> описывает таблицу <code>products</code>.</li>
-<li>Pydantic DTO проверяет входные данные и форматирует выходной JSON.</li>
-<li>После commit SQLAlchemy записывает изменения в SQLite.</li>
+<li>Для чтения списка используется <code>db.exec(select(Product))</code>.</li>
+<li>После <code>db.commit()</code> SQLModel через SQLAlchemy записывает изменения в SQLite.</li>
+<li>Когда меняется структура таблицы, команда <code>alembic upgrade head</code> применяет миграцию к файлу базы данных.</li>
                     </ol>
                 </article>
 
@@ -68,7 +92,7 @@
                     <div class="endpoint-grid">
                         <article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Список продуктов.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/products/&#123;product_id&#125;</code></strong><span>Один продукт или 404.</span></article>
-<article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Создание продукта с DTO-валидацией.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Создание продукта с SQLModel-валидацией.</span></article>
 <article class="endpoint-card"><strong><code>PUT /api/products/&#123;product_id&#125;</code></strong><span>Частичное обновление полей.</span></article>
 <article class="endpoint-card"><strong><code>DELETE /api/products/&#123;product_id&#125;</code></strong><span>Удаление продукта.</span></article>
                     </div>
@@ -84,6 +108,13 @@
   -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;name&quot;:&quot;Keyboard&quot;,&quot;description&quot;:&quot;USB&quot;,&quot;price&quot;:&quot;49.90&quot;,&quot;stock&quot;:10}&#x27;{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Получить список товаров</h2><pre><code>{% raw %}curl http://localhost:8006/api/products{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить текущую миграцию</h2><pre><code>{% raw %}cd chapter06
+alembic current{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Создать и применить миграцию</h2><pre><code>{% raw %}cd chapter06
+alembic revision -m &quot;add product category&quot;
+alembic upgrade head{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Откатить последнюю миграцию</h2><pre><code>{% raw %}cd chapter06
+alembic downgrade -1{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -92,16 +123,21 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}def get_db():
-    db = SessionLocal()
-    try:
+                    <pre><code>{% raw %}class Product(SQLModel, table=True):
+    __tablename__ = &quot;products&quot;
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(min_length=1, max_length=120)
+    price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+
+
+def get_db():
+    with Session(engine) as db:
         yield db
-    finally:
-        db.close()
 
 
-@app.post(&quot;/api/products&quot;, response_model=ProductDto, status_code=201)
-async def create_product(request: CreateProductDto, db: Session = Depends(get_db)):
+@app.post(&quot;/api/products&quot;, response_model=ProductRead, status_code=201)
+async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
     product = Product(**request.model_dump())
     db.add(product)
     db.commit()
@@ -111,33 +147,40 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
-                    <p>База данных хранит данные дольше, чем живёт один запрос. SQLAlchemy помогает работать с таблицами как с Python-объектами.</p>
+                    <p>База данных хранит данные дольше, чем живёт один запрос. SQLModel помогает работать с таблицами как с Python-классами.</p>
+<p>SQLModel построен поверх SQLAlchemy и Pydantic: поэтому он умеет и таблицы описывать, и JSON проверять.</p>
 <p>Session - это рабочая область для операций с БД. Через неё мы добавляем, читаем, сохраняем и удаляем данные.</p>
-<p>DTO нужны, чтобы внешний JSON API не зависел напрямую от внутренней ORM-модели.</p>
+<p>Отдельные модели <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> нужны, чтобы входной и выходной JSON были понятными.</p>
                 </article>
 
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>def get_db()</code></dt><dd>Dependency-функция, которая выдаёт подключение к БД на время запроса.</dd>
-<dt><code>db = SessionLocal()</code></dt><dd>Создаём новую Session. Через неё endpoint будет работать с БД.</dd>
-<dt><code>try:</code></dt><dd>Начинаем блок, где Session отдаётся endpoint-у.</dd>
-<dt><code>yield db</code></dt><dd>Отдаём Session наружу. После завершения запроса выполнение вернётся сюда.</dd>
-<dt><code>finally:</code></dt><dd>Этот блок выполнится даже если в endpoint-е случилась ошибка.</dd>
-<dt><code>db.close()</code></dt><dd>Закрываем Session, чтобы не держать ресурсы.</dd>
-<dt><code>response_model=ProductDto</code></dt><dd>FastAPI отдаст наружу только поля, описанные в DTO.</dd>
-<dt><code>Product(**request.model_dump())</code></dt><dd>Берём проверенные поля из DTO и создаём ORM-объект.</dd>
+                        <dt><code>class Product(SQLModel, table=True)</code></dt><dd>Это SQLModel-класс, который станет таблицей <code>products</code>.</dd>
+<dt><code>id: int | None = Field(default=None, primary_key=True)</code></dt><dd>Первичный ключ. При создании продукта id ещё нет, поэтому стоит <code>None</code>.</dd>
+<dt><code>price: Decimal = Field(sa_column=Column(Numeric(10, 2)))</code></dt><dd>Для денег используем SQLAlchemy-колонку <code>Numeric</code>, но подключаем её через SQLModel <code>Field</code>.</dd>
+<dt><code>class ProductCreate(SQLModel)</code></dt><dd>Модель JSON body для создания продукта. Это не таблица, потому что нет <code>table=True</code>.</dd>
+<dt><code>def get_db()</code></dt><dd>Dependency-функция, которая выдаёт SQLModel Session на время запроса.</dd>
+<dt><code>with Session(engine) as db</code></dt><dd>Создаём новую Session и автоматически закрываем её после запроса.</dd>
+<dt><code>yield db</code></dt><dd>Отдаём Session endpoint-у.</dd>
+<dt><code>response_model=ProductRead</code></dt><dd>FastAPI отдаст наружу только поля, описанные в модели ответа.</dd>
+<dt><code>Product(**request.model_dump())</code></dt><dd>Берём проверенные поля из SQLModel request-модели и создаём объект таблицы.</dd>
 <dt><code>db.add(product)</code></dt><dd>Говорим Session: этот объект нужно вставить в таблицу.</dd>
 <dt><code>db.commit()</code></dt><dd>Фактически сохраняем изменения в базе.</dd>
 <dt><code>db.refresh(product)</code></dt><dd>Обновляем объект, чтобы получить id, выданный базой.</dd>
+<dt><code>db.exec(select(Product))</code></dt><dd>SQLModel-способ выполнить SELECT-запрос и получить продукты.</dd>
+<dt><code>alembic revision -m "add product field"</code></dt><dd>Создаёт файл миграции, но ещё не меняет базу.</dd>
+<dt><code>alembic upgrade head</code></dt><dd>Применяет миграции и реально меняет структуру базы.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
-                        <li><code>yield</code> dependency гарантирует закрытие Session после запроса.</li>
-<li><code>response_model</code> не отдаёт наружу лишние ORM-поля.</li>
+                        <li><code>SQLModel, table=True</code> делает класс таблицей, а не только Pydantic-схемой.</li>
+<li><code>Field</code> задаёт правила поля: primary key, длину строки, ограничения чисел и настройки колонки.</li>
+<li><code>with Session(engine)</code> гарантирует закрытие Session после запроса.</li>
+<li><code>response_model</code> не отдаёт наружу лишние поля таблицы.</li>
 <li>В учебном режиме таблицы создаются автоматически, а Alembic показан как правильный путь для реального проекта.</li>
                     </ul>
                 </article>
@@ -146,7 +189,9 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
                     <h2>Типичные ошибки новичков</h2>
                     <ul class="flow-list">
                         <li>Создать объект, но забыть <code>db.commit()</code>: данные не сохранятся.</li>
-<li>Вернуть ORM-модель без DTO и случайно раскрыть лишние поля.</li>
+<li>Поставить <code>table=True</code> на модель запроса <code>ProductCreate</code>. Тогда SQLModel решит, что это ещё одна таблица.</li>
+<li>Забыть добавить поле в <code>ProductRead</code>: в базе оно будет, но клиент его не увидит.</li>
+<li>Создать файл миграции, но забыть <code>alembic upgrade head</code>: код уже ждёт новую колонку, а база ещё старая.</li>
 <li>Держать одну Session глобально на всё приложение.</li>
                     </ul>
                 </article>
@@ -164,16 +209,17 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">Добавьте поле <code>category</code> в продукт, DTO и Alembic-миграцию. Проверьте, что оно возвращается в <code>GET /api/products</code>.</div>
+                    <div class="callout">Добавьте поле <code>category</code> в SQLModel-таблицу продукта, модели <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> и Alembic-миграцию. Проверьте, что оно возвращается в <code>GET /api/products</code>.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
-                    <ul class="flow-list"><li>В <code>Product</code> добавить колонку <code>category</code>.</li>
-<li>В <code>ProductDto</code> добавить поле <code>category</code>.</li>
-<li>В <code>CreateProductDto</code> добавить обязательное или default-поле.</li>
-<li>В <code>UpdateProductDto</code> добавить optional-поле.</li>
-<li>Создать Alembic migration с <code>op.add_column</code>.</li></ul>
+                    <ul class="flow-list"><li>В <code>Product(SQLModel, table=True)</code> добавить поле <code>category</code>.</li>
+<li>В <code>ProductCreate</code> добавить поле, которое клиент может прислать при создании.</li>
+<li>В <code>ProductUpdate</code> добавить optional-поле для частичного обновления.</li>
+<li>В <code>ProductRead</code> добавить поле, которое вернётся наружу в JSON.</li>
+<li>Создать Alembic migration с <code>op.add_column</code>.</li>
+<li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
                 </article>
 
                 <article class="info-box">
@@ -190,9 +236,10 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
                     <ol class="flow-list">
-                        <li>Какая разница между ORM-моделью <code>Product</code> и DTO <code>ProductDto</code>?</li>
+                        <li>Почему <code>Product</code> имеет <code>table=True</code>, а <code>ProductCreate</code> нет?</li>
 <li>Почему Session открывается и закрывается через dependency?</li>
 <li>Что произойдёт, если забыть <code>db.commit()</code>?</li>
+<li>Зачем в SQLModel иногда используют <code>sa_column=Column(...)</code>?</li>
 <li>Зачем нужен Alembic, если демо создаёт таблицы автоматически?</li>
                     </ol>
                 </article>
@@ -207,23 +254,22 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
-<p>Поле <code>category</code> должно пройти через все слои: ORM-модель, DTO для ответа, DTO для создания, DTO для обновления и миграцию.</p>
-<ul class="flow-list"><li>В <code>Product</code> добавить колонку <code>category</code>.</li>
-<li>В <code>ProductDto</code> добавить поле <code>category</code>.</li>
-<li>В <code>CreateProductDto</code> добавить обязательное или default-поле.</li>
-<li>В <code>UpdateProductDto</code> добавить optional-поле.</li>
-<li>Создать Alembic migration с <code>op.add_column</code>.</li></ul>
+<p>Поле <code>category</code> должно пройти через все SQLModel-слои: таблицу, модель создания, модель обновления, модель ответа и миграцию.</p>
+<ul class="flow-list"><li>В <code>Product(SQLModel, table=True)</code> добавить поле <code>category</code>.</li>
+<li>В <code>ProductCreate</code> добавить поле, которое клиент может прислать при создании.</li>
+<li>В <code>ProductUpdate</code> добавить optional-поле для частичного обновления.</li>
+<li>В <code>ProductRead</code> добавить поле, которое вернётся наружу в JSON.</li>
+<li>Создать Alembic migration с <code>op.add_column</code>.</li>
+<li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный набор изменений в моделях</h2>
+<article class="info-box"><h2>2. Полный код SQLModel-части</h2>
 <pre><code>{% raw %}import os
 from datetime import datetime
 from decimal import Decimal
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Integer, Numeric, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlmodel import Column, DateTime, Field, Numeric, Session, SQLModel, create_engine, select
 
 
 DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter06.db&quot;)
@@ -238,35 +284,30 @@ def make_engine(database_url: str):
 
 
 engine = make_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 app = FastAPI(
-    title=&quot;Глава 6: SQLAlchemy&quot;,
-    description=&quot;SQLite, DTO, Alembic, CRUD&quot;,
+    title=&quot;Глава 6: SQLModel&quot;,
+    description=&quot;SQLite, SQLModel, Alembic, CRUD&quot;,
     version=&quot;1.0.0&quot;,
     docs_url=&quot;/docs&quot;,
     redoc_url=&quot;/redoc&quot;,
 )
 
 
-class Product(Base):
+class Product(SQLModel, table=True):
     __tablename__ = &quot;products&quot;
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    category: Mapped[str] = mapped_column(String(80), default=&quot;general&quot;)
-    description: Mapped[str] = mapped_column(String(500), default=&quot;&quot;)
-    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    stock: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(default=&quot;general&quot;, max_length=80)
+    description: str = Field(default=&quot;&quot;, max_length=500)
+    price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+    stock: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime, nullable=False))
 
 
-class ProductDto(BaseModel):
+class ProductRead(SQLModel):
     id: int
     name: str
     category: str
@@ -274,46 +315,41 @@ class ProductDto(BaseModel):
     price: Decimal
     stock: int
 
-    model_config = {&quot;from_attributes&quot;: True}
 
-
-class CreateProductDto(BaseModel):
-    name: str = Field(min_length=1)
-    category: str = &quot;general&quot;
-    description: str = &quot;&quot;
+class ProductCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(default=&quot;general&quot;, max_length=80)
+    description: str = Field(default=&quot;&quot;, max_length=500)
     price: Decimal = Field(gt=0)
-    stock: int = Field(ge=0)
+    stock: int = Field(default=0, ge=0)
 
 
-class UpdateProductDto(BaseModel):
-    name: str | None = None
-    category: str | None = None
-    description: str | None = None
+class ProductUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    category: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
     price: Decimal | None = Field(default=None, gt=0)
     stock: int | None = Field(default=None, ge=0)
 
 
 def init_db() -&gt; None:
-    Base.metadata.create_all(bind=engine)
+    SQLModel.metadata.create_all(bind=engine)
 
 
 def get_db():
-    db = SessionLocal()
-    try:
+    with Session(engine) as db:
         yield db
-    finally:
-        db.close()
 
 
 init_db()
 
 
-@app.get(&quot;/api/products&quot;, response_model=list[ProductDto])
+@app.get(&quot;/api/products&quot;, response_model=list[ProductRead])
 async def get_products(db: Session = Depends(get_db)):
-    return db.query(Product).order_by(Product.id).all()
+    return db.exec(select(Product).order_by(Product.id)).all()
 
 
-@app.get(&quot;/api/products/{product_id}&quot;, response_model=ProductDto)
+@app.get(&quot;/api/products/{product_id}&quot;, response_model=ProductRead)
 async def get_product(product_id: int, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if product is None:
@@ -321,8 +357,8 @@ async def get_product(product_id: int, db: Session = Depends(get_db)):
     return product
 
 
-@app.post(&quot;/api/products&quot;, response_model=ProductDto, status_code=status.HTTP_201_CREATED)
-async def create_product(request: CreateProductDto, db: Session = Depends(get_db)):
+@app.post(&quot;/api/products&quot;, response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
     product = Product(**request.model_dump())
     db.add(product)
     db.commit()
@@ -331,7 +367,7 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
 
 
 @app.put(&quot;/api/products/{product_id}&quot;, status_code=status.HTTP_204_NO_CONTENT)
-async def update_product(product_id: int, request: UpdateProductDto, db: Session = Depends(get_db)):
+async def update_product(product_id: int, request: ProductUpdate, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail=&quot;Product not found&quot;)
@@ -348,7 +384,25 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(product)
     db.commit(){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Полная Alembic migration</h2>
+<article class="info-box"><h2>3. Мини-пример JSON, Column и Relationship в SQLModel</h2>
+<p>Этот фрагмент не обязателен для поля <code>category</code>, но показывает импорт и синтаксис, который часто нужен в реальных моделях: JSON-колонка и связь между таблицами.</p>
+<pre><code>{% raw %}from sqlmodel import JSON, Column, Field, Relationship, SQLModel
+
+
+class Product(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    options: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    reviews: list[&quot;ProductReview&quot;] = Relationship(back_populates=&quot;product&quot;)
+
+
+class ProductReview(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    product_id: int = Field(foreign_key=&quot;product.id&quot;)
+    text: str
+    product: Product | None = Relationship(back_populates=&quot;reviews&quot;){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>4. Полная Alembic migration</h2>
 <pre><code>{% raw %}from alembic import op
 import sqlalchemy as sa
 
@@ -369,9 +423,35 @@ def upgrade():
 def downgrade():
     op.drop_column(&quot;products&quot;, &quot;category&quot;){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>4. Как проверить</h2>
+<article class="info-box"><h2>5. Команды Alembic для этой задачи</h2>
+<p>Сначала меняете SQLModel-код, затем создаёте файл миграции, вставляете туда <code>upgrade()</code> и <code>downgrade()</code> из ответа, после этого применяете миграцию. Для первого раза лучше использовать обычный <code>alembic revision -m</code>: так вы сами видите, какие строки меняют базу. Позже можно попробовать <code>alembic revision --autogenerate -m</code>, но автогенерацию всё равно нужно читать глазами.</p>
+<pre><code>{% raw %}cd chapter06
+
+# 1. Проверить, видит ли Alembic текущую базу и текущую миграцию.
+alembic current
+
+# 2. Создать новый пустой файл миграции.
+alembic revision -m &quot;add product category&quot;
+
+# 3. Открыть созданный файл в chapter06/alembic/versions/
+#    и вставить туда upgrade() и downgrade() из ответа выше.
+
+# 4. Применить миграцию к SQLite-базе.
+alembic upgrade head
+
+# 5. Проверить, что база теперь находится на последней миграции.
+alembic current
+
+# 6. Если нужно откатиться на один шаг назад.
+alembic downgrade -1
+
+# 7. Посмотреть всю историю миграций.
+alembic history{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>6. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Body содержит <code>"category": "books"</code>.</span></article>
-<article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Каждый продукт возвращает поле <code>category</code>.</span></article></div>
+<article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Каждый продукт возвращает поле <code>category</code>.</span></article>
+<article class="endpoint-card"><strong><code>Alembic</code></strong><span>После <code>alembic upgrade head</code> команда <code>alembic current</code> показывает новую миграцию.</span></article></div>
 </article>
 
                 <article class="info-box">
@@ -380,12 +460,12 @@ def downgrade():
                 </article>
 
                 <article class="info-box"><h2>Где появляется новое поле category</h2>
-<p>Поле категории должно пройти через все слои: ORM-модель, Pydantic DTO, create/update schemas, CRUD endpoint-ы и миграцию.</p>
-<ul class="flow-list"><li><code>Product.category</code> добавляет колонку на уровне SQLAlchemy ORM.</li>
+<p>Поле категории должно пройти через все SQLModel-слои: таблицу, модель создания, модель обновления, модель ответа, CRUD endpoint-ы и миграцию.</p>
+<ul class="flow-list"><li><code>Product.category</code> добавляет колонку в SQLModel-таблицу.</li>
 <li><code>ProductCreate.category</code> разрешает клиенту передать категорию при создании продукта.</li>
 <li><code>ProductUpdate.category</code> разрешает поменять категорию при обновлении.</li>
-<li><code>ProductDto.category</code> возвращает категорию наружу в JSON-ответе.</li>
-<li>Если забыть DTO, поле будет в базе, но клиент его не увидит.</li></ul>
+<li><code>ProductRead.category</code> возвращает категорию наружу в JSON-ответе.</li>
+<li>Если забыть модель ответа, поле будет в базе, но клиент его не увидит.</li></ul>
 </article>
 <article class="info-box"><h2>Почему нужен default и nullable</h2>
 <ul class="flow-list"><li><code>default="general"</code> даёт понятное значение, если клиент не передал категорию.</li>
@@ -397,44 +477,53 @@ def downgrade():
 <ul class="flow-list"><li><code>upgrade()</code> описывает движение вперёд: добавить колонку <code>category</code>.</li>
 <li><code>downgrade()</code> описывает откат: удалить колонку, если миграцию нужно отменить.</li>
 <li>Миграция нужна не FastAPI, а базе данных. FastAPI сам не меняет production-схему при каждом запуске.</li>
-<li>Даже если demo-приложение вызывает <code>create_all</code>, главе важно показать правильный промышленный путь.</li></ul>
+<li>Даже если demo-приложение вызывает <code>SQLModel.metadata.create_all</code>, главе важно показать правильный промышленный путь.</li></ul>
+</article>
+<article class="info-box"><h2>Что делают команды Alembic</h2>
+<ul class="flow-list"><li><code>cd chapter06</code> переводит терминал туда, где лежит <code>alembic.ini</code>. Без этого Alembic может не найти настройки.</li>
+<li><code>alembic current</code> показывает, какая миграция уже применена к текущей базе.</li>
+<li><code>alembic revision -m "add product category"</code> создаёт новый Python-файл миграции в <code>alembic/versions</code>.</li>
+<li><code>alembic upgrade head</code> запускает функции <code>upgrade()</code> во всех новых миграциях и доводит базу до последней версии.</li>
+<li><code>alembic downgrade -1</code> запускает <code>downgrade()</code> последней миграции и откатывает базу на один шаг назад.</li>
+<li><code>alembic history</code> показывает список миграций, чтобы вы понимали порядок изменений базы.</li></ul>
 </article>
 <article class="info-box"><h2>Что проверять после изменения</h2>
 <ul class="flow-list"><li>Создайте продукт без <code>category</code>. В ответе должно быть <code>category: "general"</code> или выбранное вами значение по умолчанию.</li>
 <li>Создайте продукт с <code>category: "books"</code>. Ответ должен вернуть именно <code>books</code>.</li>
 <li>Откройте список продуктов. Категория должна быть у каждого объекта.</li>
+<li>Запустите <code>cd chapter06</code>, затем <code>alembic upgrade head</code> и <code>alembic current</code>, чтобы проверить, что миграция применена.</li>
 <li>Запустите тесты CRUD с тестовой БД, чтобы убедиться, что изменения не завязаны на локальный файл SQLite.</li></ul>
 </article>
 
-                <article class="info-box"><h2>Читаем DB-ответ сверху вниз</h2>
-<ul class="flow-list"><li>Imports SQLAlchemy нужны для engine, session, base class, колонок и типов колонок.</li>
+                <article class="info-box"><h2>Читаем SQLModel-ответ сверху вниз</h2>
+<ul class="flow-list"><li>Imports SQLModel нужны для <code>SQLModel</code>, <code>Field</code>, <code>Session</code>, <code>select</code> и настроек колонок.</li>
 <li><code>DATABASE_URL</code> задаёт адрес базы. По умолчанию используется SQLite-файл главы.</li>
-<li><code>engine</code> знает, как подключаться к базе, а <code>SessionLocal</code> создаёт sessions для операций.</li>
-<li><code>Base</code> - родитель для ORM-моделей. Через него SQLAlchemy знает, какие таблицы существуют.</li>
-<li><code>Product</code> описывает таблицу, а <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductDto</code> описывают JSON снаружи.</li>
+<li><code>engine</code> знает, как подключаться к базе, а <code>Session(engine)</code> открывает рабочую сессию.</li>
+<li><code>SQLModel.metadata</code> знает, какие таблицы описаны через <code>table=True</code>.</li>
+<li><code>Product</code> описывает таблицу, а <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> описывают JSON снаружи.</li>
 <li>Endpoint-ы не должны напрямую знать все детали таблицы. Они работают через session и модели.</li></ul>
 </article>
 <article class="info-box"><h2>Почему category проходит через несколько классов</h2>
-<ul class="flow-list"><li>ORM-модель отвечает за хранение в базе: без <code>Product.category</code> колонка не появится в таблице.</li>
+<ul class="flow-list"><li>SQLModel-таблица отвечает за хранение в базе: без <code>Product.category</code> колонка не появится в таблице.</li>
 <li>Create schema отвечает за входные данные при создании: без <code>ProductCreate.category</code> клиент не сможет прислать категорию.</li>
 <li>Update schema отвечает за частичное изменение: без <code>ProductUpdate.category</code> категорию нельзя будет обновить.</li>
-<li>DTO отвечает за выходной JSON: без <code>ProductDto.category</code> клиент не увидит категорию в ответе.</li>
+<li>Read schema отвечает за выходной JSON: без <code>ProductRead.category</code> клиент не увидит категорию в ответе.</li>
 <li>Migration отвечает за реальную схему уже существующей базы: без Alembic production-база не узнает про новую колонку.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при создании продукта</h2>
 <ul class="flow-list"><li>Клиент отправляет <code>POST /api/products</code> с JSON body.</li>
 <li>FastAPI валидирует body через <code>ProductCreate</code>.</li>
 <li>Endpoint создаёт ORM-объект <code>Product(**request.model_dump())</code> или аналогичную конструкцию.</li>
-<li>SQLAlchemy session добавляет объект через <code>db.add</code>.</li>
+<li>SQLModel Session добавляет объект через <code>db.add</code>.</li>
 <li><code>db.commit()</code> сохраняет строку в SQLite.</li>
 <li><code>db.refresh(product)</code> подтягивает id и значения по умолчанию из базы.</li>
-<li>FastAPI возвращает объект через <code>ProductDto</code>, и в JSON появляется <code>category</code>.</li></ul>
+<li>FastAPI возвращает объект через <code>ProductRead</code>, и в JSON появляется <code>category</code>.</li></ul>
 </article>
 
                 <article class="info-box">
                     <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
-                        <li>Менять нужно и ORM-модель, и DTO, иначе поле либо не сохранится, либо не попадёт в публичный ответ.</li>
+                        <li>Менять нужно и SQLModel-таблицу, и входные/выходные модели, иначе поле либо не сохранится, либо не попадёт в публичный ответ.</li>
 <li>В миграции используйте <code>op.add_column</code>, а в downgrade - <code>op.drop_column</code>.</li>
                     </ul>
                 </article>

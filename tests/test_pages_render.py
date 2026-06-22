@@ -55,7 +55,7 @@ FULL_ANSWER_CONTEXT_MARKERS = [
     (chapter03_app, ["import httpx", "JSONPLACEHOLDER", "class ExternalApiService", "async def get_post_comments"]),
     (chapter04_app, ["import time", "app = FastAPI", "class NotReadyError", "async def not_ready"]),
     (chapter05_app, ["from pathlib import Path", "Jinja2Templates", "HOMEWORK_STEPS", "{% for step in homework_steps %}"]),
-    (chapter06_app, ["import os", "class Product", "class ProductDto", "def upgrade()"]),
+    (chapter06_app, ["from sqlmodel import", "class Product(SQLModel, table=True)", "class ProductRead", "def upgrade()"]),
     (chapter07_app, ["import os", "OAuth2PasswordBearer", "def require_admin", "async def admin_area"]),
     (chapter08_app, ["import secrets", "class RefreshToken", "revoked_at", "def revoke_token"]),
     (chapter09_app, ["from uuid import uuid4", "class ConnectionManager", 'message == "/who"']),
@@ -70,7 +70,7 @@ ANSWER_WALKTHROUGH_MARKERS = [
     (chapter03_app, ["Зачем нужен service layer", "Как работает httpx-код", "Как отличить реальную интеграцию от заглушки"]),
     (chapter04_app, ["Где создаётся новое исключение", "Почему status code 503", "JSONResponse"]),
     (chapter05_app, ["Что именно добавляем в Python", "Что именно добавляем в шаблон", "Как работает for"]),
-    (chapter06_app, ["Где появляется новое поле category", "Зачем нужна Alembic migration", "Если забыть DTO"]),
+    (chapter06_app, ["Где появляется новое поле category", "Зачем нужна Alembic migration", "Если забыть модель ответа"]),
     (chapter07_app, ["Чем authentication отличается от authorization", "Почему роль нельзя брать из запроса", "Как работает require_admin"]),
     (chapter08_app, ["Зачем нужно поле revoked_at", "Почему revoke лучше вынести в helper", "Как меняется refresh flow"]),
     (chapter09_app, ["Где обрабатывать команду /who", "Почему ответ отправляется только текущему клиенту", "Откуда берётся count"]),
@@ -85,7 +85,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter03_app, ["Читаем HTTP-интеграцию сверху вниз", "Что происходит при запросе comments", "Зачем нужен try/except вокруг await"]),
     (chapter04_app, ["Читаем error handling сверху вниз", "Что происходит при raise NotReadyError", "Что сломается, если убрать отдельные части"]),
     (chapter05_app, ["Читаем простой Jinja-ответ сверху вниз", "Что происходит при GET /jinja-demo", "Почему for лучше копирования HTML"]),
-    (chapter06_app, ["Читаем DB-ответ сверху вниз", "Почему category проходит через несколько классов", "Что происходит при создании продукта"]),
+    (chapter06_app, ["Читаем SQLModel-ответ сверху вниз", "Почему category проходит через несколько классов", "Что происходит при создании продукта"]),
     (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
     (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при refresh rotation", "Почему revoked_at важен для обучения"]),
     (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит внутри receive loop", "Почему /who не должен быть broadcast"]),
@@ -333,6 +333,31 @@ def test_chapter05_base_json_does_not_include_task_answer():
     response = TestClient(chapter05_app).get("/api/template-data")
     assert response.status_code == 200
     assert "homework_steps" not in response.json()
+
+
+def test_chapter06_lesson_uses_sqlmodel_not_mapped_column():
+    response = TestClient(chapter06_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+
+    assert "class Product(SQLModel, table=True)" in text
+    assert "from sqlmodel import JSON, Column, Field, Relationship, SQLModel" in text
+    assert "db.exec(select(Product))" in text
+    assert "DeclarativeBase" not in text
+    assert "mapped_column" not in text
+    assert "class ProductDto" not in text
+
+
+def test_chapter06_lesson_shows_beginner_alembic_commands():
+    response = TestClient(chapter06_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+
+    assert "alembic current" in text
+    assert 'alembic revision -m "add product category"' in text
+    assert "alembic upgrade head" in text
+    assert "alembic downgrade -1" in text
+    assert "Что делают команды Alembic" in text
 
 
 def test_chapter10_uses_socketio_wording_without_old_comparison():

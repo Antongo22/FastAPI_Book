@@ -9,8 +9,8 @@ from fastapi.templating import Jinja2Templates
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
-    title="Глава 6: SQLAlchemy",
-    description="SQLite, DTO, Alembic, CRUD",
+    title="Глава 6: SQLModel",
+    description="SQLite, SQLModel, Alembic, CRUD",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -34,9 +34,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Integer, Numeric, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlmodel import Column, DateTime, Field, Numeric, Session, SQLModel, create_engine, select
 from sqlalchemy.pool import StaticPool
 
 
@@ -52,69 +50,60 @@ def make_engine(database_url: str):
 
 
 engine = make_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = SQLModel
 
 
-class Base(DeclarativeBase):
-    pass
-
-
-class Product(Base):
+class Product(SQLModel, table=True):
     __tablename__ = "products"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    description: Mapped[str] = mapped_column(String(500), default="")
-    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    stock: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+    stock: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime, nullable=False))
 
 
-class ProductDto(BaseModel):
+class ProductRead(SQLModel):
     id: int
     name: str
     description: str
     price: Decimal
     stock: int
 
-    model_config = {"from_attributes": True}
 
-
-class CreateProductDto(BaseModel):
-    name: str = Field(min_length=1)
-    description: str = ""
+class ProductCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
     price: Decimal = Field(gt=0)
-    stock: int = Field(ge=0)
+    stock: int = Field(default=0, ge=0)
 
 
-class UpdateProductDto(BaseModel):
-    name: str | None = None
-    description: str | None = None
+class ProductUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
     price: Decimal | None = Field(default=None, gt=0)
     stock: int | None = Field(default=None, ge=0)
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+    SQLModel.metadata.create_all(bind=engine)
 
 
 def get_db():
-    db = SessionLocal()
-    try:
+    with Session(engine) as db:
         yield db
-    finally:
-        db.close()
 
 
 init_db()
 
 
-@app.get("/api/products", response_model=list[ProductDto])
+@app.get("/api/products", response_model=list[ProductRead])
 async def get_products(db: Session = Depends(get_db)):
-    return db.query(Product).order_by(Product.id).all()
+    return db.exec(select(Product).order_by(Product.id)).all()
 
 
-@app.get("/api/products/{product_id}", response_model=ProductDto)
+@app.get("/api/products/{product_id}", response_model=ProductRead)
 async def get_product(product_id: int, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if product is None:
@@ -122,8 +111,8 @@ async def get_product(product_id: int, db: Session = Depends(get_db)):
     return product
 
 
-@app.post("/api/products", response_model=ProductDto, status_code=status.HTTP_201_CREATED)
-async def create_product(request: CreateProductDto, db: Session = Depends(get_db)):
+@app.post("/api/products", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
     product = Product(**request.model_dump())
     db.add(product)
     db.commit()
@@ -132,7 +121,7 @@ async def create_product(request: CreateProductDto, db: Session = Depends(get_db
 
 
 @app.put("/api/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def update_product(product_id: int, request: UpdateProductDto, db: Session = Depends(get_db)):
+async def update_product(product_id: int, request: ProductUpdate, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")

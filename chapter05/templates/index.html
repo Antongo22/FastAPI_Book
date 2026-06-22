@@ -201,15 +201,7 @@ async def jinja_demo(request: Request):
 <li>В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>&#123;% for step in homework_steps %&#125;</code>.</li>
 <li><code>/api/template-data</code> не менять: задача про HTML-шаблон, а не про расширение JSON API.</li></ul>
 </article>
-<article class="info-box"><h2>2. Куда положить HTML-файл и какой адрес открыть</h2>
-<p>Ошибка <code>TemplateNotFound: 'jinja_demo.html'</code> означает, что Python-код запустился, но Jinja2 не нашёл файл шаблона на диске.</p>
-<ul class="flow-list"><li>В учебнике файл лежит здесь: <code>chapter05/templates/jinja_demo.html</code>.</li>
-<li>Если вы копируете пример в свой проект и файл Python находится в <code>FastApiLearning/5/main.py</code>, то при строке <code>BASE_DIR = Path(__file__).resolve().parent.parent</code> шаблон нужно положить сюда: <code>FastApiLearning/templates/jinja_demo.html</code>.</li>
-<li>То есть рядом с папкой <code>5</code> должна быть папка <code>templates</code>, а внутри неё файл <code>jinja_demo.html</code>.</li>
-<li>Если хотите хранить шаблон внутри <code>FastApiLearning/5/templates/jinja_demo.html</code>, тогда в коде нужно заменить <code>parent.parent</code> на <code>parent</code>.</li>
-<li>После запуска сервера HTML-страница открывается в браузере по URL <code>http://localhost:8005/jinja-demo</code>. Если вы запускаете свой пример на другом порту, замените <code>8005</code> на свой порт.</li></ul>
-</article>
-<article class="info-box"><h2>3. Полный код chapter05/app/main.py</h2>
+<article class="info-box"><h2>2. Полный код chapter05/app/main.py</h2>
 <pre><code>{% raw %}from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -288,7 +280,7 @@ async def template_data():
         &quot;show_hint&quot;: True,
     }{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>4. Полный шаблон chapter05/templates/jinja_demo.html</h2>
+<article class="info-box"><h2>3. Полный шаблон chapter05/templates/jinja_demo.html</h2>
 <pre><code>{% raw %}&lt;!doctype html&gt;
 &lt;html lang=&quot;ru&quot;&gt;
 &lt;head&gt;
@@ -344,9 +336,8 @@ async def template_data():
 &lt;/body&gt;
 &lt;/html&gt;{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>5. Как проверить</h2>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Файл шаблона</code></strong><span>Перед запуском существует файл <code>templates/jinja_demo.html</code> в той папке, которую ищет <code>Jinja2Templates</code>.</span></article>
-<article class="endpoint-card"><strong><code>GET /jinja-demo</code></strong><span>На странице есть блок <code>Домашние шаги</code> и три пункта из списка.</span></article>
+<article class="info-box"><h2>4. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /jinja-demo</code></strong><span>На странице есть блок <code>Домашние шаги</code> и три пункта из списка.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/template-data</code></strong><span>JSON остаётся базовым и не содержит <code>homework_steps</code>.</span></article></div>
 </article>
 
@@ -378,7 +369,6 @@ async def template_data():
 </article>
 <article class="info-box"><h2>Как проверить</h2>
 <ul class="flow-list"><li>Откройте <code>http://localhost:8005/jinja-demo</code> и найдите блок <code>Домашние шаги</code>.</li>
-<li>Если видите <code>TemplateNotFound</code>, сначала проверьте путь к файлу: для такого кода Jinja2 ищет <code>templates/jinja_demo.html</code> относительно <code>BASE_DIR</code>.</li>
 <li>Проверьте, что на странице видны все три пункта из <code>HOMEWORK_STEPS</code>.</li>
 <li>Откройте <code>http://localhost:8005/api/template-data</code> и проверьте, что там нет <code>homework_steps</code>.</li>
 <li>Если JSON содержит <code>homework_steps</code>, значит вы случайно перенесли ответ не только в шаблонную часть, но и в API endpoint.</li></ul>
