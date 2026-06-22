@@ -161,8 +161,8 @@ async def jinja_demo(request: Request):
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
                     <ul class="flow-list"><li>Добавить ключ <code>homework_steps</code> в context, который получает шаблон.</li>
-<li>Вернуть этот же список из <code>/api/template-data</code>, чтобы данные можно было проверить как JSON.</li>
-<li>В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>&#123;% for step in homework_steps %&#125;</code>.</li></ul>
+<li>В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>&#123;% for step in homework_steps %&#125;</code>.</li>
+<li><code>/api/template-data</code> не менять: задача про HTML-шаблон, а не про расширение JSON API.</li></ul>
                 </article>
 
                 <article class="info-box">
@@ -198,15 +198,22 @@ async def jinja_demo(request: Request):
                 <article class="info-box"><h2>1. Что добавляем</h2>
 <p>Нужно сделать одну простую вещь: передать из Python ещё один список и вывести его в HTML через Jinja-цикл. Это тренирует главный навык главы: endpoint готовит данные, шаблон их показывает.</p>
 <ul class="flow-list"><li>Добавить ключ <code>homework_steps</code> в context, который получает шаблон.</li>
-<li>Вернуть этот же список из <code>/api/template-data</code>, чтобы данные можно было проверить как JSON.</li>
-<li>В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>&#123;% for step in homework_steps %&#125;</code>.</li></ul>
+<li>В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>&#123;% for step in homework_steps %&#125;</code>.</li>
+<li><code>/api/template-data</code> не менять: задача про HTML-шаблон, а не про расширение JSON API.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код chapter05/app/main.py</h2>
+<article class="info-box"><h2>2. Куда положить HTML-файл и какой адрес открыть</h2>
+<p>Ошибка <code>TemplateNotFound: 'jinja_demo.html'</code> означает, что Python-код запустился, но Jinja2 не нашёл файл шаблона на диске.</p>
+<ul class="flow-list"><li>В учебнике файл лежит здесь: <code>chapter05/templates/jinja_demo.html</code>.</li>
+<li>Если вы копируете пример в свой проект и файл Python находится в <code>FastApiLearning/5/main.py</code>, то при строке <code>BASE_DIR = Path(__file__).resolve().parent.parent</code> шаблон нужно положить сюда: <code>FastApiLearning/templates/jinja_demo.html</code>.</li>
+<li>То есть рядом с папкой <code>5</code> должна быть папка <code>templates</code>, а внутри неё файл <code>jinja_demo.html</code>.</li>
+<li>Если хотите хранить шаблон внутри <code>FastApiLearning/5/templates/jinja_demo.html</code>, тогда в коде нужно заменить <code>parent.parent</code> на <code>parent</code>.</li>
+<li>После запуска сервера HTML-страница открывается в браузере по URL <code>http://localhost:8005/jinja-demo</code>. Если вы запускаете свой пример на другом порту, замените <code>8005</code> на свой порт.</li></ul>
+</article>
+<article class="info-box"><h2>3. Полный код chapter05/app/main.py</h2>
 <pre><code>{% raw %}from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 
@@ -243,7 +250,6 @@ app = FastAPI(
     docs_url=&quot;/docs&quot;,
     redoc_url=&quot;/redoc&quot;,
 )
-app.mount(&quot;/static&quot;, StaticFiles(directory=str(BASE_DIR / &quot;static&quot;)), name=&quot;static&quot;)
 templates = Jinja2Templates(directory=str(BASE_DIR / &quot;templates&quot;))
 
 
@@ -279,11 +285,10 @@ async def template_data():
         &quot;title&quot;: &quot;Jinja2 demo&quot;,
         &quot;student_name&quot;: &quot;Анна&quot;,
         &quot;topics&quot;: LESSON_TOPICS,
-        &quot;homework_steps&quot;: HOMEWORK_STEPS,
         &quot;show_hint&quot;: True,
     }{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Полный шаблон chapter05/templates/jinja_demo.html</h2>
+<article class="info-box"><h2>4. Полный шаблон chapter05/templates/jinja_demo.html</h2>
 <pre><code>{% raw %}&lt;!doctype html&gt;
 &lt;html lang=&quot;ru&quot;&gt;
 &lt;head&gt;
@@ -339,9 +344,10 @@ async def template_data():
 &lt;/body&gt;
 &lt;/html&gt;{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>4. Как проверить</h2>
-<div class="endpoint-grid"><article class="endpoint-card"><strong><code>GET /jinja-demo</code></strong><span>На странице есть блок <code>Домашние шаги</code> и три пункта из списка.</span></article>
-<article class="endpoint-card"><strong><code>GET /api/template-data</code></strong><span>В JSON есть ключ <code>homework_steps</code> с теми же тремя строками.</span></article></div>
+<article class="info-box"><h2>5. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>Файл шаблона</code></strong><span>Перед запуском существует файл <code>templates/jinja_demo.html</code> в той папке, которую ищет <code>Jinja2Templates</code>.</span></article>
+<article class="endpoint-card"><strong><code>GET /jinja-demo</code></strong><span>На странице есть блок <code>Домашние шаги</code> и три пункта из списка.</span></article>
+<article class="endpoint-card"><strong><code>GET /api/template-data</code></strong><span>JSON остаётся базовым и не содержит <code>homework_steps</code>.</span></article></div>
 </article>
 
                 <article class="info-box">
@@ -353,7 +359,7 @@ async def template_data():
 <p>В Python-части не нужно создавать новую страницу, форму или модель. Нужно только подготовить ещё один список и положить его в context.</p>
 <ul class="flow-list"><li><code>HOMEWORK_STEPS</code> - обычный Python-список строк. В нём нет магии Jinja2.</li>
 <li>Ключ <code>homework_steps</code> добавляется в словарь, который возвращает <code>demo_context</code>.</li>
-<li>Тот же ключ добавляется в ответ <code>/api/template-data</code>, чтобы ученик мог увидеть исходные данные без HTML.</li>
+<li><code>/api/template-data</code> специально не меняется, чтобы код урока и код ответа не сливались в одно и то же.</li>
 <li>Endpoint <code>/jinja-demo</code> не меняет бизнес-логику: он просто передаёт шаблону обновлённый context.</li></ul>
 </article>
 <article class="info-box"><h2>Что именно добавляем в шаблон</h2>
@@ -372,16 +378,16 @@ async def template_data():
 </article>
 <article class="info-box"><h2>Как проверить</h2>
 <ul class="flow-list"><li>Откройте <code>http://localhost:8005/jinja-demo</code> и найдите блок <code>Домашние шаги</code>.</li>
+<li>Если видите <code>TemplateNotFound</code>, сначала проверьте путь к файлу: для такого кода Jinja2 ищет <code>templates/jinja_demo.html</code> относительно <code>BASE_DIR</code>.</li>
 <li>Проверьте, что на странице видны все три пункта из <code>HOMEWORK_STEPS</code>.</li>
-<li>Откройте <code>http://localhost:8005/api/template-data</code> и найдите там ключ <code>homework_steps</code>.</li>
-<li>Если JSON содержит список, но HTML его не показывает, ошибка почти всегда в имени переменной внутри шаблона.</li></ul>
+<li>Откройте <code>http://localhost:8005/api/template-data</code> и проверьте, что там нет <code>homework_steps</code>.</li>
+<li>Если JSON содержит <code>homework_steps</code>, значит вы случайно перенесли ответ не только в шаблонную часть, но и в API endpoint.</li></ul>
 </article>
 
                 <article class="info-box"><h2>Читаем простой Jinja-ответ сверху вниз</h2>
-<ul class="flow-list"><li><code>Path</code> нужен только для аккуратного пути к папкам <code>templates</code> и <code>static</code> в этой HTML-главе.</li>
+<ul class="flow-list"><li><code>Path</code> нужен только для аккуратного пути к папке <code>templates</code> в этой HTML-главе.</li>
 <li><code>LESSON_TOPICS</code> и <code>HOMEWORK_STEPS</code> - обычные списки Python. Они могли бы прийти из базы данных, но для обучения список проще.</li>
 <li><code>FastAPI(...)</code> создаёт приложение так же, как в API-главах.</li>
-<li><code>app.mount("/static", ...)</code> нужен, чтобы страница могла загрузить CSS. Без CSS HTML всё равно откроется, но будет без оформления.</li>
 <li><code>Jinja2Templates(...)</code> говорит FastAPI, где искать HTML-файлы.</li>
 <li><code>demo_context</code> собирает все данные страницы в одном месте, чтобы endpoint оставался коротким.</li></ul>
 </article>

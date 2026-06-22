@@ -1783,8 +1783,8 @@ async def success():
             "body": "Нужно сделать одну простую вещь: передать из Python ещё один список и вывести его в HTML через Jinja-цикл. Это тренирует главный навык главы: endpoint готовит данные, шаблон их показывает.",
             "items": [
                 "Добавить ключ <code>homework_steps</code> в context, который получает шаблон.",
-                "Вернуть этот же список из <code>/api/template-data</code>, чтобы данные можно было проверить как JSON.",
                 "В <code>chapter05/templates/jinja_demo.html</code> добавить блок <code>{% for step in homework_steps %}</code>.",
+                "<code>/api/template-data</code> не менять: задача про HTML-шаблон, а не про расширение JSON API.",
             ],
         },
         {
@@ -1794,7 +1794,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 
@@ -1831,7 +1830,6 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
@@ -1867,7 +1865,6 @@ async def template_data():
         "title": "Jinja2 demo",
         "student_name": "Анна",
         "topics": LESSON_TOPICS,
-        "homework_steps": HOMEWORK_STEPS,
         "show_hint": True,
     }
             ''',
@@ -1935,7 +1932,7 @@ async def template_data():
             "title": "Как проверить",
             "checks": [
                 ("GET /jinja-demo", "На странице есть блок <code>Домашние шаги</code> и три пункта из списка."),
-                ("GET /api/template-data", "В JSON есть ключ <code>homework_steps</code> с теми же тремя строками."),
+                ("GET /api/template-data", "JSON остаётся базовым и не содержит <code>homework_steps</code>."),
             ],
         },
     ],
@@ -3399,7 +3396,7 @@ ANSWER_WALKTHROUGHS = {
             "items": [
                 "<code>HOMEWORK_STEPS</code> - обычный Python-список строк. В нём нет магии Jinja2.",
                 "Ключ <code>homework_steps</code> добавляется в словарь, который возвращает <code>demo_context</code>.",
-                "Тот же ключ добавляется в ответ <code>/api/template-data</code>, чтобы ученик мог увидеть исходные данные без HTML.",
+                "<code>/api/template-data</code> специально не меняется, чтобы код урока и код ответа не сливались в одно и то же.",
                 "Endpoint <code>/jinja-demo</code> не меняет бизнес-логику: он просто передаёт шаблону обновлённый context.",
             ],
         },
@@ -3428,8 +3425,8 @@ ANSWER_WALKTHROUGHS = {
             "items": [
                 "Откройте <code>http://localhost:8005/jinja-demo</code> и найдите блок <code>Домашние шаги</code>.",
                 "Проверьте, что на странице видны все три пункта из <code>HOMEWORK_STEPS</code>.",
-                "Откройте <code>http://localhost:8005/api/template-data</code> и найдите там ключ <code>homework_steps</code>.",
-                "Если JSON содержит список, но HTML его не показывает, ошибка почти всегда в имени переменной внутри шаблона.",
+                "Откройте <code>http://localhost:8005/api/template-data</code> и проверьте, что там нет <code>homework_steps</code>.",
+                "Если JSON содержит <code>homework_steps</code>, значит вы случайно перенесли ответ не только в шаблонную часть, но и в API endpoint.",
             ],
         },
     ],
@@ -3867,10 +3864,9 @@ ANSWER_DEEP_DIVES = {
         {
             "title": "Читаем простой Jinja-ответ сверху вниз",
             "items": [
-                "<code>Path</code> нужен только для аккуратного пути к папкам <code>templates</code> и <code>static</code> в этой HTML-главе.",
+                "<code>Path</code> нужен только для аккуратного пути к папке <code>templates</code> в этой HTML-главе.",
                 "<code>LESSON_TOPICS</code> и <code>HOMEWORK_STEPS</code> - обычные списки Python. Они могли бы прийти из базы данных, но для обучения список проще.",
                 "<code>FastAPI(...)</code> создаёт приложение так же, как в API-главах.",
-                "<code>app.mount(\"/static\", ...)</code> нужен, чтобы страница могла загрузить CSS. Без CSS HTML всё равно откроется, но будет без оформления.",
                 "<code>Jinja2Templates(...)</code> говорит FastAPI, где искать HTML-файлы.",
                 "<code>demo_context</code> собирает все данные страницы в одном месте, чтобы endpoint оставался коротким.",
             ],

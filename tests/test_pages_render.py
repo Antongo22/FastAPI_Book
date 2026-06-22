@@ -320,6 +320,21 @@ def test_chapter05_is_not_registration_or_form_lesson_anymore():
     assert "Пароль" not in response.text
 
 
+def test_chapter05_template_lesson_does_not_teach_static_mount():
+    response = TestClient(chapter05_app).get("/")
+    assert response.status_code == 200
+    answers = html_section(response.text, '<section id="answers"', "</body>")
+
+    assert "StaticFiles" not in answers
+    assert "app.mount" not in answers
+
+
+def test_chapter05_base_json_does_not_include_task_answer():
+    response = TestClient(chapter05_app).get("/api/template-data")
+    assert response.status_code == 200
+    assert "homework_steps" not in response.json()
+
+
 def test_chapter10_uses_socketio_wording_without_old_comparison():
     chapter_response = TestClient(chapter10_app).get("/")
     gateway_response = TestClient(gateway_app).get("/")
