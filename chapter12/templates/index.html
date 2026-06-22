@@ -99,7 +99,103 @@ socket.emit(&quot;chat_message&quot;, { text: &quot;hello realtime&quot;, group_
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}@sio.event
+                    <pre><code>{% raw %}import os
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+import socketio
+
+
+DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter12.db&quot;)
+
+
+fastapi_app = FastAPI(title=&quot;Глава 12: Socket.IO и тестирование&quot;)
+sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+
+
+def make_engine(database_url: str):
+    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
+    kwargs = {&quot;connect_args&quot;: connect_args}
+    if database_url == &quot;sqlite://&quot;:
+        kwargs[&quot;poolclass&quot;] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class ChatGroup(Base):
+    __tablename__ = &quot;chat_groups&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    messages: Mapped[list[&quot;Message&quot;]] = relationship(back_populates=&quot;group&quot;)
+
+
+class Message(Base):
+    __tablename__ = &quot;messages&quot;
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    sender: Mapped[str] = mapped_column(String(120), nullable=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey(&quot;chat_groups.id&quot;), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    group: Mapped[ChatGroup | None] = relationship(back_populates=&quot;messages&quot;)
+
+
+class SendMessageRequest(BaseModel):
+    text: str = Field(min_length=1)
+    sender: str = Field(min_length=1)
+    group_id: int | None = None
+
+
+class ChatService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def send_message(self, text: str, sender: str, group_id: int | None = None) -&gt; Message:
+        message = Message(text=text, sender=sender, group_id=group_id)
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_chat_service(db: Session = Depends(get_db)) -&gt; ChatService:
+    return ChatService(db)
+
+
+socketio_clients: dict[str, str] = {}
+
+
+def message_to_dict(message: Message) -&gt; dict:
+    return {
+        &quot;id&quot;: message.id,
+        &quot;text&quot;: message.text,
+        &quot;sender&quot;: message.sender,
+        &quot;group_id&quot;: message.group_id,
+        &quot;created_at&quot;: message.created_at.isoformat(),
+    }
+
+
+@sio.event
 async def chat_message(sid, data):
     sender = data.get(&quot;sender&quot;) or socketio_clients.get(sid, &quot;anonymous&quot;)
     text = data.get(&quot;text&quot;) or data.get(&quot;message&quot;, &quot;&quot;)
@@ -109,7 +205,10 @@ async def chat_message(sid, data):
         message = service.send_message(text=text, sender=sender, group_id=group_id)
         payload = {&quot;event&quot;: &quot;chat_message&quot;, &quot;message&quot;: message_to_dict(message)}
     room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
-    await sio.emit(&quot;chat_message&quot;, payload, room=room){% endraw %}</code></pre>
+    await sio.emit(&quot;chat_message&quot;, payload, room=room)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">

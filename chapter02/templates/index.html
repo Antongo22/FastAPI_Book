@@ -193,9 +193,14 @@ curl http://localhost:8002/api/dependency-injection/singleton-demo{% endraw %}</
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import Depends, Query
+from fastapi import Depends, FastAPI, Query
 
 
+app = FastAPI(
+    title=&quot;Глава 2: Dependency Injection&quot;,
+    description=&quot;Depends and lifetimes&quot;,
+    version=&quot;1.0.0&quot;,
+)
 logger = logging.getLogger(&quot;chapter02&quot;)
 
 

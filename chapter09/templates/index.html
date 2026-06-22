@@ -88,7 +88,19 @@ ws.onopen = () =&gt; ws.send(&quot;hello&quot;);{% endraw %}</code></pre></artic
             <div class="section-grid">
                 <article class="info-box">
                     <h2>ConnectionManager для WebSocket-чата</h2>
-                    <pre><code>{% raw %}class ConnectionManager:
+                    <pre><code>{% raw %}from uuid import uuid4
+
+from fastapi import FastAPI, WebSocket
+
+
+app = FastAPI(
+    title=&quot;Глава 9: WebSockets&quot;,
+    description=&quot;Raw WebSocket chat&quot;,
+    version=&quot;1.0.0&quot;,
+)
+
+
+class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[str, WebSocket] = {}
 
@@ -107,7 +119,10 @@ ws.onopen = () =&gt; ws.send(&quot;hello&quot;);{% endraw %}</code></pre></artic
 
     async def broadcast(self, payload: dict) -&gt; None:
         for websocket in list(self.active_connections.values()):
-            await websocket.send_json(payload){% endraw %}</code></pre>
+            await websocket.send_json(payload)
+
+
+manager = ConnectionManager(){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">

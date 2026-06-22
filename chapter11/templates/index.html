@@ -102,7 +102,42 @@ document.head.append(script);{% endraw %}</code></pre></article>
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}def authorize_socketio(auth: dict | None) -&gt; str | None:
+                    <pre><code>{% raw %}import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI, HTTPException
+from jose import JWTError, jwt
+from pydantic import BaseModel
+import socketio
+
+
+SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-development-secret&quot;)
+ALGORITHM = &quot;HS256&quot;
+
+
+sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+fastapi_app = FastAPI(title=&quot;Глава 11: Auth Socket.IO&quot;)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def create_access_token(username: str) -&gt; str:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=30)
+    return jwt.encode({&quot;sub&quot;: username, &quot;exp&quot;: expires}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_token(token: str) -&gt; str:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return str(payload[&quot;sub&quot;])
+    except (JWTError, KeyError) as error:
+        raise HTTPException(status_code=401, detail=&quot;Invalid token&quot;) from error
+
+
+def authorize_socketio(auth: dict | None) -&gt; str | None:
     token = (auth or {}).get(&quot;access_token&quot;) or (auth or {}).get(&quot;token&quot;)
     if not token:
         return None
@@ -118,7 +153,10 @@ async def connect(sid, environ, auth):
     if username is None:
         return False
     authorized_clients[sid] = username
-    await sio.emit(&quot;authorized&quot;, {&quot;sid&quot;: sid, &quot;username&quot;: username}, to=sid){% endraw %}</code></pre>
+    await sio.emit(&quot;authorized&quot;, {&quot;sid&quot;: sid, &quot;username&quot;: username}, to=sid)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">

@@ -89,12 +89,62 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}class ExternalApiService:
+                    <pre><code>{% raw %}import httpx
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
+
+
+JSONPLACEHOLDER = &quot;https://jsonplaceholder.typicode.com&quot;
+
+
+app = FastAPI(
+    title=&quot;Глава 3: HTTP Requests&quot;,
+    description=&quot;httpx AsyncClient&quot;,
+    version=&quot;1.0.0&quot;,
+)
+
+
+class CreatePostRequest(BaseModel):
+    title: str
+    body: str
+    user_id: int
+
+
+class ExternalApiService:
+    def __init__(self, base_url: str = JSONPLACEHOLDER):
+        self.base_url = base_url
+
     async def get_post(self, post_id: int) -&gt; dict:
         async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
             response = await client.get(f&quot;/posts/{post_id}&quot;)
             response.raise_for_status()
-            return response.json(){% endraw %}</code></pre>
+            return response.json()
+
+    async def create_post(self, request: CreatePostRequest) -&gt; dict:
+        payload = {&quot;title&quot;: request.title, &quot;body&quot;: request.body, &quot;userId&quot;: request.user_id}
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.post(&quot;/posts&quot;, json=payload)
+            response.raise_for_status()
+            return response.json()
+
+
+def get_external_api_service() -&gt; ExternalApiService:
+    return ExternalApiService()
+
+
+def map_http_error(error: httpx.HTTPError) -&gt; HTTPException:
+    status_code = 502
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+    return HTTPException(status_code=status_code, detail=str(error))
+
+
+@app.get(&quot;/api/http-client/post/{post_id}&quot;)
+async def get_post(post_id: int, service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.get_post(post_id)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error{% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">

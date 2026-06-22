@@ -90,7 +90,31 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}@app.get(&quot;/jinja-demo&quot;, response_class=HTMLResponse, include_in_schema=False)
+                    <pre><code>{% raw %}from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app = FastAPI(
+    title=&quot;Глава 5: Jinja2 basics&quot;,
+    description=&quot;Templates and context&quot;,
+    version=&quot;1.0.0&quot;,
+)
+templates = Jinja2Templates(directory=str(BASE_DIR / &quot;templates&quot;))
+
+
+LESSON_TOPICS = [
+    {&quot;name&quot;: &quot;Переменная&quot;, &quot;template&quot;: &quot;{{ title }}&quot;},
+    {&quot;name&quot;: &quot;Условие if&quot;, &quot;template&quot;: &quot;{% if show_hint %}&quot;},
+    {&quot;name&quot;: &quot;Цикл for&quot;, &quot;template&quot;: &quot;{% for topic in topics %}&quot;},
+]
+
+
+@app.get(&quot;/jinja-demo&quot;, response_class=HTMLResponse, include_in_schema=False)
 async def jinja_demo(request: Request):
     return templates.TemplateResponse(
         request,

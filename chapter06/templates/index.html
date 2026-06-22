@@ -123,12 +123,59 @@ alembic downgrade -1{% endraw %}</code></pre></article>
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}class Product(SQLModel, table=True):
+                    <pre><code>{% raw %}import os
+from datetime import datetime
+from decimal import Decimal
+
+from fastapi import Depends, FastAPI, status
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Column, DateTime, Field, Numeric, Session, SQLModel, create_engine
+
+
+DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter06.db&quot;)
+
+
+def make_engine(database_url: str):
+    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
+    kwargs = {&quot;connect_args&quot;: connect_args}
+    if database_url == &quot;sqlite://&quot;:
+        kwargs[&quot;poolclass&quot;] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+
+app = FastAPI(
+    title=&quot;Глава 6: SQLModel&quot;,
+    description=&quot;SQLite, SQLModel, CRUD&quot;,
+    version=&quot;1.0.0&quot;,
+)
+
+
+class Product(SQLModel, table=True):
     __tablename__ = &quot;products&quot;
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default=&quot;&quot;, max_length=500)
     price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+    stock: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime, nullable=False))
+
+
+class ProductRead(SQLModel):
+    id: int
+    name: str
+    description: str
+    price: Decimal
+    stock: int
+
+
+class ProductCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default=&quot;&quot;, max_length=500)
+    price: Decimal = Field(gt=0)
+    stock: int = Field(default=0, ge=0)
 
 
 def get_db():
@@ -214,10 +261,9 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
-                    <ul class="flow-list"><li>В <code>Product(SQLModel, table=True)</code> добавить поле <code>category</code>.</li>
-<li>В <code>ProductCreate</code> добавить поле, которое клиент может прислать при создании.</li>
-<li>В <code>ProductUpdate</code> добавить optional-поле для частичного обновления.</li>
-<li>В <code>ProductRead</code> добавить поле, которое вернётся наружу в JSON.</li>
+                    <ul class="flow-list"><li>Создать <code>ProductBase</code> с общими полями продукта.</li>
+<li>Сделать <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследниками <code>ProductBase</code>.</li>
+<li>В <code>ProductUpdate</code> оставить optional-поля для частичного обновления.</li>
 <li>Создать Alembic migration с <code>op.add_column</code>.</li>
 <li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
                 </article>
@@ -254,11 +300,10 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
-<p>Поле <code>category</code> должно пройти через все SQLModel-слои: таблицу, модель создания, модель обновления, модель ответа и миграцию.</p>
-<ul class="flow-list"><li>В <code>Product(SQLModel, table=True)</code> добавить поле <code>category</code>.</li>
-<li>В <code>ProductCreate</code> добавить поле, которое клиент может прислать при создании.</li>
-<li>В <code>ProductUpdate</code> добавить optional-поле для частичного обновления.</li>
-<li>В <code>ProductRead</code> добавить поле, которое вернётся наружу в JSON.</li>
+<p>Поле <code>category</code> должно пройти через общую SQLModel-схему, таблицу, модель создания, модель обновления, модель ответа и миграцию.</p>
+<ul class="flow-list"><li>Создать <code>ProductBase</code> с общими полями продукта.</li>
+<li>Сделать <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследниками <code>ProductBase</code>.</li>
+<li>В <code>ProductUpdate</code> оставить optional-поля для частичного обновления.</li>
 <li>Создать Alembic migration с <code>op.add_column</code>.</li>
 <li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
 </article>
@@ -295,33 +340,27 @@ app = FastAPI(
 )
 
 
-class Product(SQLModel, table=True):
+class ProductBase(SQLModel):
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(default=&quot;general&quot;, max_length=80)
+    description: str = Field(default=&quot;&quot;, max_length=500)
+    price: Decimal = Field(gt=0, sa_column=Column(Numeric(10, 2), nullable=False))
+    stock: int = Field(default=0, ge=0)
+
+
+class Product(ProductBase, table=True):
     __tablename__ = &quot;products&quot;
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(min_length=1, max_length=120)
-    category: str = Field(default=&quot;general&quot;, max_length=80)
-    description: str = Field(default=&quot;&quot;, max_length=500)
-    price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
-    stock: int = Field(default=0, ge=0)
     created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime, nullable=False))
 
 
-class ProductRead(SQLModel):
+class ProductRead(ProductBase):
     id: int
-    name: str
-    category: str
-    description: str
-    price: Decimal
-    stock: int
 
 
-class ProductCreate(SQLModel):
-    name: str = Field(min_length=1, max_length=120)
-    category: str = Field(default=&quot;general&quot;, max_length=80)
-    description: str = Field(default=&quot;&quot;, max_length=500)
-    price: Decimal = Field(gt=0)
-    stock: int = Field(default=0, ge=0)
+class ProductCreate(ProductBase):
+    pass
 
 
 class ProductUpdate(SQLModel):
@@ -460,16 +499,19 @@ alembic history{% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box"><h2>Где появляется новое поле category</h2>
-<p>Поле категории должно пройти через все SQLModel-слои: таблицу, модель создания, модель обновления, модель ответа, CRUD endpoint-ы и миграцию.</p>
-<ul class="flow-list"><li><code>Product.category</code> добавляет колонку в SQLModel-таблицу.</li>
-<li><code>ProductCreate.category</code> разрешает клиенту передать категорию при создании продукта.</li>
-<li><code>ProductUpdate.category</code> разрешает поменять категорию при обновлении.</li>
-<li><code>ProductRead.category</code> возвращает категорию наружу в JSON-ответе.</li>
+<p>Поле категории должно пройти через общий базовый класс, таблицу, модель создания, модель обновления, модель ответа, CRUD endpoint-ы и миграцию.</p>
+<ul class="flow-list"><li><code>ProductBase.category</code> описывает общее поле один раз.</li>
+<li><code>Product(ProductBase, table=True)</code> наследует поле и превращает его в колонку таблицы.</li>
+<li><code>ProductCreate(ProductBase)</code> наследует поле и разрешает клиенту передать категорию при создании продукта.</li>
+<li><code>ProductRead(ProductBase)</code> наследует поле и возвращает категорию наружу в JSON-ответе.</li>
+<li><code>ProductUpdate.category</code> остаётся отдельным optional-полем, потому что при частичном обновлении клиент может прислать только одно поле.</li>
 <li>Если забыть модель ответа, поле будет в базе, но клиент его не увидит.</li></ul>
 </article>
 <article class="info-box"><h2>Почему нужен default и nullable</h2>
 <ul class="flow-list"><li><code>default="general"</code> даёт понятное значение, если клиент не передал категорию.</li>
 <li><code>nullable=False</code> говорит базе: у продукта всегда должна быть категория.</li>
+<li><code>ProductBase</code> убирает повтор одинаковых полей между таблицей, схемой создания и схемой ответа.</li>
+<li><code>ProductUpdate</code> не наследуется от <code>ProductBase</code>, потому что в update все поля optional, а в base часть полей обязательная.</li>
 <li>В учебной SQLite-БД таблицы создаются автоматически, но в реальном проекте структура меняется через миграции.</li>
 <li>Если в уже существующей таблице есть старые продукты, миграция должна дать им значение по умолчанию.</li></ul>
 </article>
@@ -500,14 +542,18 @@ alembic history{% endraw %}</code></pre>
 <li><code>DATABASE_URL</code> задаёт адрес базы. По умолчанию используется SQLite-файл главы.</li>
 <li><code>engine</code> знает, как подключаться к базе, а <code>Session(engine)</code> открывает рабочую сессию.</li>
 <li><code>SQLModel.metadata</code> знает, какие таблицы описаны через <code>table=True</code>.</li>
-<li><code>Product</code> описывает таблицу, а <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> описывают JSON снаружи.</li>
+<li><code>ProductBase</code> хранит общие поля, чтобы не копировать <code>name</code>, <code>category</code>, <code>description</code>, <code>price</code> и <code>stock</code> в несколько классов.</li>
+<li><code>Product</code> наследуется от <code>ProductBase</code> и описывает таблицу, потому что у него есть <code>table=True</code>.</li>
+<li><code>ProductCreate</code> и <code>ProductRead</code> тоже наследуются от <code>ProductBase</code>, но остаются JSON-схемами, потому что у них нет <code>table=True</code>.</li>
+<li><code>ProductUpdate</code> стоит отдельно, потому что все его поля optional для частичного обновления.</li>
 <li>Endpoint-ы не должны напрямую знать все детали таблицы. Они работают через session и модели.</li></ul>
 </article>
 <article class="info-box"><h2>Почему category проходит через несколько классов</h2>
-<ul class="flow-list"><li>SQLModel-таблица отвечает за хранение в базе: без <code>Product.category</code> колонка не появится в таблице.</li>
-<li>Create schema отвечает за входные данные при создании: без <code>ProductCreate.category</code> клиент не сможет прислать категорию.</li>
+<ul class="flow-list"><li><code>ProductBase.category</code> - одно место, где описано общее поле категории.</li>
+<li>SQLModel-таблица наследует это поле: без <code>Product(ProductBase, table=True)</code> колонка не появится в таблице.</li>
+<li>Create schema наследует это поле: без <code>ProductCreate(ProductBase)</code> клиент не сможет прислать категорию.</li>
 <li>Update schema отвечает за частичное изменение: без <code>ProductUpdate.category</code> категорию нельзя будет обновить.</li>
-<li>Read schema отвечает за выходной JSON: без <code>ProductRead.category</code> клиент не увидит категорию в ответе.</li>
+<li>Read schema наследует это поле: без <code>ProductRead(ProductBase)</code> клиент не увидит категорию в ответе.</li>
 <li>Migration отвечает за реальную схему уже существующей базы: без Alembic production-база не узнает про новую колонку.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при создании продукта</h2>

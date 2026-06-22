@@ -476,9 +476,14 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import Depends, Query
+from fastapi import Depends, FastAPI, Query
 
 
+app = FastAPI(
+    title="Глава 2: Dependency Injection",
+    description="Depends and lifetimes",
+    version="1.0.0",
+)
 logger = logging.getLogger("chapter02")
 
 
@@ -645,12 +650,62 @@ async def pretty_log(
             ("POST /api/http-client/post", "Создание демо-поста во внешнем API."),
         ],
         "code": '''
+import httpx
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
+
+
+JSONPLACEHOLDER = "https://jsonplaceholder.typicode.com"
+
+
+app = FastAPI(
+    title="Глава 3: HTTP Requests",
+    description="httpx AsyncClient",
+    version="1.0.0",
+)
+
+
+class CreatePostRequest(BaseModel):
+    title: str
+    body: str
+    user_id: int
+
+
 class ExternalApiService:
+    def __init__(self, base_url: str = JSONPLACEHOLDER):
+        self.base_url = base_url
+
     async def get_post(self, post_id: int) -> dict:
         async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
             response = await client.get(f"/posts/{post_id}")
             response.raise_for_status()
             return response.json()
+
+    async def create_post(self, request: CreatePostRequest) -> dict:
+        payload = {"title": request.title, "body": request.body, "userId": request.user_id}
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            response = await client.post("/posts", json=payload)
+            response.raise_for_status()
+            return response.json()
+
+
+def get_external_api_service() -> ExternalApiService:
+    return ExternalApiService()
+
+
+def map_http_error(error: httpx.HTTPError) -> HTTPException:
+    status_code = 502
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+    return HTTPException(status_code=status_code, detail=str(error))
+
+
+@app.get("/api/http-client/post/{post_id}")
+async def get_post(post_id: int, service: ExternalApiService = Depends(get_external_api_service)):
+    try:
+        return await service.get_post(post_id)
+    except httpx.HTTPError as error:
+        raise map_http_error(error) from error
         ''',
         "code_notes": [
             "Клиент создаётся внутри <code>async with</code>, поэтому соединения корректно закрываются.",
@@ -698,12 +753,54 @@ async def get_post_comments(self, post_id: int) -> list[dict]:
             ("GET /api/error-demo/success", "Контрольный успешный ответ."),
         ],
         "code": '''
+import time
+
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title="Глава 4: Error Handling",
+    description="Exception handlers and middleware",
+    version="1.0.0",
+)
+
+
+class DemoError(Exception):
+    pass
+
+
+class ValidationRequest(BaseModel):
+    name: str = ""
+    age: int = 0
+
+
+@app.middleware("http")
+async def request_logging_middleware(request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Process-Time"] = f"{time.perf_counter() - started:.6f}"
+    return response
+
+
 @app.exception_handler(DemoError)
 async def demo_error_handler(request, exc: DemoError):
     return JSONResponse(
         status_code=500,
         content={"error": str(exc), "path": str(request.url.path)},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    return JSONResponse(status_code=400, content={"error": "Validation failed", "details": exc.errors()})
+
+
+@app.get("/api/error-demo/badrequest")
+async def bad_request_demo():
+    raise HTTPException(status_code=400, detail="Это пример BadRequest ответа")
         ''',
         "code_notes": [
             "Handler принимает исходный request, поэтому может добавить path, correlation id или user id.",
@@ -755,6 +852,30 @@ async def not_ready_handler(request, exc: NotReadyError):
             ("GET /api/template-data", "Те же данные в JSON, чтобы сравнить Python-словарь и HTML-вывод."),
         ],
         "code": '''
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app = FastAPI(
+    title="Глава 5: Jinja2 basics",
+    description="Templates and context",
+    version="1.0.0",
+)
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+LESSON_TOPICS = [
+    {"name": "Переменная", "template": "{{ title }}"},
+    {"name": "Условие if", "template": "{% if show_hint %}"},
+    {"name": "Цикл for", "template": "{% for topic in topics %}"},
+]
+
+
 @app.get("/jinja-demo", response_class=HTMLResponse, include_in_schema=False)
 async def jinja_demo(request: Request):
     return templates.TemplateResponse(
@@ -848,12 +969,59 @@ alembic downgrade -1
             ("DELETE /api/products/{product_id}", "Удаление продукта."),
         ],
         "code": '''
+import os
+from datetime import datetime
+from decimal import Decimal
+
+from fastapi import Depends, FastAPI, status
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Column, DateTime, Field, Numeric, Session, SQLModel, create_engine
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter06.db")
+
+
+def make_engine(database_url: str):
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    kwargs = {"connect_args": connect_args}
+    if database_url == "sqlite://":
+        kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+
+app = FastAPI(
+    title="Глава 6: SQLModel",
+    description="SQLite, SQLModel, CRUD",
+    version="1.0.0",
+)
+
+
 class Product(SQLModel, table=True):
     __tablename__ = "products"
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
     price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+    stock: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime, nullable=False))
+
+
+class ProductRead(SQLModel):
+    id: int
+    name: str
+    description: str
+    price: Decimal
+    stock: int
+
+
+class ProductCreate(SQLModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    price: Decimal = Field(gt=0)
+    stock: int = Field(default=0, ge=0)
 
 
 def get_db():
@@ -919,13 +1087,66 @@ class ProductRead(SQLModel):
             ("GET /api/protected", "Endpoint, доступный только с валидным Bearer token."),
         ],
         "code": '''
+import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+USERS: dict[str, dict] = {}
+
+
+app = FastAPI(
+    title="Глава 7: JWT Authorization",
+    description="Authentication and authorization",
+    version="1.0.0",
+)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def create_access_token(username: str, role: str) -> tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": username, "role": role, "exp": expires}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    username = payload.get("sub")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+    except JWTError as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from error
     user = USERS.get(str(username))
     if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    user = USERS.get(request.username)
+    if user is None or not pwd_context.verify(request.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
+    token, expires = create_access_token(user["username"], user["role"])
+    return {"token": token, "token_type": "bearer", "expires": expires}
+
+
+@app.get("/api/protected")
+async def protected(user: dict = Depends(get_current_user)):
+    return {"message": "Это защищенный endpoint", "username": user["username"], "role": user["role"]}
         ''',
         "code_notes": [
             "Token не шифруется, а подписывается: содержимое можно прочитать, но нельзя незаметно изменить без secret key.",
@@ -978,13 +1199,111 @@ async def admin(user: dict = Depends(require_admin)):
             ("POST /api/auth/logout", "Отзыв всех token-ов текущего пользователя."),
         ],
         "code": '''
-stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
-if stored is None or stored.revoked or stored.expires_at <= datetime.utcnow():
-    raise HTTPException(status_code=401, detail="Недействительный refresh token")
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
 
-stored.revoked = True
-access_token, access_expires = create_access_token(user)
-refresh_token, refresh_expires = create_refresh_token(db, user)
+from fastapi import Depends, FastAPI, HTTPException
+from jose import jwt
+from pydantic import BaseModel
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter08.db")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
+ALGORITHM = "HS256"
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+
+
+app = FastAPI(
+    title="Глава 8: Refresh Tokens",
+    description="Token rotation and revoke",
+    version="1.0.0",
+)
+
+
+def make_engine(database_url: str):
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    kwargs = {"connect_args": connect_args}
+    if database_url == "sqlite://":
+        kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    user: Mapped[User] = relationship(back_populates="refresh_tokens")
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def create_access_token(user: User) -> tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    payload = {"sub": str(user.id), "username": user.username, "exp": expires}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def create_refresh_token(db: Session, user: User) -> tuple[str, datetime]:
+    token = secrets.token_urlsafe(48)
+    expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.add(RefreshToken(token=token, user_id=user.id, expires_at=expires))
+    db.commit()
+    return token, expires
+
+
+@app.post("/api/auth/refresh")
+async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+    if stored is None or stored.revoked or stored.expires_at <= datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Недействительный refresh token")
+
+    stored.revoked = True
+    user = db.get(User, stored.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(db, user)
+    db.commit()
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "access_token_expires": access_expires,
+        "refresh_token_expires": refresh_expires,
+    }
         ''',
         "code_notes": [
             "Refresh token не является JWT: это opaque value, смысл которого известен только серверу.",
@@ -1031,6 +1350,18 @@ stored.revoked_at = datetime.utcnow()
         ],
         "code_title": "ConnectionManager для WebSocket-чата",
         "code": '''
+from uuid import uuid4
+
+from fastapi import FastAPI, WebSocket
+
+
+app = FastAPI(
+    title="Глава 9: WebSockets",
+    description="Raw WebSocket chat",
+    version="1.0.0",
+)
+
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[str, WebSocket] = {}
@@ -1051,6 +1382,9 @@ class ConnectionManager:
     async def broadcast(self, payload: dict) -> None:
         for websocket in list(self.active_connections.values()):
             await websocket.send_json(payload)
+
+
+manager = ConnectionManager()
         ''',
         "code_notes": [
             "WebSocket endpoint не возвращает HTTP response, он живёт пока открыто соединение.",
@@ -1100,6 +1434,12 @@ else:
         ],
         "code_title": "Базовые Socket.IO события урока",
         "code": '''
+from collections import defaultdict
+
+from fastapi import FastAPI
+import socketio
+
+
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 fastapi_app = FastAPI(title="Глава 10: Socket.IO chat")
 app = socketio.ASGIApp(
@@ -1109,6 +1449,7 @@ app = socketio.ASGIApp(
 )
 
 socketio_clients: dict[str, str] = {}
+socketio_rooms: dict[str, set[str]] = defaultdict(set)
 
 @sio.event
 async def connect(sid, environ, auth):
@@ -1138,6 +1479,8 @@ async def direct_message(sid, data):
 @sio.event
 async def disconnect(sid):
     socketio_clients.pop(sid, None)
+    for members in socketio_rooms.values():
+        members.discard(sid)
         ''',
         "code_notes": [
             "Socket.IO работает событиями: клиент и сервер договариваются об именах событий и структуре payload.",
@@ -1185,6 +1528,41 @@ async def leave_room(sid, data):
             ("Socket.IO /socket.io", "Защищённые события <code>authorized</code> и <code>authorized_message</code>."),
         ],
         "code": '''
+import os
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI, HTTPException
+from jose import JWTError, jwt
+from pydantic import BaseModel
+import socketio
+
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
+ALGORITHM = "HS256"
+
+
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+fastapi_app = FastAPI(title="Глава 11: Auth Socket.IO")
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def create_access_token(username: str) -> str:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=30)
+    return jwt.encode({"sub": username, "exp": expires}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return str(payload["sub"])
+    except (JWTError, KeyError) as error:
+        raise HTTPException(status_code=401, detail="Invalid token") from error
+
+
 def authorize_socketio(auth: dict | None) -> str | None:
     token = (auth or {}).get("access_token") or (auth or {}).get("token")
     if not token:
@@ -1202,6 +1580,9 @@ async def connect(sid, environ, auth):
         return False
     authorized_clients[sid] = username
     await sio.emit("authorized", {"sid": sid, "username": username}, to=sid)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")
         ''',
         "code_notes": [
             "Важно проверять token в <code>connect</code>, до обработки любых пользовательских событий.",
@@ -1250,6 +1631,102 @@ if role != "admin":
             ("Socket.IO /socket.io", "События <code>set_name</code>, <code>join_group</code>, <code>chat_message</code>, <code>list_messages</code>."),
         ],
         "code": '''
+import os
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
+import socketio
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter12.db")
+
+
+fastapi_app = FastAPI(title="Глава 12: Socket.IO и тестирование")
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+
+
+def make_engine(database_url: str):
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    kwargs = {"connect_args": connect_args}
+    if database_url == "sqlite://":
+        kwargs["poolclass"] = StaticPool
+    return create_engine(database_url, **kwargs)
+
+
+engine = make_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class ChatGroup(Base):
+    __tablename__ = "chat_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    messages: Mapped[list["Message"]] = relationship(back_populates="group")
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    sender: Mapped[str] = mapped_column(String(120), nullable=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("chat_groups.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    group: Mapped[ChatGroup | None] = relationship(back_populates="messages")
+
+
+class SendMessageRequest(BaseModel):
+    text: str = Field(min_length=1)
+    sender: str = Field(min_length=1)
+    group_id: int | None = None
+
+
+class ChatService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def send_message(self, text: str, sender: str, group_id: int | None = None) -> Message:
+        message = Message(text=text, sender=sender, group_id=group_id)
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_chat_service(db: Session = Depends(get_db)) -> ChatService:
+    return ChatService(db)
+
+
+socketio_clients: dict[str, str] = {}
+
+
+def message_to_dict(message: Message) -> dict:
+    return {
+        "id": message.id,
+        "text": message.text,
+        "sender": message.sender,
+        "group_id": message.group_id,
+        "created_at": message.created_at.isoformat(),
+    }
+
+
 @sio.event
 async def chat_message(sid, data):
     sender = data.get("sender") or socketio_clients.get(sid, "anonymous")
@@ -1261,6 +1738,9 @@ async def chat_message(sid, data):
         payload = {"event": "chat_message", "message": message_to_dict(message)}
     room = f"group:{group_id}" if group_id is not None else "global"
     await sio.emit("chat_message", payload, room=room)
+
+
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io")
         ''',
         "code_notes": [
             "Socket.IO handler использует тот же <code>ChatService</code>, что и REST API, поэтому бизнес-правила не дублируются.",
@@ -1978,15 +2458,14 @@ async def template_data():
     "chapter06": [
         {
             "title": "Что меняем",
-            "body": "Поле <code>category</code> должно пройти через все SQLModel-слои: таблицу, модель создания, модель обновления, модель ответа и миграцию.",
+            "body": "Поле <code>category</code> должно пройти через общую SQLModel-схему, таблицу, модель создания, модель обновления, модель ответа и миграцию.",
             "items": [
-                "В <code>Product(SQLModel, table=True)</code> добавить поле <code>category</code>.",
-                "В <code>ProductCreate</code> добавить поле, которое клиент может прислать при создании.",
-                "В <code>ProductUpdate</code> добавить optional-поле для частичного обновления.",
-                "В <code>ProductRead</code> добавить поле, которое вернётся наружу в JSON.",
-            "Создать Alembic migration с <code>op.add_column</code>.",
-            "Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.",
-        ],
+                "Создать <code>ProductBase</code> с общими полями продукта.",
+                "Сделать <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследниками <code>ProductBase</code>.",
+                "В <code>ProductUpdate</code> оставить optional-поля для частичного обновления.",
+                "Создать Alembic migration с <code>op.add_column</code>.",
+                "Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.",
+            ],
         },
         {
             "title": "Полный код SQLModel-части",
@@ -2023,33 +2502,27 @@ app = FastAPI(
 )
 
 
-class Product(SQLModel, table=True):
+class ProductBase(SQLModel):
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(default="general", max_length=80)
+    description: str = Field(default="", max_length=500)
+    price: Decimal = Field(gt=0, sa_column=Column(Numeric(10, 2), nullable=False))
+    stock: int = Field(default=0, ge=0)
+
+
+class Product(ProductBase, table=True):
     __tablename__ = "products"
 
     id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(min_length=1, max_length=120)
-    category: str = Field(default="general", max_length=80)
-    description: str = Field(default="", max_length=500)
-    price: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
-    stock: int = Field(default=0, ge=0)
     created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime, nullable=False))
 
 
-class ProductRead(SQLModel):
+class ProductRead(ProductBase):
     id: int
-    name: str
-    category: str
-    description: str
-    price: Decimal
-    stock: int
 
 
-class ProductCreate(SQLModel):
-    name: str = Field(min_length=1, max_length=120)
-    category: str = Field(default="general", max_length=80)
-    description: str = Field(default="", max_length=500)
-    price: Decimal = Field(gt=0)
-    stock: int = Field(default=0, ge=0)
+class ProductCreate(ProductBase):
+    pass
 
 
 class ProductUpdate(SQLModel):
@@ -3511,12 +3984,13 @@ ANSWER_WALKTHROUGHS = {
     "chapter06": [
         {
             "title": "Где появляется новое поле category",
-            "body": "Поле категории должно пройти через все SQLModel-слои: таблицу, модель создания, модель обновления, модель ответа, CRUD endpoint-ы и миграцию.",
+            "body": "Поле категории должно пройти через общий базовый класс, таблицу, модель создания, модель обновления, модель ответа, CRUD endpoint-ы и миграцию.",
             "items": [
-                "<code>Product.category</code> добавляет колонку в SQLModel-таблицу.",
-                "<code>ProductCreate.category</code> разрешает клиенту передать категорию при создании продукта.",
-                "<code>ProductUpdate.category</code> разрешает поменять категорию при обновлении.",
-                "<code>ProductRead.category</code> возвращает категорию наружу в JSON-ответе.",
+                "<code>ProductBase.category</code> описывает общее поле один раз.",
+                "<code>Product(ProductBase, table=True)</code> наследует поле и превращает его в колонку таблицы.",
+                "<code>ProductCreate(ProductBase)</code> наследует поле и разрешает клиенту передать категорию при создании продукта.",
+                "<code>ProductRead(ProductBase)</code> наследует поле и возвращает категорию наружу в JSON-ответе.",
+                "<code>ProductUpdate.category</code> остаётся отдельным optional-полем, потому что при частичном обновлении клиент может прислать только одно поле.",
                 "Если забыть модель ответа, поле будет в базе, но клиент его не увидит.",
             ],
         },
@@ -3525,6 +3999,8 @@ ANSWER_WALKTHROUGHS = {
             "items": [
                 "<code>default=\"general\"</code> даёт понятное значение, если клиент не передал категорию.",
                 "<code>nullable=False</code> говорит базе: у продукта всегда должна быть категория.",
+                "<code>ProductBase</code> убирает повтор одинаковых полей между таблицей, схемой создания и схемой ответа.",
+                "<code>ProductUpdate</code> не наследуется от <code>ProductBase</code>, потому что в update все поля optional, а в base часть полей обязательная.",
                 "В учебной SQLite-БД таблицы создаются автоматически, но в реальном проекте структура меняется через миграции.",
                 "Если в уже существующей таблице есть старые продукты, миграция должна дать им значение по умолчанию.",
             ],
@@ -3992,17 +4468,21 @@ ANSWER_DEEP_DIVES = {
                 "<code>DATABASE_URL</code> задаёт адрес базы. По умолчанию используется SQLite-файл главы.",
                 "<code>engine</code> знает, как подключаться к базе, а <code>Session(engine)</code> открывает рабочую сессию.",
                 "<code>SQLModel.metadata</code> знает, какие таблицы описаны через <code>table=True</code>.",
-                "<code>Product</code> описывает таблицу, а <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> описывают JSON снаружи.",
+                "<code>ProductBase</code> хранит общие поля, чтобы не копировать <code>name</code>, <code>category</code>, <code>description</code>, <code>price</code> и <code>stock</code> в несколько классов.",
+                "<code>Product</code> наследуется от <code>ProductBase</code> и описывает таблицу, потому что у него есть <code>table=True</code>.",
+                "<code>ProductCreate</code> и <code>ProductRead</code> тоже наследуются от <code>ProductBase</code>, но остаются JSON-схемами, потому что у них нет <code>table=True</code>.",
+                "<code>ProductUpdate</code> стоит отдельно, потому что все его поля optional для частичного обновления.",
                 "Endpoint-ы не должны напрямую знать все детали таблицы. Они работают через session и модели.",
             ],
         },
         {
             "title": "Почему category проходит через несколько классов",
             "items": [
-                "SQLModel-таблица отвечает за хранение в базе: без <code>Product.category</code> колонка не появится в таблице.",
-                "Create schema отвечает за входные данные при создании: без <code>ProductCreate.category</code> клиент не сможет прислать категорию.",
+                "<code>ProductBase.category</code> - одно место, где описано общее поле категории.",
+                "SQLModel-таблица наследует это поле: без <code>Product(ProductBase, table=True)</code> колонка не появится в таблице.",
+                "Create schema наследует это поле: без <code>ProductCreate(ProductBase)</code> клиент не сможет прислать категорию.",
                 "Update schema отвечает за частичное изменение: без <code>ProductUpdate.category</code> категорию нельзя будет обновить.",
-                "Read schema отвечает за выходной JSON: без <code>ProductRead.category</code> клиент не увидит категорию в ответе.",
+                "Read schema наследует это поле: без <code>ProductRead(ProductBase)</code> клиент не увидит категорию в ответе.",
                 "Migration отвечает за реальную схему уже существующей базы: без Alembic production-база не узнает про новую колонку.",
             ],
         },

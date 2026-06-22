@@ -97,7 +97,13 @@ socket.emit(&quot;chat_message&quot;, { room: &quot;python&quot;, message: &quot
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Базовые Socket.IO события урока</h2>
-                    <pre><code>{% raw %}sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
+                    <pre><code>{% raw %}from collections import defaultdict
+
+from fastapi import FastAPI
+import socketio
+
+
+sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
 fastapi_app = FastAPI(title=&quot;Глава 10: Socket.IO chat&quot;)
 app = socketio.ASGIApp(
     sio,
@@ -106,6 +112,7 @@ app = socketio.ASGIApp(
 )
 
 socketio_clients: dict[str, str] = {}
+socketio_rooms: dict[str, set[str]] = defaultdict(set)
 
 @sio.event
 async def connect(sid, environ, auth):
@@ -134,7 +141,9 @@ async def direct_message(sid, data):
 
 @sio.event
 async def disconnect(sid):
-    socketio_clients.pop(sid, None){% endraw %}</code></pre>
+    socketio_clients.pop(sid, None)
+    for members in socketio_rooms.values():
+        members.discard(sid){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">

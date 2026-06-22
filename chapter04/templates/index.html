@@ -88,12 +88,54 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}@app.exception_handler(DemoError)
+                    <pre><code>{% raw %}import time
+
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+
+app = FastAPI(
+    title=&quot;Глава 4: Error Handling&quot;,
+    description=&quot;Exception handlers and middleware&quot;,
+    version=&quot;1.0.0&quot;,
+)
+
+
+class DemoError(Exception):
+    pass
+
+
+class ValidationRequest(BaseModel):
+    name: str = &quot;&quot;
+    age: int = 0
+
+
+@app.middleware(&quot;http&quot;)
+async def request_logging_middleware(request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    response.headers[&quot;X-Process-Time&quot;] = f&quot;{time.perf_counter() - started:.6f}&quot;
+    return response
+
+
+@app.exception_handler(DemoError)
 async def demo_error_handler(request, exc: DemoError):
     return JSONResponse(
         status_code=500,
         content={&quot;error&quot;: str(exc), &quot;path&quot;: str(request.url.path)},
-    ){% endraw %}</code></pre>
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    return JSONResponse(status_code=400, content={&quot;error&quot;: &quot;Validation failed&quot;, &quot;details&quot;: exc.errors()})
+
+
+@app.get(&quot;/api/error-demo/badrequest&quot;)
+async def bad_request_demo():
+    raise HTTPException(status_code=400, detail=&quot;Это пример BadRequest ответа&quot;){% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">

@@ -55,7 +55,7 @@ FULL_ANSWER_CONTEXT_MARKERS = [
     (chapter03_app, ["import httpx", "JSONPLACEHOLDER", "class ExternalApiService", "async def get_post_comments"]),
     (chapter04_app, ["import time", "app = FastAPI", "class NotReadyError", "async def not_ready"]),
     (chapter05_app, ["from pathlib import Path", "Jinja2Templates", "HOMEWORK_STEPS", "{% for step in homework_steps %}"]),
-    (chapter06_app, ["from sqlmodel import", "class Product(SQLModel, table=True)", "class ProductRead", "def upgrade()"]),
+    (chapter06_app, ["from sqlmodel import", "class ProductBase(SQLModel)", "class Product(ProductBase, table=True)", "class ProductRead(ProductBase)", "def upgrade()"]),
     (chapter07_app, ["import os", "OAuth2PasswordBearer", "def require_admin", "async def admin_area"]),
     (chapter08_app, ["import secrets", "class RefreshToken", "revoked_at", "def revoke_token"]),
     (chapter09_app, ["from uuid import uuid4", "class ConnectionManager", 'message == "/who"']),
@@ -150,6 +150,15 @@ def test_code_tab_does_not_show_task_answers():
 
         for marker in markers:
             assert marker not in code_tab, f"{service} leaks task answer marker into code tab: {marker}"
+
+
+def test_code_tab_shows_imports_for_every_chapter():
+    for app in CHAPTER_APPS:
+        response = TestClient(app).get("/")
+        assert response.status_code == 200
+        code_tab = html_section(response.text, '<section id="code"', '<section id="task"')
+
+        assert "import " in code_tab or "from " in code_tab
 
 
 def test_answers_include_full_code_context_not_only_fragments():
