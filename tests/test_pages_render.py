@@ -367,6 +367,10 @@ def test_chapter06_lesson_shows_beginner_alembic_commands():
     assert "alembic upgrade head" in text
     assert "alembic downgrade -1" in text
     assert "Что делают команды Alembic" in text
+    assert "Последовательность работы" in text
+    assert "chapter06/app/main.py" in text
+    assert "chapter06/alembic/versions/" in text
+    assert "не обязательно переписывать сгенерированный" in text
 
 
 def test_chapter10_uses_socketio_wording_without_old_comparison():

@@ -307,7 +307,20 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 <li>Создать Alembic migration с <code>op.add_column</code>.</li>
 <li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
 </article>
-<article class="info-box"><h2>2. Полный код SQLModel-части</h2>
+<article class="info-box"><h2>2. Последовательность работы</h2>
+<p>Делайте именно в таком порядке. Если сначала запустить Alembic, а потом менять SQLModel-код, будет сложно понять, какая часть уже готова, а какая ещё нет.</p>
+<ul class="flow-list"><li>1. Откройте файл <code>chapter06/app/main.py</code> и сначала поправьте Python-код: добавьте <code>ProductBase</code>, наследование схем и поле <code>category</code>.</li>
+<li>2. Проверьте глазами, что <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследуются от <code>ProductBase</code>, а <code>ProductUpdate</code> содержит optional-поле <code>category</code>.</li>
+<li>3. Перейдите в папку главы командой <code>cd chapter06</code>. Alembic-команды запускаем отсюда, потому что здесь лежит <code>alembic.ini</code>.</li>
+<li>4. Выполните <code>alembic current</code>, чтобы увидеть, на какой миграции сейчас находится база.</li>
+<li>5. Создайте новую миграцию: <code>alembic revision -m "add product category"</code>.</li>
+<li>6. Откройте созданный файл в <code>chapter06/alembic/versions/</code>. Alembic уже добавит туда переменные <code>revision</code> и <code>down_revision</code>.</li>
+<li>7. Вставьте в этот файл содержимое функций <code>upgrade()</code> и <code>downgrade()</code> из ответа. Если файл создан командой Alembic, не обязательно переписывать сгенерированный <code>revision</code>.</li>
+<li>8. Выполните <code>alembic upgrade head</code>, чтобы реально добавить колонку <code>category</code> в SQLite-таблицу.</li>
+<li>9. Выполните <code>alembic current</code> ещё раз. Теперь база должна быть на новой миграции.</li>
+<li>10. Запустите приложение и проверьте <code>POST /api/products</code>, затем <code>GET /api/products</code>.</li></ul>
+</article>
+<article class="info-box"><h2>3. Полный код SQLModel-части</h2>
 <pre><code>{% raw %}import os
 from datetime import datetime
 from decimal import Decimal
@@ -423,7 +436,7 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(product)
     db.commit(){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Мини-пример JSON, Column и Relationship в SQLModel</h2>
+<article class="info-box"><h2>4. Мини-пример JSON, Column и Relationship в SQLModel</h2>
 <p>Этот фрагмент не обязателен для поля <code>category</code>, но показывает импорт и синтаксис, который часто нужен в реальных моделях: JSON-колонка и связь между таблицами.</p>
 <pre><code>{% raw %}from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
@@ -441,7 +454,7 @@ class ProductReview(SQLModel, table=True):
     text: str
     product: Product | None = Relationship(back_populates=&quot;reviews&quot;){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>4. Полная Alembic migration</h2>
+<article class="info-box"><h2>5. Полная Alembic migration</h2>
 <pre><code>{% raw %}from alembic import op
 import sqlalchemy as sa
 
@@ -462,7 +475,7 @@ def upgrade():
 def downgrade():
     op.drop_column(&quot;products&quot;, &quot;category&quot;){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>5. Команды Alembic для этой задачи</h2>
+<article class="info-box"><h2>6. Команды Alembic для этой задачи</h2>
 <p>Сначала меняете SQLModel-код, затем создаёте файл миграции, вставляете туда <code>upgrade()</code> и <code>downgrade()</code> из ответа, после этого применяете миграцию. Для первого раза лучше использовать обычный <code>alembic revision -m</code>: так вы сами видите, какие строки меняют базу. Позже можно попробовать <code>alembic revision --autogenerate -m</code>, но автогенерацию всё равно нужно читать глазами.</p>
 <pre><code>{% raw %}cd chapter06
 
@@ -487,7 +500,7 @@ alembic downgrade -1
 # 7. Посмотреть всю историю миграций.
 alembic history{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>6. Как проверить</h2>
+<article class="info-box"><h2>7. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Body содержит <code>"category": "books"</code>.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Каждый продукт возвращает поле <code>category</code>.</span></article>
 <article class="endpoint-card"><strong><code>Alembic</code></strong><span>После <code>alembic upgrade head</code> команда <code>alembic current</code> показывает новую миграцию.</span></article></div>

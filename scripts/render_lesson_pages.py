@@ -2468,6 +2468,22 @@ async def template_data():
             ],
         },
         {
+            "title": "Последовательность работы",
+            "body": "Делайте именно в таком порядке. Если сначала запустить Alembic, а потом менять SQLModel-код, будет сложно понять, какая часть уже готова, а какая ещё нет.",
+            "items": [
+                "1. Откройте файл <code>chapter06/app/main.py</code> и сначала поправьте Python-код: добавьте <code>ProductBase</code>, наследование схем и поле <code>category</code>.",
+                "2. Проверьте глазами, что <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследуются от <code>ProductBase</code>, а <code>ProductUpdate</code> содержит optional-поле <code>category</code>.",
+                "3. Перейдите в папку главы командой <code>cd chapter06</code>. Alembic-команды запускаем отсюда, потому что здесь лежит <code>alembic.ini</code>.",
+                "4. Выполните <code>alembic current</code>, чтобы увидеть, на какой миграции сейчас находится база.",
+                "5. Создайте новую миграцию: <code>alembic revision -m \"add product category\"</code>.",
+                "6. Откройте созданный файл в <code>chapter06/alembic/versions/</code>. Alembic уже добавит туда переменные <code>revision</code> и <code>down_revision</code>.",
+                "7. Вставьте в этот файл содержимое функций <code>upgrade()</code> и <code>downgrade()</code> из ответа. Если файл создан командой Alembic, не обязательно переписывать сгенерированный <code>revision</code>.",
+                "8. Выполните <code>alembic upgrade head</code>, чтобы реально добавить колонку <code>category</code> в SQLite-таблицу.",
+                "9. Выполните <code>alembic current</code> ещё раз. Теперь база должна быть на новой миграции.",
+                "10. Запустите приложение и проверьте <code>POST /api/products</code>, затем <code>GET /api/products</code>.",
+            ],
+        },
+        {
             "title": "Полный код SQLModel-части",
             "code": '''
 import os
