@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Глава 12: Socket.IO чат, БД и тестирование</title>
+    <title>Глава 12: Тестирование FastAPI-приложения</title>
     <link rel="stylesheet" href="/static/site.css">
 </head>
 <body>
@@ -19,12 +19,12 @@
         </nav>
 
         <section class="hero">
-            <h1>Глава 12: Socket.IO чат, БД и тестирование</h1>
-            <p>Chat API, SQLAlchemy storage, service layer, Socket.IO events и тестовая SQLite-БД.</p>
+            <h1>Глава 12: Тестирование FastAPI-приложения</h1>
+            <p>Обычные тесты, unit tests, API tests, integration tests, pytest fixtures и тестовая SQLite-БД.</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8012</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8012/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы умеете хранить сообщения чата в БД, отдавать их через REST и отправлять новые сообщения через Socket.IO.</span>
+                <span><strong>Результат:</strong> После главы вы понимаете, чем отличаются обычные, unit, API и integration tests, умеете готовить fixtures и подменять БД через dependency_overrides.</span>
             </div>
         </section>
 
@@ -40,25 +40,54 @@
                 <article class="info-box">
                     <h2>Что разбираем в этой главе</h2>
                     <ul class="flow-list">
-                        <li><strong>TestClient</strong> - синхронный клиент для тестирования ASGI-приложения.</li>
+                        <li><strong>Обычный тест</strong> - проверяет маленькую функцию без FastAPI, HTTP и базы, например форматирование словаря.</li>
+<li><strong>Unit test</strong> - проверяет один слой почти изолированно. В главе это <code>ChatService</code> с тестовой SQLite-БД.</li>
+<li><strong>API test</strong> - вызывает endpoint через <code>TestClient</code> и проверяет status code и JSON.</li>
+<li><strong>Integration test</strong> - проверяет цепочку целиком: API -> dependency -> service -> database -> response.</li>
+<li><strong>Fixture</strong> - функция pytest, которая готовит ресурс для теста: DB session, TestClient, тестовые данные, очистку.</li>
+<li><strong>TestClient</strong> - синхронный клиент для тестирования ASGI-приложения без запуска Uvicorn.</li>
 <li><strong>dependency_overrides</strong> - замена production dependency тестовой реализацией.</li>
 <li><strong>sqlite:// + StaticPool</strong> - одна in-memory БД на весь тестовый engine.</li>
-<li><strong>Service layer</strong> - класс <code>ChatService</code>, который можно проверять отдельно.</li>
-<li><strong>Socket.IO chat event</strong> - событие <code>chat_message</code> сохраняет сообщение через тот же service layer.</li>
                     </ul>
                 </article>
 
-                
+                <article class="info-box"><h2>Виды тестов в этой главе</h2>
+<ul class="flow-list"><li><strong>Обычный тест</strong>: берём простую функцию и проверяем результат. Он самый дешёвый и быстрый.</li>
+<li><strong>Unit test</strong>: проверяем <code>ChatService</code> напрямую. FastAPI endpoint-ы не участвуют, поэтому легче понять, где ошибка в бизнес-логике.</li>
+<li><strong>API test</strong>: вызываем <code>POST /api/chat/messages</code> через <code>TestClient</code>. Здесь проверяется FastAPI routing, validation, dependency и JSON response.</li>
+<li><strong>Integration test</strong>: выполняем сценарий из нескольких шагов: создать группу, создать сообщение, получить список. Он проверяет, что слои работают вместе.</li></ul>
+</article>
+<article class="info-box"><h2>Fixtures как вторая подтема</h2>
+<p>Fixture нужна, чтобы не копировать подготовку тестов в каждую функцию. Например, тестовая БД и TestClient нужны многим тестам.</p>
+<p>В pytest fixture объявляется через <code>@pytest.fixture</code>. Всё до <code>yield</code> - подготовка. Всё после <code>yield</code> - очистка.</p>
+<p>В главе fixture подменяет <code>get_db</code>, чтобы тесты не писали данные в обычный файл <code>chapter12.db</code>.</p>
+<pre><code>{% raw %}@pytest.fixture
+def api_client():
+    _, override = make_sqlite_override(Base, get_db)
+    app.dependency_overrides[get_db] = override
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear(){% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>Почему тестовая БД отдельная</h2>
+<ul class="flow-list"><li>Тесты должны быть повторяемыми: один запуск не должен зависеть от данных прошлого запуска.</li>
+<li>Production/demo-БД может содержать старые сообщения, поэтому тесты не должны в неё писать.</li>
+<li><code>sqlite://</code> создаёт in-memory SQLite-БД, а <code>StaticPool</code> помогает всем session видеть одну и ту же тестовую базу.</li>
+<li><code>dependency_overrides</code> заставляет endpoint-ы использовать тестовую <code>get_db</code> вместо обычной.</li></ul>
+</article>
 
                 <article class="info-box">
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
-                        <li>REST endpoint создаёт группу через <code>ChatService.create_group</code>.</li>
-<li>Socket.IO клиент подключается к <code>/socket.io</code> и отправляет <code>join_group</code>.</li>
-<li>Клиент отправляет событие <code>chat_message</code> с <code>text</code>, <code>sender</code> и <code>group_id</code>.</li>
-<li>Socket.IO handler открывает SQLAlchemy Session и вызывает <code>ChatService.send_message</code>.</li>
-<li>Сообщение сохраняется в SQLite и превращается в простой JSON через <code>message_to_dict</code>.</li>
-<li>Сервер делает <code>emit</code> в комнату группы, а REST endpoint может потом вернуть ту же запись из БД.</li>
+                        <li>Pytest находит функции, имена которых начинаются с <code>test_</code>.</li>
+<li>Если тест просит fixture, pytest сначала запускает fixture и передаёт результат в тест.</li>
+<li>Fixture создаёт тестовую SQLite-БД и подменяет <code>get_db</code> через <code>app.dependency_overrides</code>.</li>
+<li>Unit test вызывает <code>ChatService</code> напрямую и проверяет бизнес-логику без HTTP.</li>
+<li>API test вызывает endpoint через <code>TestClient</code> и проверяет status code и JSON.</li>
+<li>Integration test выполняет несколько HTTP-запросов подряд и проверяет, что данные реально прошли через БД.</li>
+<li>После теста fixture очищает <code>dependency_overrides</code>, чтобы подмена не протекла в другие тесты.</li>
                     </ol>
                 </article>
 
@@ -69,8 +98,6 @@
 <article class="endpoint-card"><strong><code>GET /api/chat/groups</code></strong><span>Список групп.</span></article>
 <article class="endpoint-card"><strong><code>POST /api/chat/messages</code></strong><span>Отправка сообщения.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/chat/messages?group_id=...</code></strong><span>Получение сообщений, опционально по группе.</span></article>
-<article class="endpoint-card"><strong><code>GET /api/chat/realtime</code></strong><span>Справка по Socket.IO events главы.</span></article>
-<article class="endpoint-card"><strong><code>Socket.IO /socket.io</code></strong><span>События <code>set_name</code>, <code>join_group</code>, <code>chat_message</code>, <code>list_messages</code>.</span></article>
                     </div>
                 </article>
 
@@ -86,11 +113,8 @@
 <article class="info-box command-box"><h2>Отправить сообщение</h2><pre><code>{% raw %}curl -X POST http://localhost:8012/api/chat/messages \
   -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;text&quot;:&quot;hello&quot;,&quot;sender&quot;:&quot;anna&quot;,&quot;group_id&quot;:1}&#x27;{% endraw %}</code></pre></article>
-<article class="info-box command-box"><h2>Отправить сообщение через Socket.IO</h2><pre><code>{% raw %}const socket = io(&quot;http://localhost:8012&quot;, { path: &quot;/socket.io&quot; });
-socket.on(&quot;chat_message&quot;, data =&gt; console.log(data));
-socket.emit(&quot;set_name&quot;, { username: &quot;anna&quot; });
-socket.emit(&quot;join_group&quot;, { group_id: 1 });
-socket.emit(&quot;chat_message&quot;, { text: &quot;hello realtime&quot;, group_id: 1 });{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить тесты главы</h2><pre><code>{% raw %}pytest tests/test_chapter12_chat.py -q{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Запустить только API tests по имени</h2><pre><code>{% raw %}pytest tests/test_chapter12_chat.py -q -k api{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -98,155 +122,136 @@ socket.emit(&quot;chat_message&quot;, { text: &quot;hello realtime&quot;, group_
         <section id="code" class="tab-panel">
             <div class="section-grid">
                 <article class="info-box">
-                    <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}import os
-from datetime import datetime
+                    <h2>Тесты и fixtures главы</h2>
+                    <pre><code>{% raw %}from datetime import datetime
+from types import SimpleNamespace
 
-from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
-from sqlalchemy.pool import StaticPool
-import socketio
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
-
-DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter12.db&quot;)
+from chapter12.app.main import Base, ChatService, app, get_db, message_to_dict
+from tests.conftest import make_sqlite_override
 
 
-fastapi_app = FastAPI(title=&quot;Глава 12: Socket.IO и тестирование&quot;)
-sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
-
-
-def make_engine(database_url: str):
-    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
-    kwargs = {&quot;connect_args&quot;: connect_args}
-    if database_url == &quot;sqlite://&quot;:
-        kwargs[&quot;poolclass&quot;] = StaticPool
-    return create_engine(database_url, **kwargs)
-
-
-engine = make_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class ChatGroup(Base):
-    __tablename__ = &quot;chat_groups&quot;
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    messages: Mapped[list[&quot;Message&quot;]] = relationship(back_populates=&quot;group&quot;)
-
-
-class Message(Base):
-    __tablename__ = &quot;messages&quot;
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    text: Mapped[str] = mapped_column(String(1000), nullable=False)
-    sender: Mapped[str] = mapped_column(String(120), nullable=False)
-    group_id: Mapped[int | None] = mapped_column(ForeignKey(&quot;chat_groups.id&quot;), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    group: Mapped[ChatGroup | None] = relationship(back_populates=&quot;messages&quot;)
-
-
-class SendMessageRequest(BaseModel):
-    text: str = Field(min_length=1)
-    sender: str = Field(min_length=1)
-    group_id: int | None = None
-
-
-class ChatService:
-    def __init__(self, db: Session):
-        self.db = db
-
-    def send_message(self, text: str, sender: str, group_id: int | None = None) -&gt; Message:
-        message = Message(text=text, sender=sender, group_id=group_id)
-        self.db.add(message)
-        self.db.commit()
-        self.db.refresh(message)
-        return message
-
-
-def get_db():
-    db = SessionLocal()
+@pytest.fixture
+def db_session():
+    engine, _ = make_sqlite_override(Base, get_db)
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
 
 
-def get_chat_service(db: Session = Depends(get_db)) -&gt; ChatService:
-    return ChatService(db)
+@pytest.fixture
+def api_client():
+    _, override = make_sqlite_override(Base, get_db)
+    app.dependency_overrides[get_db] = override
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
 
 
-socketio_clients: dict[str, str] = {}
+def test_message_to_dict_plain_test():
+    message = SimpleNamespace(
+        id=1,
+        text=&quot;hello&quot;,
+        sender=&quot;anna&quot;,
+        group_id=None,
+        created_at=datetime(2026, 1, 1, 12, 0),
+    )
+
+    result = message_to_dict(message)
+
+    assert result[&quot;text&quot;] == &quot;hello&quot;
+    assert result[&quot;created_at&quot;] == &quot;2026-01-01T12:00:00&quot;
 
 
-def message_to_dict(message: Message) -&gt; dict:
-    return {
-        &quot;id&quot;: message.id,
-        &quot;text&quot;: message.text,
-        &quot;sender&quot;: message.sender,
-        &quot;group_id&quot;: message.group_id,
-        &quot;created_at&quot;: message.created_at.isoformat(),
-    }
+def test_chat_service_unit_saves_message(db_session):
+    service = ChatService(db_session)
+    group = service.create_group(&quot;unit&quot;)
+
+    message = service.send_message(text=&quot;hello&quot;, sender=&quot;anna&quot;, group_id=group.id)
+
+    assert message.id is not None
+    assert service.get_messages(group.id)[0].text == &quot;hello&quot;
 
 
-@sio.event
-async def chat_message(sid, data):
-    sender = data.get(&quot;sender&quot;) or socketio_clients.get(sid, &quot;anonymous&quot;)
-    text = data.get(&quot;text&quot;) or data.get(&quot;message&quot;, &quot;&quot;)
-    group_id = data.get(&quot;group_id&quot;)
-    with SessionLocal() as db:
-        service = ChatService(db)
-        message = service.send_message(text=text, sender=sender, group_id=group_id)
-        payload = {&quot;event&quot;: &quot;chat_message&quot;, &quot;message&quot;: message_to_dict(message)}
-    room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
-    await sio.emit(&quot;chat_message&quot;, payload, room=room)
+def test_chat_api_creates_message(api_client):
+    group = api_client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;api&quot;}).json()
+
+    response = api_client.post(&quot;/api/chat/messages&quot;, json={
+        &quot;text&quot;: &quot;hello&quot;,
+        &quot;sender&quot;: &quot;anna&quot;,
+        &quot;group_id&quot;: group[&quot;id&quot;],
+    })
+
+    assert response.status_code == 200
+    assert response.json()[&quot;sender&quot;] == &quot;anna&quot;
 
 
-app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
+def test_chat_integration_group_message_flow(api_client):
+    group = api_client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;integration&quot;}).json()
+    api_client.post(&quot;/api/chat/messages&quot;, json={
+        &quot;text&quot;: &quot;from integration&quot;,
+        &quot;sender&quot;: &quot;student&quot;,
+        &quot;group_id&quot;: group[&quot;id&quot;],
+    })
+
+    response = api_client.get(f&quot;/api/chat/messages?group_id={group[&#x27;id&#x27;]}&quot;)
+
+    assert response.status_code == 200
+    assert response.json()[0][&quot;text&quot;] == &quot;from integration&quot;{% endraw %}</code></pre>
                 </article>
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
-                    <p>В финальной главе один и тот же чат работает двумя способами: через REST API и через Socket.IO события.</p>
-<p>REST endpoint и Socket.IO handler используют один <code>ChatService</code>, поэтому правила сохранения сообщений находятся в одном месте.</p>
-<p>Тесты по-прежнему подменяют БД через dependency override для REST, а Socket.IO часть показывает, как подключить real-time слой к тому же сервису.</p>
+                    <p>В этой главе главный объект изучения - не чат сам по себе, а тесты вокруг чата.</p>
+<p>Обычный тест проверяет маленькую функцию, unit test проверяет сервис, API test вызывает endpoint, integration test проверяет несколько слоёв вместе.</p>
+<p>Fixtures нужны, чтобы один раз описать подготовку тестовой БД и клиента, а потом использовать их в разных тестах.</p>
                 </article>
 
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>@sio.event</code></dt><dd>Регистрируем Socket.IO событие. Имя функции становится именем события для клиента.</dd>
-<dt><code>async def chat_message(sid, data)</code></dt><dd>Сервер обрабатывает событие <code>chat_message</code>, которое прислал Socket.IO клиент.</dd>
-<dt><code>sender = data.get(...)</code></dt><dd>Берём отправителя из payload или из имени, сохранённого при <code>set_name</code>.</dd>
-<dt><code>with SessionLocal() as db</code></dt><dd>Открываем короткую Session для работы с SQLite внутри real-time события.</dd>
-<dt><code>service = ChatService(db)</code></dt><dd>Используем тот же service layer, что и REST endpoint-ы.</dd>
-<dt><code>service.send_message(...)</code></dt><dd>Сохраняем сообщение в БД и получаем ORM-объект с id и created_at.</dd>
-<dt><code>message_to_dict(message)</code></dt><dd>Превращаем ORM-объект в простой JSON-friendly словарь.</dd>
-<dt><code>await sio.emit(..., room=room)</code></dt><dd>Отправляем сохранённое сообщение всем Socket.IO клиентам выбранной комнаты.</dd>
+                        <dt><code>import pytest</code></dt><dd>Нужен для <code>@pytest.fixture</code>. Без него fixture не объявить.</dd>
+<dt><code>@pytest.fixture</code></dt><dd>Говорит pytest: эту функцию можно подставлять в тесты по имени параметра.</dd>
+<dt><code>def db_session()</code></dt><dd>Fixture для unit tests. Она создаёт тестовую DB session и закрывает её после теста.</dd>
+<dt><code>make_sqlite_override(Base, get_db)</code></dt><dd>Создаёт in-memory SQLite-БД с теми же таблицами, что и приложение.</dd>
+<dt><code>yield db</code></dt><dd>Возвращает session тесту. Код после <code>yield</code> выполнится как cleanup.</dd>
+<dt><code>def api_client()</code></dt><dd>Fixture для API и integration tests. Она готовит <code>TestClient</code> и подменяет <code>get_db</code>.</dd>
+<dt><code>app.dependency_overrides[get_db] = override</code></dt><dd>Заставляет FastAPI endpoint-ы использовать тестовую БД вместо обычной.</dd>
+<dt><code>TestClient(app)</code></dt><dd>Позволяет вызывать endpoint-ы как HTTP, но без запуска отдельного сервера.</dd>
+<dt><code>test_message_to_dict_plain_test</code></dt><dd>Обычный тест: проверяет helper без FastAPI и БД.</dd>
+<dt><code>test_chat_service_unit_saves_message</code></dt><dd>Unit test: работает напрямую с <code>ChatService</code>.</dd>
+<dt><code>test_chat_api_creates_message</code></dt><dd>API test: отправляет HTTP-запрос и проверяет status code/JSON.</dd>
+<dt><code>test_chat_integration_group_message_flow</code></dt><dd>Integration test: проверяет несколько endpoint-ов и реальную запись в тестовую БД.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
-                        <li>Socket.IO handler использует тот же <code>ChatService</code>, что и REST API, поэтому бизнес-правила не дублируются.</li>
-<li>Для каждого Socket.IO события открывается короткая Session и закрывается после сохранения сообщения.</li>
-<li>REST API и Socket.IO смотрят на одну таблицу, поэтому сообщение, отправленное через событие, видно через <code>GET /api/chat/messages</code>.</li>
+                        <li>Обычный тест проверяет маленькую функцию <code>message_to_dict</code> без FastAPI и базы.</li>
+<li>Unit test создаёт <code>ChatService</code> напрямую и проверяет его методы на тестовой DB session.</li>
+<li>API test работает через <code>TestClient</code>: он уже проверяет routing, validation и JSON response.</li>
+<li>Integration test объединяет несколько запросов и доказывает, что API, dependency, service и database работают вместе.</li>
+<li>Fixtures <code>db_session</code> и <code>api_client</code> убирают повтор подготовки и гарантируют очистку после теста.</li>
                     </ul>
                 </article>
 
                 <article class="info-box">
                     <h2>Типичные ошибки новичков</h2>
                     <ul class="flow-list">
-                        <li>Дублировать сохранение сообщений отдельно для REST и Socket.IO вместо общего <code>ChatService</code>.</li>
-<li>Держать одну SQLAlchemy Session глобально для всех Socket.IO событий.</li>
-<li>Отправлять в событие ORM-объект напрямую, не превращая его в простой JSON-словарь.</li>
+                        <li>Писать все тесты через API и совсем не проверять service layer отдельно.</li>
+<li>Копировать подготовку тестовой БД в каждый тест вместо fixture.</li>
+<li>Забыть <code>app.dependency_overrides.clear()</code>, из-за чего подмена БД влияет на другие тесты.</li>
+<li>Использовать обычный файл <code>chapter12.db</code> в тестах и получать случайные падения из-за старых данных.</li>
+<li>Называть тест integration, хотя он проверяет только одну маленькую функцию.</li>
                     </ul>
                 </article>
 
@@ -263,7 +268,7 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">Добавьте удаление группы чата: метод <code>ChatService.delete_group</code>, endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>, Socket.IO событие <code>delete_group</code> и тест, который доказывает, что сообщения удалённой группы больше не возвращаются.</div>
+                    <div class="callout">Добавьте удаление группы чата: метод <code>ChatService.delete_group</code>, endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code> и набор тестов через fixtures: unit test сервиса, API test endpoint-а и integration test полного сценария.</div>
                 </article>
 
                 <article class="info-box">
@@ -271,8 +276,10 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
                     <ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
 <li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
 <li>Добавить endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>.</li>
-<li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
-<li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
+<li>Сделать fixtures для тестовой DB session и API client.</li>
+<li>Написать unit test для <code>ChatService.delete_group</code>.</li>
+<li>Написать API test для <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>.</li>
+<li>Написать integration test: создать группу, создать сообщение, удалить группу, проверить пустой список сообщений.</li></ul>
                 </article>
 
                 <article class="info-box">
@@ -281,7 +288,8 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
                     <div class="endpoint-grid">
                         <article class="endpoint-card"><strong><code>DELETE /api/chat/groups/&#123;group_id&#125;</code></strong><span>Удаление существующей группы возвращает HTTP 204.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/chat/messages</code></strong><span>После удаления группы сообщения этой группы больше не возвращаются.</span></article>
-<article class="endpoint-card"><strong><code>Socket.IO delete_group</code></strong><span>Событие вызывает тот же <code>ChatService.delete_group</code> и отправляет <code>group_deleted</code>.</span></article>
+<article class="endpoint-card"><strong><code>Fixtures</code></strong><span>Тесты используют fixtures для тестовой DB session и API client.</span></article>
+<article class="endpoint-card"><strong><code>Unit/API/Integration</code></strong><span>Есть отдельные проверки service layer, HTTP endpoint-а и полного сценария.</span></article>
                     </div>
                 </article>
 
@@ -289,9 +297,11 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
                 <article class="info-box">
                     <h2>Контрольные вопросы</h2>
                     <ol class="flow-list">
-                        <li>Почему REST API и Socket.IO handler должны использовать один <code>ChatService</code>?</li>
-<li>Где в Socket.IO событии открывается SQLAlchemy Session?</li>
-<li>Как сообщение, отправленное через Socket.IO, потом увидеть через REST endpoint?</li>
+                        <li>Чем обычный тест отличается от unit test?</li>
+<li>Что проверяет API test через <code>TestClient</code>?</li>
+<li>Почему integration test обычно длиннее unit test?</li>
+<li>Зачем нужна fixture <code>api_client</code>?</li>
+<li>Почему <code>dependency_overrides</code> нужно очищать после теста?</li>
 <li>Почему тестовая БД должна быть отдельной от demo-БД?</li>
                     </ol>
                 </article>
@@ -306,12 +316,14 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
-<p>Задача про удаление группы должна быть решена на всех уровнях: service method, REST endpoint, Socket.IO событие и тест.</p>
+<p>Задача про удаление группы должна быть решена на трёх уровнях: service method, REST endpoint и тесты. В этой главе тесты важны не меньше кода приложения.</p>
 <ul class="flow-list"><li>Добавить метод <code>delete_group</code> в <code>ChatService</code>.</li>
 <li>Решить, что делать с сообщениями группы. В учебном варианте удаляем их перед удалением группы.</li>
 <li>Добавить endpoint <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>.</li>
-<li>Добавить Socket.IO событие <code>delete_group</code>, которое вызывает тот же service method.</li>
-<li>Написать тест: создать группу, сообщение, удалить группу, проверить 204 и пустой список сообщений.</li></ul>
+<li>Сделать fixtures для тестовой DB session и API client.</li>
+<li>Написать unit test для <code>ChatService.delete_group</code>.</li>
+<li>Написать API test для <code>DELETE /api/chat/groups/&#123;group_id&#125;</code>.</li>
+<li>Написать integration test: создать группу, создать сообщение, удалить группу, проверить пустой список сообщений.</li></ul>
 </article>
 <article class="info-box"><h2>2. Полный код приложения после изменения</h2>
 <pre><code>{% raw %}import os
@@ -322,7 +334,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 from sqlalchemy.pool import StaticPool
-import socketio
 
 
 DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter12.db&quot;)
@@ -457,142 +468,100 @@ def message_to_dict(message: Message) -&gt; dict:
 
 init_db()
 
-fastapi_app = FastAPI(
-    title=&quot;Глава 12: Socket.IO и тестирование&quot;,
-    description=&quot;API, service layer, Socket.IO, in-memory DB&quot;,
+app = FastAPI(
+    title=&quot;Глава 12: тесты и fixtures&quot;,
+    description=&quot;API, service layer, pytest fixtures, in-memory DB&quot;,
     version=&quot;1.0.0&quot;,
     docs_url=&quot;/docs&quot;,
     redoc_url=&quot;/redoc&quot;,
 )
-sio = socketio.AsyncServer(async_mode=&quot;asgi&quot;, cors_allowed_origins=&quot;*&quot;)
-socketio_clients: dict[str, str] = {}
 
 
-@fastapi_app.post(&quot;/api/chat/messages&quot;, response_model=MessageDto)
+@app.post(&quot;/api/chat/messages&quot;, response_model=MessageDto)
 async def send_message(request: SendMessageRequest, service: ChatService = Depends(get_chat_service)):
     return service.send_message(request.text, request.sender, request.group_id)
 
 
-@fastapi_app.get(&quot;/api/chat/messages&quot;, response_model=list[MessageDto])
+@app.get(&quot;/api/chat/messages&quot;, response_model=list[MessageDto])
 async def get_messages(group_id: int | None = None, service: ChatService = Depends(get_chat_service)):
     return service.get_messages(group_id)
 
 
-@fastapi_app.post(&quot;/api/chat/groups&quot;, response_model=ChatGroupDto)
+@app.post(&quot;/api/chat/groups&quot;, response_model=ChatGroupDto)
 async def create_group(request: CreateGroupRequest, service: ChatService = Depends(get_chat_service)):
     return service.create_group(request.name)
 
 
-@fastapi_app.get(&quot;/api/chat/groups&quot;, response_model=list[ChatGroupDto])
+@app.get(&quot;/api/chat/groups&quot;, response_model=list[ChatGroupDto])
 async def get_groups(service: ChatService = Depends(get_chat_service)):
     return service.get_groups()
 
 
-@fastapi_app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
+@app.delete(&quot;/api/chat/groups/{group_id}&quot;, status_code=204)
 async def delete_group(group_id: int, service: ChatService = Depends(get_chat_service)):
-    service.delete_group(group_id)
-
-
-@fastapi_app.get(&quot;/api/chat/realtime&quot;)
-async def realtime_info():
-    return {
-        &quot;socketio_path&quot;: &quot;/socket.io&quot;,
-        &quot;events&quot;: [&quot;set_name&quot;, &quot;join_group&quot;, &quot;chat_message&quot;, &quot;list_messages&quot;, &quot;delete_group&quot;],
-        &quot;connections&quot;: len(socketio_clients),
-    }
-
-
-@sio.event
-async def connect(sid, environ):
-    socketio_clients[sid] = &quot;anonymous&quot;
-    await sio.enter_room(sid, &quot;global&quot;)
-    await sio.emit(&quot;connected&quot;, {&quot;sid&quot;: sid}, to=sid)
-
-
-@sio.event
-async def disconnect(sid):
-    socketio_clients.pop(sid, None)
-
-
-@sio.event
-async def set_name(sid, data):
-    username = data.get(&quot;username&quot;, &quot;anonymous&quot;)
-    socketio_clients[sid] = username
-    await sio.emit(&quot;name_set&quot;, {&quot;sid&quot;: sid, &quot;username&quot;: username}, to=sid)
-
-
-@sio.event
-async def join_group(sid, data):
-    group_id = data.get(&quot;group_id&quot;)
-    if group_id is not None:
-        group_id = int(group_id)
-    room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
-    await sio.enter_room(sid, room)
-    await sio.emit(&quot;joined_group&quot;, {&quot;room&quot;: room, &quot;group_id&quot;: group_id}, to=sid)
-
-
-@sio.event
-async def chat_message(sid, data):
-    sender = data.get(&quot;sender&quot;) or socketio_clients.get(sid, &quot;anonymous&quot;)
-    text = data.get(&quot;text&quot;) or data.get(&quot;message&quot;, &quot;&quot;)
-    group_id = data.get(&quot;group_id&quot;)
-    if group_id is not None:
-        group_id = int(group_id)
-    with SessionLocal() as db:
-        service = ChatService(db)
-        message = service.send_message(text=text, sender=sender, group_id=group_id)
-        payload = {&quot;event&quot;: &quot;chat_message&quot;, &quot;message&quot;: message_to_dict(message)}
-    room = f&quot;group:{group_id}&quot; if group_id is not None else &quot;global&quot;
-    await sio.emit(&quot;chat_message&quot;, payload, room=room)
-
-
-@sio.event
-async def list_messages(sid, data):
-    group_id = data.get(&quot;group_id&quot;)
-    if group_id is not None:
-        group_id = int(group_id)
-    with SessionLocal() as db:
-        service = ChatService(db)
-        messages = [message_to_dict(message) for message in service.get_messages(group_id)]
-    await sio.emit(&quot;messages&quot;, {&quot;group_id&quot;: group_id, &quot;items&quot;: messages}, to=sid)
-
-
-@sio.event
-async def delete_group(sid, data):
-    group_id = int(data[&quot;group_id&quot;])
-    with SessionLocal() as db:
-        service = ChatService(db)
-        service.delete_group(group_id)
-    await sio.emit(&quot;group_deleted&quot;, {&quot;group_id&quot;: group_id})
-
-
-app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;)
-app.dependency_overrides = fastapi_app.dependency_overrides{% endraw %}</code></pre>
+    service.delete_group(group_id){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Полный тест</h2>
-<pre><code>{% raw %}from fastapi.testclient import TestClient
+<article class="info-box"><h2>3. Полный набор тестов с fixtures</h2>
+<pre><code>{% raw %}import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
-from chapter12.app.main import Base, app, get_db
+from chapter12.app.main import Base, ChatService, app, get_db
 from tests.conftest import make_sqlite_override
 
 
-def test_delete_group_removes_group_messages():
+@pytest.fixture
+def db_session():
+    engine, _ = make_sqlite_override(Base, get_db)
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def api_client():
     _, override = make_sqlite_override(Base, get_db)
     app.dependency_overrides[get_db] = override
     try:
-        client = TestClient(app)
-        group = client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;general&quot;}).json()
-        client.post(&quot;/api/chat/messages&quot;, json={
-            &quot;text&quot;: &quot;hello&quot;,
-            &quot;sender&quot;: &quot;anna&quot;,
-            &quot;group_id&quot;: group[&quot;id&quot;],
-        })
-
-        response = client.delete(f&quot;/api/chat/groups/{group[&#x27;id&#x27;]}&quot;)
-        assert response.status_code == 204
-        assert client.get(f&quot;/api/chat/messages?group_id={group[&#x27;id&#x27;]}&quot;).json() == []
+        with TestClient(app) as client:
+            yield client
     finally:
-        app.dependency_overrides.clear(){% endraw %}</code></pre>
+        app.dependency_overrides.clear()
+
+
+def test_delete_group_unit_removes_messages(db_session):
+    service = ChatService(db_session)
+    group = service.create_group(&quot;unit&quot;)
+    service.send_message(text=&quot;hello&quot;, sender=&quot;anna&quot;, group_id=group.id)
+
+    service.delete_group(group.id)
+
+    assert service.get_messages(group.id) == []
+
+
+def test_delete_group_api_returns_204(api_client):
+    group = api_client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;api&quot;}).json()
+
+    response = api_client.delete(f&quot;/api/chat/groups/{group[&#x27;id&#x27;]}&quot;)
+
+    assert response.status_code == 204
+
+
+def test_delete_group_integration_removes_group_messages(api_client):
+    group = api_client.post(&quot;/api/chat/groups&quot;, json={&quot;name&quot;: &quot;general&quot;}).json()
+    api_client.post(&quot;/api/chat/messages&quot;, json={
+        &quot;text&quot;: &quot;hello&quot;,
+        &quot;sender&quot;: &quot;anna&quot;,
+        &quot;group_id&quot;: group[&quot;id&quot;],
+    })
+
+    response = api_client.delete(f&quot;/api/chat/groups/{group[&#x27;id&#x27;]}&quot;)
+
+    assert response.status_code == 204
+    assert api_client.get(f&quot;/api/chat/messages?group_id={group[&#x27;id&#x27;]}&quot;).json() == []{% endraw %}</code></pre>
 </article>
 
                 <article class="info-box">
@@ -600,80 +569,69 @@ def test_delete_group_removes_group_messages():
                     <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
                 </article>
 
-                <article class="info-box"><h2>Почему удаление группы начинается с service layer</h2>
-<p>Удаление группы - бизнес-операция. Её должны использовать REST endpoint, Socket.IO event и тесты, поэтому логика живёт в <code>ChatService.delete_group</code>, а не копируется в каждом обработчике.</p>
-<ul class="flow-list"><li><code>def delete_group(self, group_id: int)</code> принимает id группы, потому что это главный входной параметр операции.</li>
-<li><code>self.db.get(ChatGroup, group_id)</code> ищет группу по primary key.</li>
-<li>Если группы нет, сервис бросает <code>HTTPException(status_code=404)</code>. Так REST сразу получит правильный HTTP-ответ.</li>
-<li>Если группа есть, сервис удаляет связанные сообщения и саму группу в одной транзакции.</li></ul>
+                <article class="info-box"><h2>Почему начинаем с unit test сервиса</h2>
+<p>Удаление группы - бизнес-операция. Самое удобное место для первой проверки - <code>ChatService.delete_group</code>, потому что unit test быстрее покажет ошибку в логике без HTTP.</p>
+<ul class="flow-list"><li>Unit test создаёт <code>ChatService(db_session)</code> напрямую.</li>
+<li>Тест создаёт группу и сообщение через методы сервиса.</li>
+<li>Потом вызывает <code>service.delete_group(group.id)</code>.</li>
+<li>После удаления тест проверяет, что <code>service.get_messages(group.id)</code> возвращает пустой список.</li>
+<li>Если этот тест падает, проблема почти точно в service layer, а не в FastAPI routing.</li></ul>
 </article>
-<article class="info-box"><h2>Почему сначала удаляются сообщения</h2>
-<ul class="flow-list"><li>Сообщения ссылаются на группу через <code>group_id</code>.</li>
-<li>Если удалить группу, а сообщения оставить, в базе появятся записи, которые указывают на несуществующую группу.</li>
-<li>В учебном решении выбран простой вариант: при удалении группы удаляются и её сообщения.</li>
-<li><code>self.db.query(Message).filter(Message.group_id == group_id).delete()</code> удаляет все сообщения выбранной группы.</li>
-<li>После этого <code>self.db.delete(group)</code> удаляет саму группу, а <code>self.db.commit()</code> сохраняет изменения.</li></ul>
+<article class="info-box"><h2>Как fixtures готовят тестовую базу</h2>
+<ul class="flow-list"><li><code>db_session</code> нужна для unit tests: она выдаёт чистую SQLAlchemy Session.</li>
+<li><code>api_client</code> нужна для API и integration tests: она создаёт <code>TestClient</code> и подменяет <code>get_db</code>.</li>
+<li><code>make_sqlite_override(Base, get_db)</code> создаёт in-memory SQLite-БД и таблицы для теста.</li>
+<li><code>yield</code> отдаёт готовый ресурс тесту, а код после <code>yield</code> закрывает session или очищает overrides.</li>
+<li><code>app.dependency_overrides.clear()</code> обязателен, чтобы подмена БД не влияла на другие тесты.</li></ul>
 </article>
-<article class="info-box"><h2>Как REST endpoint использует сервис</h2>
-<ul class="flow-list"><li><code>@fastapi_app.delete("/api/chat/groups/&#123;group_id&#125;", status_code=204)</code> регистрирует HTTP DELETE endpoint.</li>
-<li><code>group_id</code> берётся из URL path.</li>
-<li><code>service: ChatService = Depends(get_chat_service)</code> даёт endpoint-у готовый сервис с DB session.</li>
-<li><code>service.delete_group(group_id)</code> выполняет всю бизнес-логику.</li>
-<li>Функция ничего не возвращает, потому что status <code>204 No Content</code> означает успешное удаление без тела ответа.</li></ul>
+<article class="info-box"><h2>Как API test проверяет endpoint</h2>
+<ul class="flow-list"><li><code>@app.delete("/api/chat/groups/&#123;group_id&#125;", status_code=204)</code> регистрирует HTTP DELETE endpoint.</li>
+<li>API test создаёт группу через <code>api_client.post</code>, чтобы получить настоящий id из тестовой БД.</li>
+<li>Потом вызывает <code>api_client.delete(f"/api/chat/groups/&#123;group['id']&#125;")</code>.</li>
+<li>Главная проверка API test - status <code>204</code>.</li>
+<li>Этот тест доказывает, что route, path parameter, dependency и status code работают.</li></ul>
 </article>
-<article class="info-box"><h2>Как Socket.IO event использует тот же сервис</h2>
-<ul class="flow-list"><li><code>async def delete_group(sid, data)</code> получает payload от Socket.IO клиента.</li>
-<li><code>group_id = int(data["group_id"])</code> явно превращает значение в число, потому что из JSON оно может прийти строкой.</li>
-<li><code>with SessionLocal() as db</code> открывает короткую SQLAlchemy session на время события.</li>
-<li><code>ChatService(db)</code> создаёт тот же сервис, который использует REST API.</li>
-<li><code>await sio.emit("group_deleted", &#123;"group_id": group_id&#125;)</code> сообщает подключённым клиентам, что группа удалена.</li></ul>
-</article>
-<article class="info-box"><h2>Что доказывает тест</h2>
-<ul class="flow-list"><li><code>make_sqlite_override</code> подменяет обычную БД тестовой SQLite-БД, чтобы тест был изолированным.</li>
-<li>Тест создаёт группу, отправляет в неё сообщение, удаляет группу и потом запрашивает сообщения этой группы.</li>
-<li>Ожидаемый результат - пустой список. Это доказывает, что удаление затронуло не только группу, но и связанные сообщения.</li>
-<li><code>app.dependency_overrides.clear()</code> в <code>finally</code> очищает подмену, чтобы она не влияла на другие тесты.</li></ul>
+<article class="info-box"><h2>Как integration test проверяет полный сценарий</h2>
+<ul class="flow-list"><li>Integration test создаёт группу через REST API.</li>
+<li>Потом создаёт сообщение этой группы через REST API.</li>
+<li>Потом удаляет группу через новый DELETE endpoint.</li>
+<li>Потом запрашивает сообщения группы и ждёт пустой список.</li>
+<li>Так проверяется цепочка: API -> dependency -> service -> database -> API response.</li></ul>
 </article>
 
-                <article class="info-box"><h2>Читаем итоговое решение сверху вниз</h2>
-<ul class="flow-list"><li>Сначала идут imports для FastAPI, SQLAlchemy, Pydantic, datetime и Socket.IO.</li>
-<li>Потом создаются engine и SessionLocal, потому что они нужны всем операциям с БД.</li>
-<li>ORM-модели <code>ChatGroup</code> и <code>Message</code> описывают таблицы.</li>
-<li>Pydantic DTO описывают JSON-ответы REST API.</li>
-<li><code>ChatService</code> содержит бизнес-логику: создать группу, отправить сообщение, получить сообщения, удалить группу.</li>
-<li>REST endpoint-ы вызывают service через dependency.</li>
-<li>Socket.IO events тоже создают service, но открывают session вручную на время события.</li></ul>
+                <article class="info-box"><h2>Читаем тестовое решение сверху вниз</h2>
+<ul class="flow-list"><li>Сначала идут imports: <code>pytest</code>, <code>TestClient</code>, <code>sessionmaker</code>, приложение главы и helper <code>make_sqlite_override</code>.</li>
+<li>Потом идут fixtures. Это подготовка, которую pytest сам подставляет в тесты по имени параметра.</li>
+<li>После fixtures идут тесты от простого к сложному: обычный helper test, unit test, API test, integration test.</li>
+<li>Такой порядок удобен новичку: сначала маленькая функция, потом service, потом endpoint, потом весь сценарий.</li></ul>
 </article>
-<article class="info-box"><h2>Что происходит при DELETE /api/chat/groups/&#123;group_id&#125;</h2>
-<ul class="flow-list"><li>Клиент вызывает HTTP DELETE endpoint с id группы в URL.</li>
-<li>FastAPI достаёт <code>group_id</code> из path.</li>
-<li>Dependency <code>get_chat_service</code> создаёт service с DB session.</li>
-<li>Endpoint вызывает <code>service.delete_group(group_id)</code>.</li>
-<li>Service ищет группу. Если её нет, возвращается <code>404</code>.</li>
-<li>Service удаляет сообщения этой группы, потом саму группу, потом делает commit.</li>
-<li>Endpoint возвращает status <code>204</code>, потому что удаление прошло успешно и тело ответа не нужно.</li></ul>
+<article class="info-box"><h2>Что происходит внутри fixture</h2>
+<ul class="flow-list"><li>Pytest видит, что тест принимает параметр <code>api_client</code> или <code>db_session</code>.</li>
+<li>Он ищет fixture с таким именем и запускает её до теста.</li>
+<li><code>make_sqlite_override</code> создаёт отдельную SQLite-БД в памяти.</li>
+<li>Для API tests fixture кладёт override в <code>app.dependency_overrides</code>.</li>
+<li>Тест выполняется и пользуется готовым клиентом или DB session.</li>
+<li>После завершения теста выполняется cleanup: session закрывается, overrides очищаются.</li></ul>
 </article>
-<article class="info-box"><h2>Что происходит при Socket.IO delete_group</h2>
-<ul class="flow-list"><li>Клиент отправляет Socket.IO event <code>delete_group</code> с <code>group_id</code>.</li>
-<li>Handler получает <code>data</code> и превращает <code>group_id</code> в int.</li>
-<li>Handler открывает SQLAlchemy session через <code>with SessionLocal() as db</code>.</li>
-<li>Handler создаёт <code>ChatService(db)</code> и вызывает тот же <code>delete_group</code>.</li>
-<li>После успешного удаления сервер отправляет событие <code>group_deleted</code>.</li>
-<li>REST и Socket.IO используют одну бизнес-логику, поэтому поведение не расходится.</li></ul>
+<article class="info-box"><h2>Что проверяет каждый вид теста</h2>
+<ul class="flow-list"><li>Обычный тест отвечает на вопрос: правильно ли работает маленькая функция без инфраструктуры?</li>
+<li>Unit test отвечает на вопрос: правильно ли работает конкретный service method?</li>
+<li>API test отвечает на вопрос: правильно ли endpoint принимает запрос и возвращает HTTP-ответ?</li>
+<li>Integration test отвечает на вопрос: работают ли вместе routing, dependency, service и database?</li>
+<li>Если integration test падает, полезно смотреть, проходят ли unit и API tests. Так проще найти слой, где проблема.</li></ul>
 </article>
-<article class="info-box"><h2>Почему тест устроен именно так</h2>
-<ul class="flow-list"><li>Тест сначала подменяет production-БД на тестовую через <code>dependency_overrides</code>.</li>
-<li>Потом создаёт группу через настоящий REST endpoint, а не руками через SQLAlchemy.</li>
-<li>Потом создаёт сообщение этой группы, чтобы проверить не пустой случай.</li>
-<li>Потом удаляет группу через новый DELETE endpoint.</li>
-<li>Потом запрашивает сообщения группы и ожидает пустой список.</li>
-<li>Так тест проверяет весь путь: API -> dependency -> service -> database -> API response.</li></ul>
+<article class="info-box"><h2>Почему тесты устроены именно так</h2>
+<ul class="flow-list"><li>Fixtures вынесены наверх, потому что ими пользуются несколько тестов.</li>
+<li>Unit test не использует <code>TestClient</code>, потому что ему не нужен HTTP.</li>
+<li>API и integration tests используют <code>api_client</code>, потому что им важно пройти через FastAPI.</li>
+<li>Тестовая БД создаётся заново, чтобы старые данные не ломали ожидания.</li>
+<li>Cleanup в fixture нужен, чтобы один тест не оставлял overrides для другого теста.</li></ul>
 </article>
 
                 <article class="info-box">
                     <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
-                        <li>Сначала напишите тест на ожидаемое поведение service method, затем подключайте Socket.IO событие.</li>
+                        <li>Сначала напишите unit test на ожидаемое поведение service method, потом API test для endpoint-а и только после этого полный integration test.</li>
 <li>Решите явно: сообщения удаляются каскадно или получают <code>group_id=None</code>. Для учебного чата проще каскадное удаление.</li>
                     </ul>
                 </article>

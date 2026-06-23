@@ -46,7 +46,7 @@ TASK_ANSWER_MARKERS = [
     ("chapter09", chapter09_app, ["/who"]),
     ("chapter10", chapter10_app, ["leave_room", "left_room"]),
     ("chapter11", chapter11_app, ["admin_message"]),
-    ("chapter12", chapter12_app, ["delete_group", "group_deleted"]),
+    ("chapter12", chapter12_app, ["delete_group", "test_delete_group_integration_removes_group_messages"]),
 ]
 
 FULL_ANSWER_CONTEXT_MARKERS = [
@@ -61,7 +61,7 @@ FULL_ANSWER_CONTEXT_MARKERS = [
     (chapter09_app, ["from uuid import uuid4", "class ConnectionManager", 'message == "/who"']),
     (chapter10_app, ["import socketio", "socketio_rooms", "async def leave_room", "app = socketio.ASGIApp"]),
     (chapter11_app, ["import socketio", "def verify_user_token", "async def admin_message", "app = socketio.ASGIApp"]),
-    (chapter12_app, ["import socketio", "class ChatService", "def delete_group", "from fastapi.testclient import TestClient"]),
+    (chapter12_app, ["app = FastAPI", "class ChatService", "def delete_group", "from fastapi.testclient import TestClient"]),
 ]
 
 ANSWER_WALKTHROUGH_MARKERS = [
@@ -76,7 +76,7 @@ ANSWER_WALKTHROUGH_MARKERS = [
     (chapter09_app, ["Где обрабатывать команду /who", "Почему ответ отправляется только текущему клиенту", "Откуда берётся count"]),
     (chapter10_app, ["Куда добавлять leave_room", "Зачем две операции удаления", "Почему нужен ответ left_room"]),
     (chapter11_app, ["Где хранится роль", "Как роль попадает в Socket.IO подключение", "Как работает admin_message"]),
-    (chapter12_app, ["Почему удаление группы начинается с service layer", "Как REST endpoint использует сервис", "Что доказывает тест"]),
+    (chapter12_app, ["Почему начинаем с unit test сервиса", "Как fixtures готовят тестовую базу", "Как integration test проверяет полный сценарий"]),
 ]
 
 ANSWER_DEEP_DIVE_MARKERS = [
@@ -91,7 +91,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит внутри receive loop", "Почему /who не должен быть broadcast"]),
     (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при leave_room", "Почему здесь есть await"]),
     (chapter11_app, ["Читаем авторизованный Socket.IO ответ сверху вниз", "Что происходит при connect", "Почему admin_message проверяется отдельно"]),
-    (chapter12_app, ["Читаем итоговое решение сверху вниз", "Что происходит при DELETE /api/chat/groups/{group_id}", "Почему тест устроен именно так"]),
+    (chapter12_app, ["Читаем тестовое решение сверху вниз", "Что происходит внутри fixture", "Что проверяет каждый вид теста"]),
 ]
 
 
@@ -394,3 +394,16 @@ def test_chapter10_socket_tester_page_renders_defaults():
     assert "http://localhost:8010" in response.text
     assert "/socket.io" in response.text
     assert "ws://localhost:8010/ws/chat?group=general" in response.text
+
+
+def test_chapter12_focuses_on_tests_and_fixtures_without_socketio():
+    response = TestClient(chapter12_app).get("/")
+
+    assert response.status_code == 200
+    assert "Обычные тесты, unit tests, API tests, integration tests" in response.text
+    assert "Fixtures как вторая подтема" in response.text
+    assert "test_chat_service_unit_saves_message" in response.text
+    assert "test_chat_api_creates_message" in response.text
+    assert "test_chat_integration_group_message_flow" in response.text
+    assert "Socket.IO" not in response.text
+    assert "socketio" not in response.text
