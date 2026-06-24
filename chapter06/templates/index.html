@@ -20,11 +20,11 @@
 
         <section class="hero">
             <h1>Глава 6: SQLModel, SQLite и CRUD</h1>
-            <p>SQLModel-модели, Field, Session, select, CRUD endpoint-ы и минимальная Alembic-миграция.</p>
+            <p>SQLModel-модели, Field, Session, select, CRUD endpoint-ы и полный Alembic-пайплайн.</p>
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8006</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8006/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы умеете связать FastAPI с SQLite через SQLModel и понимаете, как одна модель может описывать и таблицу, и JSON-схему.</span>
+                <span><strong>Результат:</strong> После главы вы умеете связать FastAPI с SQLite через SQLModel и понимаете, как вести миграции Alembic в учебном и стороннем проекте.</span>
             </div>
         </section>
 
@@ -48,10 +48,13 @@
 <li><strong>Column(JSON)</strong> - когда поле нужно хранить в базе как JSON-структуру.</li>
 <li><strong>Relationship</strong> - связь между таблицами, например продукт и отзывы.</li>
 <li><strong>Alembic</strong> - инструмент миграций схемы БД.</li>
+<li><strong>alembic.ini</strong> - файл настроек Alembic; команды обычно запускаются из папки, где он лежит.</li>
+<li><strong>env.py</strong> - файл, который подключает Alembic к моделям приложения и <code>SQLModel.metadata</code>.</li>
+<li><strong>revision</strong> - отдельный Python-файл миграции с функциями <code>upgrade()</code> и <code>downgrade()</code>.</li>
                     </ul>
                 </article>
 
-                <article class="info-box"><h2>Alembic команды пошагово</h2>
+                <article class="info-box"><h2>Alembic команды пошагово в этой главе</h2>
 <p>Миграция - это Python-файл с инструкциями для изменения структуры базы данных. Например: добавить колонку, удалить колонку, создать таблицу.</p>
 <p>Команды Alembic запускаются из папки главы <code>chapter06</code>, потому что там лежит <code>alembic.ini</code>.</p>
 <p><code>alembic revision</code> создаёт новый файл миграции. <code>alembic upgrade head</code> применяет миграции к базе. <code>alembic downgrade -1</code> откатывает последнюю миграцию назад.</p>
@@ -70,7 +73,36 @@ alembic upgrade head
 alembic history
 
 # Откатить последнюю миграцию назад
-alembic downgrade -1{% endraw %}</code></pre>
+	alembic downgrade -1{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>Alembic в стороннем проекте: полный пайплайн</h2>
+<p>В своём проекте не пишите <code>cd chapter06</code>. Вместо этого перейдите в корень своего проекта: туда, где лежит <code>app/</code>, <code>requirements.txt</code> или <code>pyproject.toml</code>.</p>
+<p>Первый раз Alembic нужно инициализировать командой <code>alembic init alembic</code>. Она создаст <code>alembic.ini</code>, папку <code>alembic/</code>, файл <code>alembic/env.py</code> и папку <code>alembic/versions/</code>.</p>
+<p>После инициализации нужно подключить Alembic к моделям. Для SQLModel это обычно означает: импортировать все модели и поставить <code>target_metadata = SQLModel.metadata</code> в <code>alembic/env.py</code>.</p>
+<p>Пайплайн всегда один: поменяли SQLModel-код, создали revision, прочитали файл миграции глазами, применили <code>alembic upgrade head</code>, проверили приложение и тесты.</p>
+<pre><code>{% raw %}# 1. Один раз установить зависимости в своём проекте
+pip install sqlmodel alembic
+
+# 2. Один раз создать Alembic-инфраструктуру из корня проекта
+alembic init alembic
+
+# 3. В alembic/env.py подключить metadata моделей:
+# from sqlmodel import SQLModel
+# from app.models import Product  # импортируйте все table=True модели
+# target_metadata = SQLModel.metadata
+
+# 4. Создать первую миграцию по текущим моделям
+alembic revision --autogenerate -m &quot;create products&quot;
+
+# 5. Обязательно открыть созданный файл в alembic/versions/ и проверить код
+
+# 6. Применить миграции к базе
+alembic upgrade head
+
+# 7. При следующем изменении модели повторить цикл:
+# изменить SQLModel -&gt; revision -&gt; проверить файл -&gt; upgrade -&gt; тесты
+alembic revision --autogenerate -m &quot;add product category&quot;
+alembic upgrade head{% endraw %}</code></pre>
 </article>
 
                 <article class="info-box">
@@ -83,7 +115,7 @@ alembic downgrade -1{% endraw %}</code></pre>
 <li>Endpoint получает Session через <code>Depends</code>.</li>
 <li>Для чтения списка используется <code>db.exec(select(Product))</code>.</li>
 <li>После <code>db.commit()</code> SQLModel через SQLAlchemy записывает изменения в SQLite.</li>
-<li>Когда меняется структура таблицы, команда <code>alembic upgrade head</code> применяет миграцию к файлу базы данных.</li>
+<li>Когда меняется структура таблицы, сначала меняется SQLModel-код, потом создаётся Alembic revision, потом команда <code>alembic upgrade head</code> применяет миграцию к базе данных.</li>
                     </ol>
                 </article>
 
@@ -112,6 +144,9 @@ alembic downgrade -1{% endraw %}</code></pre>
 alembic current{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Создать и применить миграцию</h2><pre><code>{% raw %}cd chapter06
 alembic revision -m &quot;add product category&quot;
+alembic upgrade head{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Инициализировать Alembic в своём проекте</h2><pre><code>{% raw %}alembic init alembic{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Создать autogenerate-миграцию в своём проекте</h2><pre><code>{% raw %}alembic revision --autogenerate -m &quot;add product category&quot;
 alembic upgrade head{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Откатить последнюю миграцию</h2><pre><code>{% raw %}cd chapter06
 alembic downgrade -1{% endraw %}</code></pre></article>
@@ -216,7 +251,10 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 <dt><code>db.commit()</code></dt><dd>Фактически сохраняем изменения в базе.</dd>
 <dt><code>db.refresh(product)</code></dt><dd>Обновляем объект, чтобы получить id, выданный базой.</dd>
 <dt><code>db.exec(select(Product))</code></dt><dd>SQLModel-способ выполнить SELECT-запрос и получить продукты.</dd>
+<dt><code>alembic init alembic</code></dt><dd>Один раз создаёт папку миграций в стороннем проекте.</dd>
+<dt><code>target_metadata = SQLModel.metadata</code></dt><dd>Связывает Alembic с SQLModel-моделями для autogenerate.</dd>
 <dt><code>alembic revision -m "add product field"</code></dt><dd>Создаёт файл миграции, но ещё не меняет базу.</dd>
+<dt><code>alembic revision --autogenerate -m "add product field"</code></dt><dd>Создаёт файл миграции на основе сравнения моделей и текущей БД, но файл всё равно нужно проверить вручную.</dd>
 <dt><code>alembic upgrade head</code></dt><dd>Применяет миграции и реально меняет структуру базы.</dd>
                     </dl>
                 </article>
@@ -265,7 +303,8 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 <li>Сделать <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследниками <code>ProductBase</code>.</li>
 <li>В <code>ProductUpdate</code> оставить optional-поля для частичного обновления.</li>
 <li>Создать Alembic migration с <code>op.add_column</code>.</li>
-<li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
+<li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li>
+<li>Если тренируетесь в стороннем проекте, сначала настройте Alembic через <code>alembic init alembic</code> и <code>target_metadata = SQLModel.metadata</code>.</li></ul>
                 </article>
 
                 <article class="info-box">
@@ -287,6 +326,8 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 <li>Что произойдёт, если забыть <code>db.commit()</code>?</li>
 <li>Зачем в SQLModel иногда используют <code>sa_column=Column(...)</code>?</li>
 <li>Зачем нужен Alembic, если демо создаёт таблицы автоматически?</li>
+<li>Что нужно прописать в <code>alembic/env.py</code>, чтобы работал <code>--autogenerate</code> с SQLModel?</li>
+<li>Почему созданный autogenerate-файл миграции нужно читать руками перед <code>alembic upgrade head</code>?</li>
                     </ol>
                 </article>
             </div>
@@ -305,7 +346,8 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 <li>Сделать <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследниками <code>ProductBase</code>.</li>
 <li>В <code>ProductUpdate</code> оставить optional-поля для частичного обновления.</li>
 <li>Создать Alembic migration с <code>op.add_column</code>.</li>
-<li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li></ul>
+<li>Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.</li>
+<li>Если тренируетесь в стороннем проекте, сначала настройте Alembic через <code>alembic init alembic</code> и <code>target_metadata = SQLModel.metadata</code>.</li></ul>
 </article>
 <article class="info-box"><h2>2. Последовательность работы</h2>
 <p>Делайте именно в таком порядке. Если сначала запустить Alembic, а потом менять SQLModel-код, будет сложно понять, какая часть уже готова, а какая ещё нет.</p>
@@ -320,7 +362,43 @@ async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
 <li>9. Выполните <code>alembic current</code> ещё раз. Теперь база должна быть на новой миграции.</li>
 <li>10. Запустите приложение и проверьте <code>POST /api/products</code>, затем <code>GET /api/products</code>.</li></ul>
 </article>
-<article class="info-box"><h2>3. Полный код SQLModel-части</h2>
+<article class="info-box"><h2>3. Пайплайн Alembic в стороннем проекте</h2>
+<p>Если вы повторяете задачу не в учебной папке <code>chapter06</code>, а в своём отдельном FastAPI-проекте, путь меняется, но логика такая же. Все команды ниже запускаются из корня вашего проекта, где лежит папка <code>app</code>.</p>
+<ul class="flow-list"><li>1. Установите зависимости: <code>pip install sqlmodel alembic</code>.</li>
+<li>2. Создайте Alembic-инфраструктуру: <code>alembic init alembic</code>.</li>
+<li>3. Укажите URL базы в <code>alembic.ini</code> или прочитайте его из переменной окружения в <code>alembic/env.py</code>.</li>
+<li>4. В <code>alembic/env.py</code> импортируйте <code>SQLModel</code> и все модели с <code>table=True</code>, затем поставьте <code>target_metadata = SQLModel.metadata</code>.</li>
+<li>5. Создайте первую миграцию: <code>alembic revision --autogenerate -m "create products"</code>.</li>
+<li>6. Откройте файл в <code>alembic/versions/</code> и проверьте, что Alembic действительно создаёт нужную таблицу.</li>
+<li>7. Примените миграцию: <code>alembic upgrade head</code>.</li>
+<li>8. Когда добавляете поле <code>category</code>, сначала меняете SQLModel-класс, потом создаёте новую миграцию, проверяете её и снова запускаете <code>alembic upgrade head</code>.</li></ul>
+<pre><code>{% raw %}# Команды из корня вашего стороннего проекта
+pip install sqlmodel alembic
+alembic init alembic
+
+# alembic/env.py: минимальная идея настройки metadata
+from sqlmodel import SQLModel
+from app.models import Product  # импортируйте все модели с table=True
+
+target_metadata = SQLModel.metadata
+
+# Первая миграция проекта
+alembic revision --autogenerate -m &quot;create products&quot;
+alembic upgrade head
+alembic current
+
+# После добавления поля category в SQLModel-модель
+alembic revision --autogenerate -m &quot;add product category&quot;
+
+# Откройте созданный файл и проверьте:
+# - есть ли op.add_column(&quot;products&quot;, ...)
+# - есть ли server_default для старых строк, если колонка nullable=False
+# - есть ли обратный op.drop_column(...) в downgrade()
+
+alembic upgrade head
+pytest{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>4. Полный код SQLModel-части</h2>
 <pre><code>{% raw %}import os
 from datetime import datetime
 from decimal import Decimal
@@ -436,7 +514,7 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(product)
     db.commit(){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>4. Мини-пример JSON, Column и Relationship в SQLModel</h2>
+<article class="info-box"><h2>5. Мини-пример JSON, Column и Relationship в SQLModel</h2>
 <p>Этот фрагмент не обязателен для поля <code>category</code>, но показывает импорт и синтаксис, который часто нужен в реальных моделях: JSON-колонка и связь между таблицами.</p>
 <pre><code>{% raw %}from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
@@ -454,7 +532,7 @@ class ProductReview(SQLModel, table=True):
     text: str
     product: Product | None = Relationship(back_populates=&quot;reviews&quot;){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>5. Полная Alembic migration</h2>
+<article class="info-box"><h2>6. Полная Alembic migration</h2>
 <pre><code>{% raw %}from alembic import op
 import sqlalchemy as sa
 
@@ -475,8 +553,8 @@ def upgrade():
 def downgrade():
     op.drop_column(&quot;products&quot;, &quot;category&quot;){% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>6. Команды Alembic для этой задачи</h2>
-<p>Сначала меняете SQLModel-код, затем создаёте файл миграции, вставляете туда <code>upgrade()</code> и <code>downgrade()</code> из ответа, после этого применяете миграцию. Для первого раза лучше использовать обычный <code>alembic revision -m</code>: так вы сами видите, какие строки меняют базу. Позже можно попробовать <code>alembic revision --autogenerate -m</code>, но автогенерацию всё равно нужно читать глазами.</p>
+<article class="info-box"><h2>7. Команды Alembic для этой задачи</h2>
+<p>В учебной папке ниже используется <code>cd chapter06</code>. В стороннем проекте вместо этого перейдите в корень своего проекта, где лежит <code>alembic.ini</code>. Сначала меняете SQLModel-код, затем создаёте файл миграции, проверяете <code>upgrade()</code> и <code>downgrade()</code>, после этого применяете миграцию. Для первого раза можно использовать обычный <code>alembic revision -m</code>: так вы сами видите, какие строки меняют базу. В своём проекте после настройки <code>target_metadata</code> можно использовать <code>alembic revision --autogenerate -m</code>, но автогенерацию всё равно нужно читать глазами.</p>
 <pre><code>{% raw %}cd chapter06
 
 # 1. Проверить, видит ли Alembic текущую базу и текущую миграцию.
@@ -500,7 +578,31 @@ alembic downgrade -1
 # 7. Посмотреть всю историю миграций.
 alembic history{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>7. Как проверить</h2>
+<article class="info-box"><h2>8. Та же задача в своём проекте через autogenerate</h2>
+<p>Этот вариант нужен, когда ученик тренируется в отдельном проекте. Здесь Alembic уже настроен: есть <code>alembic.ini</code>, в <code>env.py</code> импортированы SQLModel-модели, а <code>target_metadata</code> указывает на <code>SQLModel.metadata</code>.</p>
+<pre><code>{% raw %}# Из корня своего проекта, не из FastAPI_Book
+
+# 1. Убедиться, что Alembic видит текущую базу.
+alembic current
+
+# 2. Поменять SQLModel-код: добавить category в Product/ProductCreate/ProductRead/ProductUpdate.
+
+# 3. Попросить Alembic сравнить модели и базу.
+alembic revision --autogenerate -m &quot;add product category&quot;
+
+# 4. Открыть файл в alembic/versions/ и проверить его руками.
+#    Важно: autogenerate помогает, но не заменяет разработчика.
+
+# 5. Применить миграцию.
+alembic upgrade head
+
+# 6. Проверить приложение и тесты.
+pytest
+
+# 7. Если миграция ошибочная и её нужно откатить.
+alembic downgrade -1{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>9. Как проверить</h2>
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/products</code></strong><span>Body содержит <code>"category": "books"</code>.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/products</code></strong><span>Каждый продукт возвращает поле <code>category</code>.</span></article>
 <article class="endpoint-card"><strong><code>Alembic</code></strong><span>После <code>alembic upgrade head</code> команда <code>alembic current</code> показывает новую миграцию.</span></article></div>
@@ -534,10 +636,18 @@ alembic history{% endraw %}</code></pre>
 <li>Миграция нужна не FastAPI, а базе данных. FastAPI сам не меняет production-схему при каждом запуске.</li>
 <li>Даже если demo-приложение вызывает <code>SQLModel.metadata.create_all</code>, главе важно показать правильный промышленный путь.</li></ul>
 </article>
+<article class="info-box"><h2>Как Alembic подключается к стороннему проекту</h2>
+<ul class="flow-list"><li><code>alembic init alembic</code> создаёт служебные файлы миграций в вашем проекте.</li>
+<li><code>alembic.ini</code> хранит базовые настройки, включая путь к папке миграций и часто URL базы.</li>
+<li><code>alembic/env.py</code> запускается каждый раз, когда вы вызываете <code>alembic revision</code>, <code>upgrade</code> или <code>downgrade</code>.</li>
+<li>Для SQLModel в <code>env.py</code> нужно импортировать модели с <code>table=True</code>, иначе <code>SQLModel.metadata</code> будет пустой или неполной.</li>
+<li><code>target_metadata = SQLModel.metadata</code> говорит Alembic, с какой схемой Python-кода сравнивать текущую базу при <code>--autogenerate</code>.</li></ul>
+</article>
 <article class="info-box"><h2>Что делают команды Alembic</h2>
 <ul class="flow-list"><li><code>cd chapter06</code> переводит терминал туда, где лежит <code>alembic.ini</code>. Без этого Alembic может не найти настройки.</li>
 <li><code>alembic current</code> показывает, какая миграция уже применена к текущей базе.</li>
 <li><code>alembic revision -m "add product category"</code> создаёт новый Python-файл миграции в <code>alembic/versions</code>.</li>
+<li><code>alembic revision --autogenerate -m "add product category"</code> сравнивает текущую БД и <code>target_metadata</code>, а потом предлагает код миграции.</li>
 <li><code>alembic upgrade head</code> запускает функции <code>upgrade()</code> во всех новых миграциях и доводит базу до последней версии.</li>
 <li><code>alembic downgrade -1</code> запускает <code>downgrade()</code> последней миграции и откатывает базу на один шаг назад.</li>
 <li><code>alembic history</code> показывает список миграций, чтобы вы понимали порядок изменений базы.</li></ul>

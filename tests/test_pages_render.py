@@ -371,6 +371,11 @@ def test_chapter06_lesson_shows_beginner_alembic_commands():
     assert "chapter06/app/main.py" in text
     assert "chapter06/alembic/versions/" in text
     assert "не обязательно переписывать сгенерированный" in text
+    assert "Alembic в стороннем проекте: полный пайплайн" in text
+    assert "alembic init alembic" in text
+    assert "target_metadata = SQLModel.metadata" in text
+    assert 'alembic revision --autogenerate -m "add product category"' in text
+    assert "Пайплайн Alembic в стороннем проекте" in text
 
 
 def test_chapter10_uses_socketio_wording_without_old_comparison():
