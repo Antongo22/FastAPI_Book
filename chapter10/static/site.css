@@ -1,12 +1,12 @@
 body {
-    background: #f7f8fb;
-    color: #20242c;
+    background: #11100f;
+    color: #ece7df;
     font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     margin: 0;
 }
 
 a {
-    color: #1f6feb;
+    color: #7cc7ff;
 }
 
 .chapter-shell {
@@ -36,30 +36,37 @@ a {
     justify-content: center;
     min-height: 38px;
     padding: 0 14px;
+    border: 1px solid #4c83ff;
     border-radius: 6px;
     text-decoration: none;
-    background: #1f6feb;
-    color: #ffffff;
+    background: #2f6cff;
+    color: #fbfdff;
     font-weight: 700;
+    box-shadow: 0 10px 24px rgba(47, 108, 255, 0.22);
 }
 
 .nav-link.secondary,
 .button-link.secondary {
-    background: #2f6f4e;
+    background: #28744f;
+    border-color: #3aa36e;
+    color: #f3fff8;
+    box-shadow: 0 10px 24px rgba(40, 116, 79, 0.18);
 }
 
 .nav-link.light {
-    background: #ffffff;
-    color: #20242c;
-    border: 1px solid #cbd3df;
+    background: #252320;
+    color: #ece7df;
+    border: 1px solid #504b43;
+    box-shadow: none;
 }
 
 .hero {
-    background: #ffffff;
-    border: 1px solid #d8dee8;
+    background: #1b1916;
+    border: 1px solid #3b362f;
     border-radius: 8px;
     padding: 28px;
     margin-bottom: 24px;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
 }
 
 .hero h1 {
@@ -70,7 +77,7 @@ a {
 
 .hero p {
     margin: 0;
-    color: #5a6473;
+    color: #bcb4a9;
 }
 
 .lesson-meta {
@@ -82,11 +89,11 @@ a {
 
 .lesson-meta span {
     display: block;
-    border: 1px solid #d8dee8;
+    border: 1px solid #3b362f;
     border-radius: 6px;
-    background: #fbfcfe;
+    background: #22201d;
     padding: 10px 12px;
-    color: #4b5565;
+    color: #cfc6b8;
 }
 
 .lesson-tabs {
@@ -97,24 +104,24 @@ a {
 }
 
 .lesson-tabs button {
-    border: 1px solid #cbd3df;
-    background: #ffffff;
-    color: #20242c;
+    border: 1px solid #504b43;
+    background: #24221f;
+    color: #ece7df;
     border-radius: 6px;
     padding: 10px 14px;
     font-weight: 600;
 }
 
 .lesson-tabs button.active {
-    background: #1f6feb;
-    border-color: #1f6feb;
-    color: #ffffff;
+    background: #2f6cff;
+    border-color: #6ea0ff;
+    color: #fbfdff;
 }
 
 .tab-panel {
     display: none;
-    background: #ffffff;
-    border: 1px solid #d8dee8;
+    background: #191714;
+    border: 1px solid #3b362f;
     border-radius: 8px;
     padding: 24px;
 }
@@ -129,10 +136,10 @@ a {
 }
 
 .info-box {
-    border: 1px solid #d8dee8;
+    border: 1px solid #3b362f;
     border-radius: 8px;
     padding: 18px;
-    background: #fbfcfe;
+    background: #211f1b;
 }
 
 .info-box h2,
@@ -160,8 +167,8 @@ a {
     width: fit-content;
     max-width: 100%;
     border-radius: 6px;
-    background: #101820;
-    color: #f3f7fb;
+    background: #0f151b;
+    color: #eaf4ff;
     padding: 7px 9px;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     overflow-x: auto;
@@ -170,9 +177,9 @@ a {
 
 .line-breakdown dd {
     margin: -6px 0 4px;
-    border-left: 3px solid #1f6feb;
+    border-left: 3px solid #5aa2ff;
     padding: 8px 0 8px 12px;
-    color: #3f4856;
+    color: #d1c8ba;
     line-height: 1.55;
 }
 
@@ -183,9 +190,9 @@ a {
 }
 
 .endpoint-card {
-    border: 1px solid #d8dee8;
+    border: 1px solid #3b362f;
     border-radius: 8px;
-    background: #ffffff;
+    background: #24211d;
     padding: 14px;
     min-width: 0;
     line-height: 1.35;
@@ -204,16 +211,17 @@ a {
 }
 
 .callout {
-    border-left: 4px solid #1f6feb;
-    background: #f3f7ff;
+    border-left: 4px solid #5aa2ff;
+    background: #1a2430;
     padding: 12px 14px;
     border-radius: 6px;
 }
 
 pre {
-    background: #101820;
-    color: #f3f7fb;
+    background: #0c1117;
+    color: #eaf4ff;
     padding: 16px;
+    border: 1px solid #2b3846;
     border-radius: 8px;
     overflow-x: auto;
     line-height: 1.45;
@@ -248,9 +256,100 @@ pre code {
     gap: 16px;
 }
 
+.tool-section {
+    display: grid;
+    gap: 16px;
+    border: 1px solid #3b362f;
+    border-radius: 8px;
+    background: #191714;
+    padding: 22px;
+    margin-bottom: 24px;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
+}
+
+.tool-section__header,
+.tool-card__content,
+.tool-card__content > div:first-child {
+    display: grid;
+    gap: 6px;
+}
+
+.section-eyebrow {
+    width: fit-content;
+    border: 1px solid #4c83ff;
+    border-radius: 6px;
+    background: #1b2b44;
+    color: #a9d7ff;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 5px 8px;
+}
+
+.tool-section__header h2,
+.tool-section__header p,
+.tool-card h3,
+.tool-card p {
+    margin: 0;
+}
+
+.tool-section__header h2 {
+    font-size: 24px;
+    line-height: 1.2;
+}
+
+.tool-section__header p,
+.tool-card p {
+    color: #bcb4a9;
+}
+
+.tool-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.tool-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid #403a32;
+    border-radius: 8px;
+    background: #23201c;
+    padding: 16px;
+}
+
+.tool-card__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 8px;
+    background: #12243a;
+    color: #eaf4ff;
+    font-weight: 900;
+    letter-spacing: 0;
+}
+
+.tool-card__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tool-card__tags span {
+    border: 1px solid #504b43;
+    border-radius: 6px;
+    background: #2a2621;
+    color: #d1c8ba;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 5px 8px;
+}
+
 .chapter-card {
-    background: #ffffff;
-    border: 1px solid #d8dee8;
+    background: #211f1b;
+    border: 1px solid #3b362f;
     border-radius: 8px;
     padding: 20px;
 }
@@ -261,7 +360,7 @@ pre code {
 }
 
 .chapter-card p {
-    color: #5a6473;
+    color: #bcb4a9;
     min-height: 48px;
 }
 
@@ -280,107 +379,37 @@ label {
 input,
 textarea,
 select {
-    border: 1px solid #cbd3df;
+    border: 1px solid #504b43;
     border-radius: 6px;
+    background: #161411;
+    color: #ece7df;
     padding: 9px 10px;
     font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #8f867a;
 }
 
 button[type="submit"] {
     width: fit-content;
     border: 0;
-    background: #1f6feb;
-    color: #ffffff;
+    background: #2f6cff;
+    color: #fbfdff;
     border-radius: 6px;
     padding: 10px 14px;
     font-weight: 700;
 }
 
-.socket-tester {
-    display: grid;
-    grid-template-columns: minmax(320px, 0.8fr) minmax(360px, 1.2fr);
-    gap: 16px;
-}
-
-.tester-controls form {
-    max-width: none;
-}
-
-.segmented-control {
-    display: inline-grid;
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
-    gap: 6px;
-    margin-bottom: 16px;
-    width: min(100%, 360px);
-}
-
-.segmented-control button,
-.button-row button {
-    border: 1px solid #cbd3df;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #20242c;
-    cursor: pointer;
-    font: inherit;
-    font-weight: 700;
-    min-height: 38px;
-    padding: 0 14px;
-}
-
-.segmented-control button.active,
-.button-row button:not(.secondary-action) {
-    background: #1f6feb;
-    border-color: #1f6feb;
-    color: #ffffff;
-}
-
-.button-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.button-row button:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-}
-
-.button-row .secondary-action {
-    background: #ffffff;
-}
-
-.socket-status {
-    border-radius: 6px;
-    display: inline-flex;
-    font-weight: 700;
-    margin-bottom: 12px;
-    padding: 8px 10px;
-}
-
-.socket-status.connected {
-    background: #f0faf4;
-    color: #1d6b3d;
-}
-
-.socket-status.disconnected {
-    background: #fff6f6;
-    color: #a23a3a;
-}
-
-.socket-log {
-    min-height: 520px;
-    max-height: 620px;
-    white-space: pre-wrap;
-}
-
 .success {
-    border-color: #78b892;
-    background: #f0faf4;
+    border-color: #3aa36e;
+    background: #153425;
 }
 
 .error {
-    border-color: #d77d7d;
-    background: #fff6f6;
+    border-color: #c35b5b;
+    background: #3a1d1d;
 }
 
 @media (max-width: 720px) {
@@ -393,11 +422,17 @@ button[type="submit"] {
         display: grid;
     }
 
-    .hero h1 {
-        font-size: 28px;
+    .tool-card {
+        align-items: stretch;
+        grid-template-columns: 1fr;
     }
 
-    .socket-tester {
-        grid-template-columns: 1fr;
+    .tool-card__badge {
+        width: 44px;
+        height: 44px;
+    }
+
+    .hero h1 {
+        font-size: 28px;
     }
 }

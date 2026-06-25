@@ -207,6 +207,27 @@ def test_shared_css_prevents_inline_code_from_breaking_cards():
         assert "pre code" in css and "white-space: pre;" in css, f"{css_file} should preserve code blocks"
 
 
+def test_shared_css_uses_dark_theme_without_white_surfaces():
+    css_files = [ROOT / "gateway/static/site.css"]
+    css_files.extend(ROOT / f"chapter{number:02}/static/site.css" for number in range(1, 13))
+    forbidden_backgrounds = [
+        "background: #fff",
+        "background: #ffffff",
+        "background: white",
+        "background-color: #fff",
+        "background-color: #ffffff",
+        "background-color: white",
+        "rgba(255, 255, 255",
+        "rgb(255, 255, 255",
+    ]
+
+    for css_file in css_files:
+        css = css_file.read_text(encoding="utf-8").lower()
+        assert "background: #11100f;" in css, f"{css_file} should use the shared dark page background"
+        for forbidden in forbidden_backgrounds:
+            assert forbidden not in css, f"{css_file} should not use white surfaces: {forbidden}"
+
+
 def test_chapter01_page_explains_headers():
     response = TestClient(chapter01_app).get("/")
     assert response.status_code == 200
