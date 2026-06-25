@@ -10,7 +10,7 @@
 - **Chapter 03** (порт 8003) - HTTP Requests через `httpx`
 - **Chapter 04** (порт 8004) - Error Handling и custom middleware
 - **Chapter 05** (порт 8005) - Jinja2 UI, формы и валидация
-- **Chapter 06** (порт 8006) - SQLAlchemy, DTO, Alembic, SQLite, CRUD
+- **Chapter 06** (порт 8006) - SQLModel, AsyncSession, Alembic, SQLite, CRUD
 - **Chapter 07** (порт 8007) - Authentication vs Authorization, JWT
 - **Chapter 08** (порт 8008) - Refresh Tokens
 - **Chapter 09** (порт 8009) - WebSockets
@@ -63,12 +63,21 @@ uvicorn chapter01.app.main:app --reload --port 8001
 ## Запуск всех глав через Docker Compose
 
 ```bash
+./scripts/compose-up.sh
+```
+
+Этот вариант специально сделан для учебника: сначала проверяется базовый образ `python:3.12-slim`, затем сборка идёт с малым параллелизмом. Так меньше шансов получить ошибку Docker Hub вроде `TLS handshake timeout`.
+
+Если Docker Hub уже нормально доступен и образ скачан, можно использовать обычную команду:
+
+```bash
 docker compose up --build
 ```
 
-Если Docker Desktop ограничен по памяти, используйте последовательную сборку:
+Если ошибка повторяется, подтяните базовый образ вручную и снова запустите скрипт:
 
 ```bash
+docker pull python:3.12-slim
 ./scripts/compose-up.sh
 ```
 
@@ -91,7 +100,7 @@ docker compose config
 
 ## Alembic в главе 6
 
-Глава 6 создаёт таблицы автоматически для удобства демо, но содержит минимальную Alembic-конфигурацию. Из папки проекта можно выполнить:
+Глава 6 не создаёт таблицы через `init_db()` при запуске приложения. Схемой управляет Alembic. Перед запуском главы примените миграции:
 
 ```bash
 cd chapter06

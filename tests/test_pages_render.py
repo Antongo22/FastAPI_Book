@@ -351,7 +351,10 @@ def test_chapter06_lesson_uses_sqlmodel_not_mapped_column():
 
     assert "class Product(SQLModel, table=True)" in text
     assert "from sqlmodel import JSON, Column, Field, Relationship, SQLModel" in text
-    assert "db.exec(select(Product))" in text
+    assert "await db.exec(select(Product))" in text
+    assert "AsyncSession" in text
+    assert "create_async_engine" in text
+    assert "async_sessionmaker" in text
     assert "DeclarativeBase" not in text
     assert "mapped_column" not in text
     assert "class ProductDto" not in text
@@ -367,15 +370,40 @@ def test_chapter06_lesson_shows_beginner_alembic_commands():
     assert "alembic upgrade head" in text
     assert "alembic downgrade -1" in text
     assert "Что делают команды Alembic" in text
-    assert "Последовательность работы" in text
-    assert "chapter06/app/main.py" in text
+    assert "main.py" in text
     assert "chapter06/alembic/versions/" in text
-    assert "не обязательно переписывать сгенерированный" in text
     assert "Alembic в стороннем проекте: полный пайплайн" in text
     assert "alembic init alembic" in text
     assert "target_metadata = SQLModel.metadata" in text
     assert 'alembic revision --autogenerate -m "add product category"' in text
-    assert "Пайплайн Alembic в стороннем проекте" in text
+    assert "Файл main.py" in text
+    assert "Команда, чтобы появился Alembic" in text
+    assert "Полный файл alembic/env.py" in text
+    assert "Что написать в командной строке и как запустить приложение" in text
+    assert "Target database is not up to date" in text
+    assert "NameError: name 'sqlmodel' is not defined" in text
+    assert "Table 'products' is already defined" in text
+    assert "sqlmodel.sql.sqltypes.AutoString" in text
+    assert "import sqlmodel" in text
+    assert "from main import SYNC_DATABASE_URL, Product" in text
+    assert 'alembic revision --autogenerate -m "create products"' in text
+    assert "uvicorn main:app --reload --port 7001" in text
+    assert "python main.py" in text
+    assert "extend_existing=True" in text
+    assert "await db.commit()" in text
+    assert "init_db()" not in text
+    assert "SQLModel.metadata.create_all" not in text
+    assert "AUTO_CREATE_TABLES" not in text
+    assert "from ..main.models" in text
+
+    main_index = text.index("1. Файл main.py")
+    init_index = text.index("2. Команда, чтобы появился Alembic")
+    env_index = text.index("3. Полный файл alembic/env.py")
+    run_index = text.index("4. Что написать в командной строке и как запустить приложение")
+    target_error_index = text.index("5. Если появилась ошибка Target database is not up to date")
+    sqlmodel_error_index = text.index("6. Если появилась ошибка NameError: name 'sqlmodel' is not defined")
+    table_error_index = text.index("7. Если появилась ошибка Table 'products' is already defined")
+    assert main_index < init_index < env_index < run_index < target_error_index < sqlmodel_error_index < table_error_index
 
 
 def test_chapter10_uses_socketio_wording_without_old_comparison():

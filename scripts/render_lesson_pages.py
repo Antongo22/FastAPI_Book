@@ -917,7 +917,10 @@ async def jinja_demo(request: Request):
             "<strong>SQLModel</strong> - библиотека поверх Pydantic и SQLAlchemy: один стиль моделей для API и таблиц.",
             "<strong>table=True</strong> - признак, что класс должен стать таблицей в базе данных.",
             "<strong>Field</strong> - описание поля: валидация для API и настройки колонки для базы.",
-            "<strong>Session</strong> - рабочая область для операций с БД: читать, добавить, commit, refresh, удалить.",
+            "<strong>AsyncSession</strong> - асинхронная рабочая область для операций с БД: читать, добавить, commit, refresh, удалить.",
+            "<strong>create_async_engine</strong> - создаёт асинхронное подключение SQLAlchemy к базе.",
+            "<strong>aiosqlite</strong> - async-драйвер SQLite; без него URL <code>sqlite+aiosqlite:///...</code> не заработает.",
+            "<strong>greenlet</strong> - техническая зависимость, которая нужна SQLAlchemy для async-операций.",
             "<strong>select</strong> - SQLModel-способ собрать запрос к таблице.",
             "<strong>Column(JSON)</strong> - когда поле нужно хранить в базе как JSON-структуру.",
             "<strong>Relationship</strong> - связь между таблицами, например продукт и отзывы.",
@@ -959,18 +962,32 @@ alembic history
                     "В своём проекте не пишите <code>cd chapter06</code>. Вместо этого перейдите в корень своего проекта: туда, где лежит <code>app/</code>, <code>requirements.txt</code> или <code>pyproject.toml</code>.",
                     "Первый раз Alembic нужно инициализировать командой <code>alembic init alembic</code>. Она создаст <code>alembic.ini</code>, папку <code>alembic/</code>, файл <code>alembic/env.py</code> и папку <code>alembic/versions/</code>.",
                     "После инициализации нужно подключить Alembic к моделям. Для SQLModel это обычно означает: импортировать все модели и поставить <code>target_metadata = SQLModel.metadata</code> в <code>alembic/env.py</code>.",
+                    "Не используйте относительный импорт вида <code>from ..main.models import Product</code>. Alembic запускает <code>env.py</code> как отдельный файл, поэтому такой импорт часто падает с ошибкой <code>ImportError: attempted relative import</code>.",
                     "Пайплайн всегда один: поменяли SQLModel-код, создали revision, прочитали файл миграции глазами, применили <code>alembic upgrade head</code>, проверили приложение и тесты.",
                 ],
                 "code": '''
 # 1. Один раз установить зависимости в своём проекте
-pip install sqlmodel alembic
+pip install fastapi uvicorn sqlmodel sqlalchemy aiosqlite greenlet alembic
 
 # 2. Один раз создать Alembic-инфраструктуру из корня проекта
 alembic init alembic
 
-# 3. В alembic/env.py подключить metadata моделей:
+# 3. В alembic/env.py подключить metadata моделей.
+# Вариант для нормальной структуры с папкой app:
 # from sqlmodel import SQLModel
 # from app.models import Product  # импортируйте все table=True модели
+# target_metadata = SQLModel.metadata
+#
+# Вариант для учебной структуры, где модели лежат в main.py рядом с alembic.ini:
+# from pathlib import Path
+# import sys
+# from sqlmodel import SQLModel
+#
+# PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# sys.path.insert(0, str(PROJECT_ROOT))
+# from main import SYNC_DATABASE_URL, Product
+#
+# config.set_main_option("sqlalchemy.url", SYNC_DATABASE_URL)
 # target_metadata = SQLModel.metadata
 
 # 4. Создать первую миграцию по текущим моделям
@@ -989,13 +1006,14 @@ alembic upgrade head
             },
         ],
         "flow": [
-            "При старте приложения создаётся SQLModel engine для SQLite.",
+            "При импорте приложения создаётся async engine для SQLite, но таблицы приложение само не создаёт.",
             "Класс <code>Product(SQLModel, table=True)</code> описывает таблицу <code>products</code>.",
             "Классы <code>ProductCreate</code>, <code>ProductUpdate</code> и <code>ProductRead</code> описывают внешний JSON API.",
-            "Dependency <code>get_db</code> открывает SQLModel <code>Session</code> на время запроса.",
-            "Endpoint получает Session через <code>Depends</code>.",
-            "Для чтения списка используется <code>db.exec(select(Product))</code>.",
-            "После <code>db.commit()</code> SQLModel через SQLAlchemy записывает изменения в SQLite.",
+            "Перед запуском приложения команда <code>alembic upgrade head</code> создаёт или обновляет таблицы.",
+            "Dependency <code>get_db</code> открывает SQLModel <code>AsyncSession</code> на время запроса.",
+            "Endpoint получает AsyncSession через <code>Depends</code>.",
+            "Для чтения списка используется <code>await db.exec(select(Product))</code>.",
+            "После <code>await db.commit()</code> SQLModel через SQLAlchemy записывает изменения в SQLite.",
             "Когда меняется структура таблицы, сначала меняется SQLModel-код, потом создаётся Alembic revision, потом команда <code>alembic upgrade head</code> применяет миграцию к базе данных.",
         ],
         "endpoints": [
@@ -1009,24 +1027,37 @@ alembic upgrade head
 import os
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, status
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Column, DateTime, Field, Numeric, Session, SQLModel, create_engine
+from sqlmodel import Column, DateTime, Field, Numeric, SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter06.db")
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{BASE_DIR / 'chapter06.db'}"
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 
-def make_engine(database_url: str):
+def make_async_database_url(database_url: str) -> str:
+    if database_url.startswith("sqlite://") and not database_url.startswith("sqlite+aiosqlite://"):
+        return database_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return database_url
+
+
+def make_async_engine(database_url: str):
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     kwargs = {"connect_args": connect_args}
-    if database_url == "sqlite://":
+    if database_url in {"sqlite+aiosqlite://", "sqlite+aiosqlite:///:memory:"}:
         kwargs["poolclass"] = StaticPool
-    return create_engine(database_url, **kwargs)
+    return create_async_engine(database_url, **kwargs)
 
 
-engine = make_engine(DATABASE_URL)
+ASYNC_DATABASE_URL = make_async_database_url(DATABASE_URL)
+engine = make_async_engine(ASYNC_DATABASE_URL)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 app = FastAPI(
     title="Глава 6: SQLModel",
@@ -1061,40 +1092,34 @@ class ProductCreate(SQLModel):
     stock: int = Field(default=0, ge=0)
 
 
-def get_db():
-    with Session(engine) as db:
+async def get_db():
+    async with AsyncSessionLocal() as db:
         yield db
 
 
 @app.post("/api/products", response_model=ProductRead, status_code=201)
-async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
+async def create_product(request: ProductCreate, db: AsyncSession = Depends(get_db)):
     product = Product(**request.model_dump())
     db.add(product)
-    db.commit()
-    db.refresh(product)
+    await db.commit()
+    await db.refresh(product)
     return product
         ''',
         "code_notes": [
             "<code>SQLModel, table=True</code> делает класс таблицей, а не только Pydantic-схемой.",
             "<code>Field</code> задаёт правила поля: primary key, длину строки, ограничения чисел и настройки колонки.",
-            "<code>with Session(engine)</code> гарантирует закрытие Session после запроса.",
+            "<code>async with AsyncSessionLocal()</code> открывает async-сессию и закрывает её после запроса.",
+            "<code>await db.commit()</code> нужен, потому что запись в БД выполняется асинхронно.",
             "<code>response_model</code> не отдаёт наружу лишние поля таблицы.",
-            "В учебном режиме таблицы создаются автоматически, а Alembic показан как правильный путь для реального проекта.",
+            "Таблицы создаёт Alembic. Перед запуском приложения выполните <code>cd chapter06 && alembic upgrade head</code>.",
         ],
         "task": "Добавьте поле <code>category</code> в SQLModel-таблицу продукта, модели <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> и Alembic-миграцию. Проверьте, что оно возвращается в <code>GET /api/products</code>.",
-        "answer": '''
-category: str = Field(default="general", max_length=80)
-
-
-class ProductRead(SQLModel):
-    id: int
-    name: str
-    category: str
-    ...
-        ''',
+        "answer": "Полный ответ находится во вкладке “Ответы”: там показаны main.py, env.py, миграция Alembic, команды запуска и подробный разбор.",
         "answer_notes": [
             "Менять нужно и SQLModel-таблицу, и входные/выходные модели, иначе поле либо не сохранится, либо не попадёт в публичный ответ.",
             "В миграции используйте <code>op.add_column</code>, а в downgrade - <code>op.drop_column</code>.",
+            "Перед запуском приложения примените миграции: <code>cd chapter06 && alembic upgrade head</code>.",
+            "CRUD endpoint-ы работают через <code>AsyncSession</code>, поэтому операции записи выполняются с <code>await</code>.",
         ],
     },
     "chapter07": {
@@ -2516,98 +2541,52 @@ async def template_data():
     ],
     "chapter06": [
         {
-            "title": "Что меняем",
-            "body": "Поле <code>category</code> должно пройти через общую SQLModel-схему, таблицу, модель создания, модель обновления, модель ответа и миграцию.",
-            "items": [
-                "Создать <code>ProductBase</code> с общими полями продукта.",
-                "Сделать <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследниками <code>ProductBase</code>.",
-                "В <code>ProductUpdate</code> оставить optional-поля для частичного обновления.",
-                "Создать Alembic migration с <code>op.add_column</code>.",
-                "Запустить <code>alembic upgrade head</code> из папки <code>chapter06</code>.",
-                "Если тренируетесь в стороннем проекте, сначала настройте Alembic через <code>alembic init alembic</code> и <code>target_metadata = SQLModel.metadata</code>.",
-            ],
-        },
-        {
-            "title": "Последовательность работы",
-            "body": "Делайте именно в таком порядке. Если сначала запустить Alembic, а потом менять SQLModel-код, будет сложно понять, какая часть уже готова, а какая ещё нет.",
-            "items": [
-                "1. Откройте файл <code>chapter06/app/main.py</code> и сначала поправьте Python-код: добавьте <code>ProductBase</code>, наследование схем и поле <code>category</code>.",
-                "2. Проверьте глазами, что <code>Product</code>, <code>ProductCreate</code> и <code>ProductRead</code> наследуются от <code>ProductBase</code>, а <code>ProductUpdate</code> содержит optional-поле <code>category</code>.",
-                "3. Перейдите в папку главы командой <code>cd chapter06</code>. Alembic-команды запускаем отсюда, потому что здесь лежит <code>alembic.ini</code>.",
-                "4. Выполните <code>alembic current</code>, чтобы увидеть, на какой миграции сейчас находится база.",
-                "5. Создайте новую миграцию: <code>alembic revision -m \"add product category\"</code>.",
-                "6. Откройте созданный файл в <code>chapter06/alembic/versions/</code>. Alembic уже добавит туда переменные <code>revision</code> и <code>down_revision</code>.",
-                "7. Вставьте в этот файл содержимое функций <code>upgrade()</code> и <code>downgrade()</code> из ответа. Если файл создан командой Alembic, не обязательно переписывать сгенерированный <code>revision</code>.",
-                "8. Выполните <code>alembic upgrade head</code>, чтобы реально добавить колонку <code>category</code> в SQLite-таблицу.",
-                "9. Выполните <code>alembic current</code> ещё раз. Теперь база должна быть на новой миграции.",
-                "10. Запустите приложение и проверьте <code>POST /api/products</code>, затем <code>GET /api/products</code>.",
-            ],
-        },
-        {
-            "title": "Пайплайн Alembic в стороннем проекте",
-            "body": "Если вы повторяете задачу не в учебной папке <code>chapter06</code>, а в своём отдельном FastAPI-проекте, путь меняется, но логика такая же. Все команды ниже запускаются из корня вашего проекта, где лежит папка <code>app</code>.",
-            "items": [
-                "1. Установите зависимости: <code>pip install sqlmodel alembic</code>.",
-                "2. Создайте Alembic-инфраструктуру: <code>alembic init alembic</code>.",
-                "3. Укажите URL базы в <code>alembic.ini</code> или прочитайте его из переменной окружения в <code>alembic/env.py</code>.",
-                "4. В <code>alembic/env.py</code> импортируйте <code>SQLModel</code> и все модели с <code>table=True</code>, затем поставьте <code>target_metadata = SQLModel.metadata</code>.",
-                "5. Создайте первую миграцию: <code>alembic revision --autogenerate -m \"create products\"</code>.",
-                "6. Откройте файл в <code>alembic/versions/</code> и проверьте, что Alembic действительно создаёт нужную таблицу.",
-                "7. Примените миграцию: <code>alembic upgrade head</code>.",
-                "8. Когда добавляете поле <code>category</code>, сначала меняете SQLModel-класс, потом создаёте новую миграцию, проверяете её и снова запускаете <code>alembic upgrade head</code>.",
-            ],
-            "code": '''
-# Команды из корня вашего стороннего проекта
-pip install sqlmodel alembic
-alembic init alembic
-
-# alembic/env.py: минимальная идея настройки metadata
-from sqlmodel import SQLModel
-from app.models import Product  # импортируйте все модели с table=True
-
-target_metadata = SQLModel.metadata
-
-# Первая миграция проекта
-alembic revision --autogenerate -m "create products"
-alembic upgrade head
-alembic current
-
-# После добавления поля category в SQLModel-модель
-alembic revision --autogenerate -m "add product category"
-
-# Откройте созданный файл и проверьте:
-# - есть ли op.add_column("products", ...)
-# - есть ли server_default для старых строк, если колонка nullable=False
-# - есть ли обратный op.drop_column(...) в downgrade()
-
-alembic upgrade head
-pytest
-            ''',
-        },
-        {
-            "title": "Полный код SQLModel-части",
+            "title": "Файл main.py",
+            "body": "Сначала создайте или замените <code>main.py</code>. В этом файле только приложение, модели, dependency для БД и CRUD endpoint-ы. Таблицы здесь не создаются: этим занимается Alembic.",
             "code": '''
 import os
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Column, DateTime, Field, Numeric, Session, SQLModel, create_engine, select
+from sqlmodel import Column, DateTime, Field, Numeric, SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./chapter06.db")
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{BASE_DIR / 'chapter06.db'}"
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 
-def make_engine(database_url: str):
+def make_async_database_url(database_url: str) -> str:
+    if database_url.startswith("sqlite://") and not database_url.startswith("sqlite+aiosqlite://"):
+        return database_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return database_url
+
+
+def make_sync_database_url(database_url: str) -> str:
+    if database_url.startswith("sqlite+aiosqlite://"):
+        return database_url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+    return database_url
+
+
+ASYNC_DATABASE_URL = make_async_database_url(DATABASE_URL)
+SYNC_DATABASE_URL = make_sync_database_url(DATABASE_URL)
+
+
+def make_async_engine(database_url: str):
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     kwargs = {"connect_args": connect_args}
-    if database_url == "sqlite://":
+    if database_url in {"sqlite+aiosqlite://", "sqlite+aiosqlite:///:memory:"}:
         kwargs["poolclass"] = StaticPool
-    return create_engine(database_url, **kwargs)
+    return create_async_engine(database_url, **kwargs)
 
 
-engine = make_engine(DATABASE_URL)
+engine = make_async_engine(ASYNC_DATABASE_URL)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 app = FastAPI(
@@ -2650,57 +2629,237 @@ class ProductUpdate(SQLModel):
     stock: int | None = Field(default=None, ge=0)
 
 
-def init_db() -> None:
-    SQLModel.metadata.create_all(bind=engine)
-
-
-def get_db():
-    with Session(engine) as db:
+async def get_db():
+    async with AsyncSessionLocal() as db:
         yield db
 
 
-init_db()
-
-
 @app.get("/api/products", response_model=list[ProductRead])
-async def get_products(db: Session = Depends(get_db)):
-    return db.exec(select(Product).order_by(Product.id)).all()
+async def get_products(db: AsyncSession = Depends(get_db)):
+    result = await db.exec(select(Product).order_by(Product.id))
+    return result.all()
 
 
 @app.get("/api/products/{product_id}", response_model=ProductRead)
-async def get_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.get(Product, product_id)
+async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
 
 @app.post("/api/products", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
-async def create_product(request: ProductCreate, db: Session = Depends(get_db)):
+async def create_product(request: ProductCreate, db: AsyncSession = Depends(get_db)):
     product = Product(**request.model_dump())
     db.add(product)
-    db.commit()
-    db.refresh(product)
+    await db.commit()
+    await db.refresh(product)
     return product
 
 
 @app.put("/api/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def update_product(product_id: int, request: ProductUpdate, db: Session = Depends(get_db)):
-    product = db.get(Product, product_id)
+async def update_product(product_id: int, request: ProductUpdate, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
     for field, value in request.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
-    db.commit()
+    await db.commit()
 
 
 @app.delete("/api/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.get(Product, product_id)
+async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    db.delete(product)
-    db.commit()
+    await db.delete(product)
+    await db.commit()
+            ''',
+        },
+        {
+            "title": "Команда, чтобы появился Alembic",
+            "body": "После <code>main.py</code> нужно один раз создать Alembic-инфраструктуру. Команда <code>alembic init alembic</code> создаёт папку <code>alembic</code>, файл <code>alembic.ini</code>, файл <code>alembic/env.py</code> и папку <code>alembic/versions</code>.",
+            "items": [
+                "Команду запускайте из папки проекта, где лежит <code>main.py</code>.",
+                "Если папка <code>alembic</code> уже есть, повторно <code>alembic init alembic</code> выполнять не нужно.",
+                "После этой команды обязательно замените содержимое <code>alembic/env.py</code> кодом из следующего блока.",
+            ],
+            "code": '''
+pip install fastapi uvicorn sqlmodel sqlalchemy aiosqlite greenlet alembic
+alembic init alembic
+            ''',
+        },
+        {
+            "title": "Полный файл alembic/env.py",
+            "body": "После <code>alembic init alembic</code> откройте <code>alembic/env.py</code> и замените файл полностью. Важные части: добавляем папку проекта в <code>sys.path</code>, импортируем <code>Product</code> из <code>main.py</code>, подключаем <code>SQLModel.metadata</code> и передаём Alembic обычный sync URL базы.",
+            "items": [
+                "Не используйте <code>from ..main.models import Product</code>: в простом учебном проекте это часто падает.",
+                "<code>from main import SYNC_DATABASE_URL, Product</code> нужен, чтобы Alembic увидел URL базы и зарегистрировал таблицу <code>products</code> в metadata.",
+                "<code>target_metadata = SQLModel.metadata</code> нужен для <code>--autogenerate</code>.",
+            ],
+            "code": '''
+from logging.config import fileConfig
+from pathlib import Path
+import sys
+
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+from sqlmodel import SQLModel
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from main import SYNC_DATABASE_URL, Product
+
+config = context.config
+config.set_main_option("sqlalchemy.url", SYNC_DATABASE_URL)
+
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+
+target_metadata = SQLModel.metadata
+
+
+def run_migrations_offline() -> None:
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+            ''',
+        },
+        {
+            "title": "Что написать в командной строке и как запустить приложение",
+            "body": "Теперь создайте первую миграцию, примените её к базе и только после этого запускайте FastAPI. Команда <code>alembic revision --autogenerate -m \"create products\"</code> нужна только один раз в новом проекте, когда в <code>alembic/versions</code> ещё нет миграций.",
+            "items": [
+                "Если <code>alembic/versions</code> уже содержит файл миграции, не создавайте вторую миграцию <code>create products</code>. Сначала выполните <code>alembic upgrade head</code>.",
+                "После <code>--autogenerate</code> обязательно откройте созданный файл миграции. SQLModel часто генерирует строки вида <code>sqlmodel.sql.sqltypes.AutoString(...)</code>.",
+                "Если в миграции есть <code>sqlmodel.sql.sqltypes.AutoString</code>, вверху файла должен быть импорт <code>import sqlmodel</code>. Иначе будет ошибка <code>NameError: name 'sqlmodel' is not defined</code>.",
+                "После <code>alembic upgrade head</code> таблица реально появляется в SQLite.",
+                "Не запускайте эту главу через <code>python main.py</code>. Запуск идёт командой <code>uvicorn main:app --reload --port 7001</code>.",
+                "После запуска приложения откройте <code>http://127.0.0.1:7001/docs</code> и проверьте <code>POST /api/products</code>.",
+            ],
+            "code": '''
+# 1. Если это новый проект и папка alembic/versions пустая,
+#    создайте первую миграцию по SQLModel-коду:
+alembic revision --autogenerate -m "create products"
+
+# 2. Откройте созданный файл в alembic/versions/
+#    и проверьте, что внутри есть op.create_table("products", ...).
+#
+#    Если внутри есть такие строки:
+#    sqlmodel.sql.sqltypes.AutoString(length=120)
+#
+#    то вверху migration-файла должен быть импорт:
+#    import sqlmodel
+#
+#    Минимальный верх файла миграции должен выглядеть так:
+#    from alembic import op
+#    import sqlalchemy as sa
+#    import sqlmodel
+
+# 3. Примените миграции к базе.
+alembic upgrade head
+
+# 4. Проверьте, что база находится на последней миграции.
+alembic current
+
+# 5. Запустите приложение.
+uvicorn main:app --reload --port 7001
+
+# 6. Откройте документацию в браузере.
+open http://127.0.0.1:7001/docs
+            ''',
+        },
+        {
+            "title": "Если появилась ошибка Target database is not up to date",
+            "body": "Эта ошибка означает: в папке <code>alembic/versions</code> уже есть миграция, но текущая база ещё не применена до последней версии. Alembic не даёт создать новую autogenerate-миграцию поверх базы, которая отстаёт.",
+            "items": [
+                "Если вы только что создали миграцию <code>create products</code>, больше не запускайте эту же команду повторно.",
+                "Сначала выполните <code>alembic upgrade head</code>, чтобы применить уже существующие миграции.",
+                "Новую команду <code>alembic revision --autogenerate ...</code> запускайте только после нового изменения моделей.",
+                "Для учебного старта с нуля можно очистить старый SQLite-файл и старые учебные миграции, но в реальном проекте так делать нельзя.",
+            ],
+            "code": '''
+# Посмотреть, где база сейчас
+alembic current
+
+# Посмотреть последнюю миграцию в коде
+alembic heads
+
+# Довести базу до последней миграции
+alembic upgrade head
+
+# После этого запускайте приложение
+uvicorn main:app --reload --port 7001
+            ''',
+        },
+        {
+            "title": "Если появилась ошибка NameError: name 'sqlmodel' is not defined",
+            "body": "Эта ошибка появляется не из-за FastAPI и не из-за вашего endpoint-а. Её вызывает migration-файл, который Alembic создал через <code>--autogenerate</code>. Внутри файла есть <code>sqlmodel.sql.sqltypes.AutoString(...)</code>, но наверху нет <code>import sqlmodel</code>.",
+            "items": [
+                "Откройте файл в <code>alembic/versions</code>, который был создан командой <code>alembic revision --autogenerate</code>.",
+                "Найдите импорты вверху файла.",
+                "Добавьте строку <code>import sqlmodel</code> рядом с <code>import sqlalchemy as sa</code>.",
+                "После этого снова выполните <code>alembic upgrade head</code>.",
+            ],
+            "code": '''
+# Было:
+from alembic import op
+import sqlalchemy as sa
+
+
+# Нужно:
+from alembic import op
+import sqlalchemy as sa
+import sqlmodel
+
+
+# Потом снова:
+alembic upgrade head
+            ''',
+        },
+        {
+            "title": "Если появилась ошибка Table 'products' is already defined",
+            "body": "Эта ошибка обычно появляется, когда файл запускают как <code>python main.py</code>, а внутри файла дополнительно вызывают <code>uvicorn.run(\"main:app\", reload=True)</code>. Тогда Python сначала выполняет файл как <code>__main__</code>, а потом Uvicorn импортирует этот же файл как модуль <code>main</code>. Модель <code>Product</code> объявляется два раза, и SQLModel пытается зарегистрировать таблицу <code>products</code> второй раз.",
+            "items": [
+                "Не добавляйте <code>extend_existing=True</code>: это замаскирует симптом, но не объяснит причину.",
+                "Уберите блок <code>if __name__ == \"__main__\"</code> из учебного <code>main.py</code>, если он у вас остался.",
+                "Запускайте приложение отдельной командой <code>uvicorn main:app --reload --port 7001</code> из папки, где лежит <code>main.py</code>.",
+                "Если сервер уже запущен после неудачной попытки, остановите его через <code>Ctrl+C</code> и запустите правильную команду заново.",
+            ],
+            "code": '''
+# Не так:
+python main.py
+
+# Так:
+uvicorn main:app --reload --port 7001
             ''',
         },
         {
@@ -4104,7 +4263,7 @@ ANSWER_WALKTHROUGHS = {
                 "<code>nullable=False</code> говорит базе: у продукта всегда должна быть категория.",
                 "<code>ProductBase</code> убирает повтор одинаковых полей между таблицей, схемой создания и схемой ответа.",
                 "<code>ProductUpdate</code> не наследуется от <code>ProductBase</code>, потому что в update все поля optional, а в base часть полей обязательная.",
-                "В учебной SQLite-БД таблицы создаются автоматически, но в реальном проекте структура меняется через миграции.",
+                "В этой главе таблицы создаются миграциями. Если миграцию не применить, endpoint-ы будут обращаться к таблице, которой ещё нет.",
                 "Если в уже существующей таблице есть старые продукты, миграция должна дать им значение по умолчанию.",
             ],
         },
@@ -4114,7 +4273,7 @@ ANSWER_WALKTHROUGHS = {
                 "<code>upgrade()</code> описывает движение вперёд: добавить колонку <code>category</code>.",
                 "<code>downgrade()</code> описывает откат: удалить колонку, если миграцию нужно отменить.",
                 "Миграция нужна не FastAPI, а базе данных. FastAPI сам не меняет production-схему при каждом запуске.",
-                "Даже если demo-приложение вызывает <code>SQLModel.metadata.create_all</code>, главе важно показать правильный промышленный путь.",
+                "FastAPI не создаёт production-схему сам. Для структуры таблиц здесь используется Alembic.",
             ],
         },
         {
@@ -4125,6 +4284,8 @@ ANSWER_WALKTHROUGHS = {
                 "<code>alembic/env.py</code> запускается каждый раз, когда вы вызываете <code>alembic revision</code>, <code>upgrade</code> или <code>downgrade</code>.",
                 "Для SQLModel в <code>env.py</code> нужно импортировать модели с <code>table=True</code>, иначе <code>SQLModel.metadata</code> будет пустой или неполной.",
                 "<code>target_metadata = SQLModel.metadata</code> говорит Alembic, с какой схемой Python-кода сравнивать текущую базу при <code>--autogenerate</code>.",
+                "Если модели лежат прямо в <code>main.py</code>, не используйте <code>from ..main.models</code>. Добавьте корень проекта в <code>sys.path</code> и импортируйте <code>from main import Product</code>.",
+                "Если приложение использует <code>sqlite+aiosqlite:///...</code>, Alembic должен получить sync-вариант URL: <code>sqlite:///...</code>. Поэтому в примере есть <code>SYNC_DATABASE_URL</code>.",
             ],
         },
         {
@@ -4570,15 +4731,15 @@ ANSWER_DEEP_DIVES = {
         {
             "title": "Читаем SQLModel-ответ сверху вниз",
             "items": [
-                "Imports SQLModel нужны для <code>SQLModel</code>, <code>Field</code>, <code>Session</code>, <code>select</code> и настроек колонок.",
+                "Imports SQLModel нужны для <code>SQLModel</code>, <code>Field</code>, <code>select</code> и настроек колонок, а <code>AsyncSession</code> нужен для async-работы с БД.",
                 "<code>DATABASE_URL</code> задаёт адрес базы. По умолчанию используется SQLite-файл главы.",
-                "<code>engine</code> знает, как подключаться к базе, а <code>Session(engine)</code> открывает рабочую сессию.",
+                "<code>engine</code> знает, как подключаться к базе, а <code>AsyncSessionLocal()</code> открывает рабочую async-сессию.",
                 "<code>SQLModel.metadata</code> знает, какие таблицы описаны через <code>table=True</code>.",
                 "<code>ProductBase</code> хранит общие поля, чтобы не копировать <code>name</code>, <code>category</code>, <code>description</code>, <code>price</code> и <code>stock</code> в несколько классов.",
                 "<code>Product</code> наследуется от <code>ProductBase</code> и описывает таблицу, потому что у него есть <code>table=True</code>.",
                 "<code>ProductCreate</code> и <code>ProductRead</code> тоже наследуются от <code>ProductBase</code>, но остаются JSON-схемами, потому что у них нет <code>table=True</code>.",
                 "<code>ProductUpdate</code> стоит отдельно, потому что все его поля optional для частичного обновления.",
-                "Endpoint-ы не должны напрямую знать все детали таблицы. Они работают через session и модели.",
+                "Endpoint-ы не должны напрямую знать все детали подключения. Они работают через async session и модели.",
             ],
         },
         {
@@ -4598,9 +4759,9 @@ ANSWER_DEEP_DIVES = {
                 "Клиент отправляет <code>POST /api/products</code> с JSON body.",
                 "FastAPI валидирует body через <code>ProductCreate</code>.",
                 "Endpoint создаёт ORM-объект <code>Product(**request.model_dump())</code> или аналогичную конструкцию.",
-                "SQLModel Session добавляет объект через <code>db.add</code>.",
-                "<code>db.commit()</code> сохраняет строку в SQLite.",
-                "<code>db.refresh(product)</code> подтягивает id и значения по умолчанию из базы.",
+                "SQLModel AsyncSession добавляет объект через <code>db.add</code>.",
+                "<code>await db.commit()</code> сохраняет строку в SQLite.",
+                "<code>await db.refresh(product)</code> подтягивает id и значения по умолчанию из базы.",
                 "FastAPI возвращает объект через <code>ProductRead</code>, и в JSON появляется <code>category</code>.",
             ],
         },
@@ -4839,6 +5000,13 @@ PRACTICE_STEPS = {
         "Не возвращайте локальный список и не копируйте пример JSON в код. Ваш FastAPI endpoint должен быть прокладкой между клиентом и открытым внешним API.",
         "В endpoint-е используйте существующую dependency <code>get_external_api_service</code>, чтобы сохранить учебную архитектуру главы.",
         "Проверьте два сценария: внешний URL напрямую и ваш локальный endpoint через Swagger.",
+    ],
+    "chapter06": [
+        "Сначала поправьте SQLModel-код: поле <code>category</code> должно быть в общей схеме, таблице, create/read-схемах и optional update-схеме.",
+        "Затем проверьте Alembic: если это новый проект, сначала нужен <code>alembic init alembic</code>, потом полный <code>env.py</code> из ответа.",
+        "Создавайте autogenerate-миграцию только когда база уже на актуальном <code>head</code>.",
+        "Примените миграцию через <code>alembic upgrade head</code> до запуска приложения.",
+        "После запуска проверьте через Swagger создание продукта без <code>category</code> и с <code>category=\"books\"</code>.",
     ],
 }
 
@@ -5083,7 +5251,7 @@ BEGINNER_GUIDES = {
         "plain": [
             "База данных хранит данные дольше, чем живёт один запрос. SQLModel помогает работать с таблицами как с Python-классами.",
             "SQLModel построен поверх SQLAlchemy и Pydantic: поэтому он умеет и таблицы описывать, и JSON проверять.",
-            "Session - это рабочая область для операций с БД. Через неё мы добавляем, читаем, сохраняем и удаляем данные.",
+            "AsyncSession - это асинхронная рабочая область для операций с БД. Через неё мы добавляем, читаем, сохраняем и удаляем данные.",
             "Отдельные модели <code>ProductCreate</code>, <code>ProductUpdate</code>, <code>ProductRead</code> нужны, чтобы входной и выходной JSON были понятными.",
         ],
         "line_by_line": [
@@ -5091,15 +5259,16 @@ BEGINNER_GUIDES = {
             ("<code>id: int | None = Field(default=None, primary_key=True)</code>", "Первичный ключ. При создании продукта id ещё нет, поэтому стоит <code>None</code>."),
             ("<code>price: Decimal = Field(sa_column=Column(Numeric(10, 2)))</code>", "Для денег используем SQLAlchemy-колонку <code>Numeric</code>, но подключаем её через SQLModel <code>Field</code>."),
             ("<code>class ProductCreate(SQLModel)</code>", "Модель JSON body для создания продукта. Это не таблица, потому что нет <code>table=True</code>."),
-            ("<code>def get_db()</code>", "Dependency-функция, которая выдаёт SQLModel Session на время запроса."),
-            ("<code>with Session(engine) as db</code>", "Создаём новую Session и автоматически закрываем её после запроса."),
-            ("<code>yield db</code>", "Отдаём Session endpoint-у."),
+            ("<code>async_sessionmaker(...)</code>", "Фабрика, которая будет создавать новую <code>AsyncSession</code> для каждого запроса."),
+            ("<code>async def get_db()</code>", "Dependency-функция, которая выдаёт SQLModel AsyncSession на время запроса."),
+            ("<code>async with AsyncSessionLocal() as db</code>", "Создаём новую AsyncSession и автоматически закрываем её после запроса."),
+            ("<code>yield db</code>", "Отдаём AsyncSession endpoint-у."),
             ("<code>response_model=ProductRead</code>", "FastAPI отдаст наружу только поля, описанные в модели ответа."),
             ("<code>Product(**request.model_dump())</code>", "Берём проверенные поля из SQLModel request-модели и создаём объект таблицы."),
-            ("<code>db.add(product)</code>", "Говорим Session: этот объект нужно вставить в таблицу."),
-            ("<code>db.commit()</code>", "Фактически сохраняем изменения в базе."),
-            ("<code>db.refresh(product)</code>", "Обновляем объект, чтобы получить id, выданный базой."),
-            ("<code>db.exec(select(Product))</code>", "SQLModel-способ выполнить SELECT-запрос и получить продукты."),
+            ("<code>db.add(product)</code>", "Говорим AsyncSession: этот объект нужно вставить в таблицу."),
+            ("<code>await db.commit()</code>", "Фактически сохраняем изменения в базе."),
+            ("<code>await db.refresh(product)</code>", "Обновляем объект, чтобы получить id, выданный базой."),
+            ("<code>await db.exec(select(Product))</code>", "SQLModel-способ выполнить SELECT-запрос и получить продукты через async-сессию."),
             ("<code>alembic init alembic</code>", "Один раз создаёт папку миграций в стороннем проекте."),
             ("<code>target_metadata = SQLModel.metadata</code>", "Связывает Alembic с SQLModel-моделями для autogenerate."),
             ("<code>alembic revision -m \"add product field\"</code>", "Создаёт файл миграции, но ещё не меняет базу."),
@@ -5107,11 +5276,12 @@ BEGINNER_GUIDES = {
             ("<code>alembic upgrade head</code>", "Применяет миграции и реально меняет структуру базы."),
         ],
         "mistakes": [
-            "Создать объект, но забыть <code>db.commit()</code>: данные не сохранятся.",
+            "Создать объект, но забыть <code>await db.commit()</code>: данные не сохранятся.",
             "Поставить <code>table=True</code> на модель запроса <code>ProductCreate</code>. Тогда SQLModel решит, что это ещё одна таблица.",
             "Забыть добавить поле в <code>ProductRead</code>: в базе оно будет, но клиент его не увидит.",
             "Создать файл миграции, но забыть <code>alembic upgrade head</code>: код уже ждёт новую колонку, а база ещё старая.",
-            "Держать одну Session глобально на всё приложение.",
+            "Оставить автосоздание таблиц в runtime-коде и думать, что миграции работают.",
+            "Держать одну AsyncSession глобально на всё приложение.",
         ],
     },
     "chapter07": {
@@ -5297,8 +5467,8 @@ CHAPTER_STUDY_NOTES = {
     ],
     "chapter06": [
         "В этой главе данные начинают жить в базе. Endpoint больше не просто считает результат, а создаёт, читает, изменяет и удаляет строки таблицы.",
-        "Разделяйте три слоя в голове: SQLModel-таблица описывает хранение, SQLModel-схемы описывают внешний JSON, Session выполняет операции с базой.",
-        "Alembic показан как следующий шаг: в демо таблицы создаются автоматически, но в реальных проектах структуру БД меняют миграциями.",
+        "Разделяйте три слоя в голове: SQLModel-таблица описывает хранение, SQLModel-схемы описывают внешний JSON, AsyncSession выполняет операции с базой.",
+        "Alembic здесь не декоративный пункт, а обязательный шаг: таблицы создаются и меняются миграциями, а не при запуске приложения.",
         "В стороннем проекте Alembic сначала инициализируют через <code>alembic init alembic</code>, затем подключают <code>target_metadata = SQLModel.metadata</code> в <code>env.py</code>.",
         "Autogenerate - помощник, а не магия: после <code>alembic revision --autogenerate</code> всегда открывайте файл миграции и проверяйте <code>upgrade()</code>/<code>downgrade()</code>.",
     ],
@@ -5450,8 +5620,8 @@ CONTROL_QUESTIONS = {
     ],
     "chapter06": [
         "Почему <code>Product</code> имеет <code>table=True</code>, а <code>ProductCreate</code> нет?",
-        "Почему Session открывается и закрывается через dependency?",
-        "Что произойдёт, если забыть <code>db.commit()</code>?",
+        "Почему AsyncSession открывается и закрывается через dependency?",
+        "Что произойдёт, если забыть <code>await db.commit()</code>?",
         "Зачем в SQLModel иногда используют <code>sa_column=Column(...)</code>?",
         "Зачем нужен Alembic, если демо создаёт таблицы автоматически?",
         "Что нужно прописать в <code>alembic/env.py</code>, чтобы работал <code>--autogenerate</code> с SQLModel?",
@@ -5609,6 +5779,7 @@ def chapter_files(service: str, data: dict) -> list[tuple[str, str]]:
             ("chapter06/alembic.ini", "Настройки Alembic для миграций базы данных."),
             ("chapter06/alembic/env.py", "Код, который подключает Alembic к SQLModel metadata."),
             ("chapter06/alembic/versions/0001_create_products.py", "Пример первой миграции таблицы products."),
+            ("chapter06/alembic/versions/0002_add_product_category.py", "Миграция задачи: добавляет колонку category и умеет откатываться."),
         ])
     test_file = TEST_FILES.get(service)
     if test_file:

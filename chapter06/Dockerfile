@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY chapter06 ./chapter06
 
 EXPOSE 8006
-CMD ["uvicorn", "chapter06.app.main:app", "--host", "0.0.0.0", "--port", "8006"]
+CMD ["sh", "-c", "cd chapter06 && alembic upgrade head && cd /app && uvicorn chapter06.app.main:app --host 0.0.0.0 --port 8006"]
