@@ -205,6 +205,20 @@ def test_shared_css_prevents_inline_code_from_breaking_cards():
         assert "overflow-wrap: anywhere;" in css, f"{css_file} should wrap long inline code"
         assert "word-break: break-word;" in css, f"{css_file} should break very long tokens"
         assert "pre code" in css and "white-space: pre;" in css, f"{css_file} should preserve code blocks"
+        assert ".syntax-token.keyword" in css, f"{css_file} should style syntax keywords"
+        assert ".syntax-token.string" in css, f"{css_file} should style syntax strings"
+        assert ".syntax-token.comment" in css, f"{css_file} should style syntax comments"
+
+
+def test_shared_js_highlights_code_blocks():
+    js_files = [ROOT / "gateway/static/site.js"]
+    js_files.extend(ROOT / f"chapter{number:02}/static/site.js" for number in range(1, 13))
+
+    for js_file in js_files:
+        js = js_file.read_text(encoding="utf-8")
+        assert "highlightCodeBlocks" in js, f"{js_file} should initialize syntax highlighting"
+        assert 'document.querySelectorAll("pre code")' in js, f"{js_file} should target code blocks"
+        assert "syntax-token" in js, f"{js_file} should wrap code tokens"
 
 
 def test_shared_css_uses_dark_theme_without_white_surfaces():

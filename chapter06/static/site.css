@@ -250,6 +250,33 @@ pre code {
     word-break: normal;
 }
 
+.syntax-token.keyword {
+    color: #ffb86c;
+    font-weight: 700;
+}
+
+.syntax-token.string {
+    color: #9be577;
+}
+
+.syntax-token.comment {
+    color: #7f8a99;
+    font-style: italic;
+}
+
+.syntax-token.number {
+    color: #bd93f9;
+}
+
+.syntax-token.decorator {
+    color: #8be9fd;
+    font-weight: 700;
+}
+
+.syntax-token.function {
+    color: #7cc7ff;
+}
+
 .chapter-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
