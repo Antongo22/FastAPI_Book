@@ -297,6 +297,33 @@ def test_chapter02_practice_and_answers_are_distinct():
     assert "formatted_message = f" in answers
 
 
+def test_chapter07_code_tab_includes_registration_flow():
+    response = TestClient(chapter07_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+    code_tab = unescape(html_section(response.text, '<section id="code"', '<section id="task"'))
+
+    assert "class RegisterRequest(BaseModel)" in code_tab
+    assert "class AuthResponse(BaseModel)" in code_tab
+    assert '@app.post("/api/auth/register", response_model=AuthResponse)' in code_tab
+    assert "pwd_context.hash(request.password)" in code_tab
+    assert "pwd_context.verify(password" in code_tab
+    assert "access_token: str" in code_tab
+    assert "OAuth2PasswordRequestForm" in code_tab
+    assert "def authenticate_user(username: str, password: str)" in code_tab
+    assert '@app.post("/api/auth/token", response_model=AuthResponse)' in code_tab
+    assert "Что происходит при регистрации" in text
+    assert "Что происходит при login" in text
+    assert "registration и login возвращают token одинаково" in text
+    assert "Swagger Authorize использует отдельный endpoint" in text
+    assert "/api/auth/token" in text
+    assert "Почему есть /api/auth/login и /api/auth/token" in text
+    assert "OAuth2PasswordBearer(tokenUrl=\"/api/auth/token\")" in text
+    assert "access_token: str" in text
+    assert "OAuth2PasswordRequestForm = Depends()" in text
+    assert "Protected endpoint вообще не выполнится" in text
+
+
 def test_chapter03_task_uses_real_public_external_api():
     response = TestClient(chapter03_app).get("/")
     assert response.status_code == 200

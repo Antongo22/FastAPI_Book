@@ -53,9 +53,13 @@
                 <article class="info-box">
                     <h2>Как проходит запрос</h2>
                     <ol class="flow-list">
-                        <li>Пользователь регистрируется через <code>/api/auth/register</code>.</li>
-<li>Пароль хешируется, а не сохраняется как есть.</li>
-<li>Сервер выпускает JWT с username, role и временем истечения.</li>
+                        <li>Пользователь регистрируется через <code>/api/auth/register</code>: отправляет username, email и password.</li>
+<li>Сервер проверяет, что username и email ещё не заняты.</li>
+<li>Пароль хешируется через <code>pwd_context.hash(...)</code>, а не сохраняется как есть.</li>
+<li>В demo-хранилище <code>USERS</code> появляется пользователь с <code>password_hash</code> и ролью <code>user</code>.</li>
+<li>После регистрации сервер сразу выпускает JWT с username, role и временем истечения.</li>
+<li>При JSON-login сервер находит пользователя и проверяет пароль через <code>pwd_context.verify(...)</code>.</li>
+<li>Swagger Authorize использует отдельный endpoint <code>/api/auth/token</code>, потому что OAuth2 password flow отправляет form-data, а не JSON.</li>
 <li>Клиент передаёт token в заголовке <code>Authorization: Bearer ...</code>.</li>
 <li>Dependency декодирует и проверяет подпись JWT.</li>
 <li>Protected endpoint получает текущего пользователя или возвращает 401.</li>
@@ -66,7 +70,8 @@
                     <h2>Endpoint-ы для проверки</h2>
                     <div class="endpoint-grid">
                         <article class="endpoint-card"><strong><code>POST /api/auth/register</code></strong><span>Создание пользователя и выдача token-а.</span></article>
-<article class="endpoint-card"><strong><code>POST /api/auth/login</code></strong><span>Проверка пароля и выдача token-а.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/login</code></strong><span>JSON login: проверка пароля и выдача token-а.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/token</code></strong><span>Form login для Swagger Authorize.</span></article>
 <article class="endpoint-card"><strong><code>GET /api/protected</code></strong><span>Endpoint, доступный только с валидным Bearer token.</span></article>
                     </div>
                 </article>
@@ -95,7 +100,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -105,7 +110,7 @@ SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-developmen
 ALGORITHM = &quot;HS256&quot;
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/login&quot;)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/token&quot;)
 USERS: dict[str, dict] = {}
 
 
@@ -121,10 +126,42 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token: str
+    token_type: str = &quot;bearer&quot;
+    username: str
+    role: str
+    expires: datetime
+
+
 def create_access_token(username: str, role: str) -&gt; tuple[str, datetime]:
     expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {&quot;sub&quot;: username, &quot;role&quot;: role, &quot;exp&quot;: expires}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def build_auth_response(username: str, role: str, token: str, expires: datetime) -&gt; AuthResponse:
+    return AuthResponse(
+        access_token=token,
+        token=token,
+        username=username,
+        role=role,
+        expires=expires,
+    )
+
+
+def authenticate_user(username: str, password: str) -&gt; dict:
+    user = USERS.get(username)
+    if user is None or not pwd_context.verify(password, user[&quot;password_hash&quot;]):
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    return user
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; dict:
@@ -139,13 +176,35 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; dict:
     return user
 
 
-@app.post(&quot;/api/auth/login&quot;)
+@app.post(&quot;/api/auth/register&quot;, response_model=AuthResponse)
+async def register(request: RegisterRequest):
+    if request.username in USERS:
+        raise HTTPException(status_code=400, detail=&quot;Пользователь с таким именем уже существует&quot;)
+    if any(user[&quot;email&quot;] == request.email for user in USERS.values()):
+        raise HTTPException(status_code=400, detail=&quot;Пользователь с таким email уже существует&quot;)
+
+    USERS[request.username] = {
+        &quot;username&quot;: request.username,
+        &quot;email&quot;: request.email,
+        &quot;password_hash&quot;: pwd_context.hash(request.password),
+        &quot;role&quot;: &quot;user&quot;,
+    }
+    token, expires = create_access_token(request.username, &quot;user&quot;)
+    return build_auth_response(request.username, &quot;user&quot;, token, expires)
+
+
+@app.post(&quot;/api/auth/login&quot;, response_model=AuthResponse)
 async def login(request: LoginRequest):
-    user = USERS.get(request.username)
-    if user is None or not pwd_context.verify(request.password, user[&quot;password_hash&quot;]):
-        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    user = authenticate_user(request.username, request.password)
     token, expires = create_access_token(user[&quot;username&quot;], user[&quot;role&quot;])
-    return {&quot;token&quot;: token, &quot;token_type&quot;: &quot;bearer&quot;, &quot;expires&quot;: expires}
+    return build_auth_response(user[&quot;username&quot;], user[&quot;role&quot;], token, expires)
+
+
+@app.post(&quot;/api/auth/token&quot;, response_model=AuthResponse)
+async def swagger_login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    token, expires = create_access_token(user[&quot;username&quot;], user[&quot;role&quot;])
+    return build_auth_response(user[&quot;username&quot;], user[&quot;role&quot;], token, expires)
 
 
 @app.get(&quot;/api/protected&quot;)
@@ -155,7 +214,8 @@ async def protected(user: dict = Depends(get_current_user)):
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
-                    <p>Пользователь доказывает, кто он, через логин и пароль. После этого сервер выдаёт token.</p>
+                    <p>Сначала пользователь создаётся через регистрацию. Сервер сохраняет не пароль, а password hash.</p>
+<p>Потом пользователь доказывает, кто он, через login и пароль. После этого сервер выдаёт token.</p>
 <p>Token похож на пропуск: клиент показывает его при каждом защищённом запросе.</p>
 <p>Сервер проверяет подпись token-а и понимает, можно ли доверять данным внутри него.</p>
                 </article>
@@ -163,7 +223,25 @@ async def protected(user: dict = Depends(get_current_user)):
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>def get_current_user(...)</code></dt><dd>Dependency, которая пытается найти пользователя по Bearer token.</dd>
+                        <dt><code>SECRET_KEY = os.getenv(...)</code></dt><dd>Секрет для подписи JWT. Если изменить secret key, старые token-ы перестанут проходить проверку.</dd>
+<dt><code>ALGORITHM = "HS256"</code></dt><dd>Алгоритм подписи. При decode мы явно разрешаем этот алгоритм, чтобы не принимать неожиданные варианты.</dd>
+<dt><code>ACCESS_TOKEN_EXPIRE_MINUTES = 60</code></dt><dd>Сколько живёт access token. Это значение попадает в claim <code>exp</code>.</dd>
+<dt><code>pwd_context = CryptContext(...)</code></dt><dd>Объект, который умеет делать hash пароля и проверять пароль против hash.</dd>
+<dt><code>oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")</code></dt><dd>Dependency для protected endpoint-ов и подсказка Swagger, какой endpoint использовать в кнопке Authorize.</dd>
+<dt><code>USERS: dict[str, dict] = &#123;&#125;</code></dt><dd>Учебное хранилище пользователей в памяти процесса. После перезапуска оно пустое.</dd>
+<dt><code>class RegisterRequest(BaseModel)</code></dt><dd>Модель входного JSON для регистрации. Без неё FastAPI не знает, какие поля ждать от клиента.</dd>
+<dt><code>class LoginRequest(BaseModel)</code></dt><dd>Модель JSON body для <code>/api/auth/login</code>. Именно поэтому этот endpoint нормально принимает username/password в Try it out.</dd>
+<dt><code>class AuthResponse(BaseModel)</code></dt><dd>Модель ответа. Она фиксирует, что registration и login возвращают token одинаково.</dd>
+<dt><code>access_token: str</code></dt><dd>Стандартное OAuth2-имя token-а. Swagger Authorize ищет именно его.</dd>
+<dt><code>token: str</code></dt><dd>Учебный alias того же значения, чтобы в примерах было проще говорить “возьмите token”.</dd>
+<dt><code>pwd_context.hash(request.password)</code></dt><dd>Создаёт hash пароля перед сохранением пользователя.</dd>
+<dt><code>def create_access_token(username, role)</code></dt><dd>Функция собирает данные token-а и возвращает пару: строку JWT и дату истечения.</dd>
+<dt><code>payload = &#123;"sub": username, "role": role, "exp": expires&#125;</code></dt><dd>Данные, которые попадут внутрь JWT: кто пользователь, какая роль и когда token истекает.</dd>
+<dt><code>jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)</code></dt><dd>Подписывает payload. После этого клиент получает строку JWT.</dd>
+<dt><code>def build_auth_response(...)</code></dt><dd>Одна функция собирает ответ, чтобы register/login/token endpoint-ы не копировали одинаковый код.</dd>
+<dt><code>def authenticate_user(username, password)</code></dt><dd>Общая проверка логина и пароля. Её используют оба login endpoint-а.</dd>
+<dt><code>pwd_context.verify(password, user["password_hash"])</code></dt><dd>Проверяет пароль при login, не раскрывая сохранённый hash.</dd>
+<dt><code>def get_current_user(...)</code></dt><dd>Dependency, которая пытается найти пользователя по Bearer token.</dd>
 <dt><code>token: str = Depends(oauth2_scheme)</code></dt><dd>FastAPI достаёт token из заголовка <code>Authorization</code>.</dd>
 <dt><code>jwt.decode(...)</code></dt><dd>Проверяем подпись JWT и читаем payload.</dd>
 <dt><code>SECRET_KEY</code></dt><dd>Секрет, которым token подписывался. Без него нельзя проверить подлинность.</dd>
@@ -172,13 +250,38 @@ async def protected(user: dict = Depends(get_current_user)):
 <dt><code>USERS.get(...)</code></dt><dd>Ищем пользователя в demo-хранилище.</dd>
 <dt><code>if user is None</code></dt><dd>Если token указывает на несуществующего пользователя, возвращаем 401.</dd>
 <dt><code>return user</code></dt><dd>Если всё хорошо, endpoint получит готовый объект пользователя.</dd>
+<dt><code>@app.post("/api/auth/register")</code></dt><dd>Endpoint создания пользователя. Он принимает JSON и возвращает token сразу после успешной регистрации.</dd>
+<dt><code>@app.post("/api/auth/login")</code></dt><dd>Обычный JSON-login. Его удобно проверять через Try it out у самого endpoint-а.</dd>
+<dt><code>@app.post("/api/auth/token")</code></dt><dd>Form-login для Swagger Authorize. Этот endpoint нужен из-за требований OAuth2 password flow.</dd>
+<dt><code>OAuth2PasswordRequestForm = Depends()</code></dt><dd>FastAPI сам читает form-data поля username/password и кладёт их в объект form_data.</dd>
+<dt><code>protected(user: dict = Depends(get_current_user))</code></dt><dd>Protected endpoint вообще не выполнится, пока <code>get_current_user</code> не вернёт пользователя.</dd>
                     </dl>
                 </article>
 
                 <article class="info-box">
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
-                        <li>Token не шифруется, а подписывается: содержимое можно прочитать, но нельзя незаметно изменить без secret key.</li>
+                        <li><code>os.getenv("JWT_SECRET_KEY", ...)</code> берёт secret key из переменной окружения. Если её нет, используется учебное значение. В реальном проекте secret key нельзя хранить прямо в коде.</li>
+<li><code>ACCESS_TOKEN_EXPIRE_MINUTES = 60</code> задаёт срок жизни access token-а. После истечения JWT нельзя использовать для защищённых endpoint-ов.</li>
+<li><code>CryptContext(schemes=["bcrypt"])</code> говорит passlib, каким алгоритмом хешировать пароль.</li>
+<li><code>OAuth2PasswordBearer(tokenUrl="/api/auth/token")</code> не логинит пользователя. Он только описывает для FastAPI/Swagger, откуда брать token и как потом читать <code>Authorization: Bearer ...</code>.</li>
+<li><code>USERS</code> здесь обычный словарь, чтобы не усложнять главу базой данных. Ключ - username, значение - данные пользователя.</li>
+<li><code>RegisterRequest</code> описывает JSON, который клиент отправляет при создании пользователя.</li>
+<li><code>LoginRequest</code> описывает JSON для обычного login endpoint-а. Поэтому <code>/api/auth/login</code> снова показывает поля username/password в Swagger Try it out.</li>
+<li><code>AuthResponse</code> делает ответ регистрации и login одинаковым: token, тип token-а, username, роль и срок действия.</li>
+<li><code>access_token</code> нужен Swagger Authorize: окно авторизации ожидает именно это OAuth2-поле.</li>
+<li><code>token</code> оставлен как учебный alias того же значения, чтобы новичку было проще видеть “вот token”.</li>
+<li><code>create_access_token</code> создаёт payload, добавляет <code>sub</code>, <code>role</code>, <code>exp</code> и подписывает всё через <code>jwt.encode</code>.</li>
+<li><code>build_auth_response</code> нужен, чтобы не копировать сборку ответа в register, JSON-login и Swagger-login.</li>
+<li><code>/api/auth/login</code> принимает обычный JSON. Его удобно проверять через Try it out.</li>
+<li><code>/api/auth/token</code> принимает form-data через <code>OAuth2PasswordRequestForm</code>. Именно туда ходит кнопка Swagger Authorize.</li>
+<li><code>authenticate_user</code> вынесен отдельно, чтобы JSON-login и Swagger-login проверяли пароль одинаково.</li>
+<li><code>pwd_context.hash(request.password)</code> превращает пароль в hash. В <code>USERS</code> не должно быть открытого пароля.</li>
+<li><code>pwd_context.verify(...)</code> при login сравнивает введённый пароль с сохранённым hash.</li>
+<li><code>get_current_user</code> запускается до protected endpoint-а, потому что endpoint просит <code>Depends(get_current_user)</code>.</li>
+<li><code>jwt.decode(...)</code> не просто читает JSON. Он проверяет подпись и срок действия token-а.</li>
+<li><code>payload.get("sub")</code> достаёт username из token-а. Endpoint не верит username из запроса клиента.</li>
+<li>Token не шифруется, а подписывается: содержимое можно прочитать, но нельзя незаметно изменить без secret key.</li>
 <li>В demo пользователи хранятся в памяти, поэтому после перезапуска они пропадают.</li>
 <li>Для role-based доступа добавьте отдельную dependency, которая проверяет <code>user['role']</code>.</li>
                     </ul>
@@ -188,6 +291,11 @@ async def protected(user: dict = Depends(get_current_user)):
                     <h2>Типичные ошибки новичков</h2>
                     <ul class="flow-list">
                         <li>Хранить пароль в открытом виде вместо hash.</li>
+<li>Пытаться войти через <code>/api/auth/login</code> до регистрации пользователя.</li>
+<li>Сохранять пароль в ответе API. Клиенту нужен token, а не пароль или password_hash.</li>
+<li>Нажимать Swagger Authorize до регистрации пользователя: тогда login правильно вернёт 401.</li>
+<li>Путать <code>/api/auth/login</code> и <code>/api/auth/token</code>: первый принимает JSON, второй form-data для Authorize.</li>
+<li>Пытаться читать пустой body как JSON. Для новичка проще держать JSON-login и form-login отдельными endpoint-ами.</li>
 <li>Доверять username, который прислал клиент, вместо username из token-а.</li>
 <li>Путать 401 и 403: 401 - не вошёл, 403 - вошёл, но прав не хватает.</li>
                     </ul>
@@ -257,7 +365,7 @@ async def protected(user: dict = Depends(get_current_user)):
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -275,7 +383,7 @@ SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-developmen
 ALGORITHM = &quot;HS256&quot;
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/login&quot;)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/token&quot;)
 USERS: dict[str, dict] = {}
 
 
@@ -291,6 +399,7 @@ class LoginRequest(BaseModel):
 
 
 class AuthResponse(BaseModel):
+    access_token: str
     token: str
     token_type: str = &quot;bearer&quot;
     username: str
@@ -302,6 +411,23 @@ def create_access_token(username: str, role: str) -&gt; tuple[str, datetime]:
     expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {&quot;sub&quot;: username, &quot;role&quot;: role, &quot;exp&quot;: expires}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def build_auth_response(username: str, role: str, token: str, expires: datetime) -&gt; AuthResponse:
+    return AuthResponse(
+        access_token=token,
+        token=token,
+        username=username,
+        role=role,
+        expires=expires,
+    )
+
+
+def authenticate_user(username: str, password: str) -&gt; dict:
+    user = USERS.get(username)
+    if user is None or not pwd_context.verify(password, user[&quot;password_hash&quot;]):
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    return user
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; dict:
@@ -337,16 +463,21 @@ async def register(request: RegisterRequest):
         &quot;role&quot;: role,
     }
     token, expires = create_access_token(request.username, role)
-    return AuthResponse(token=token, username=request.username, role=role, expires=expires)
+    return build_auth_response(request.username, role, token, expires)
 
 
 @app.post(&quot;/api/auth/login&quot;, response_model=AuthResponse)
 async def login(request: LoginRequest):
-    user = USERS.get(request.username)
-    if user is None or not pwd_context.verify(request.password, user[&quot;password_hash&quot;]):
-        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    user = authenticate_user(request.username, request.password)
     token, expires = create_access_token(user[&quot;username&quot;], user[&quot;role&quot;])
-    return AuthResponse(token=token, username=user[&quot;username&quot;], role=user[&quot;role&quot;], expires=expires)
+    return build_auth_response(user[&quot;username&quot;], user[&quot;role&quot;], token, expires)
+
+
+@app.post(&quot;/api/auth/token&quot;, response_model=AuthResponse)
+async def swagger_login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    token, expires = create_access_token(user[&quot;username&quot;], user[&quot;role&quot;])
+    return build_auth_response(user[&quot;username&quot;], user[&quot;role&quot;], token, expires)
 
 
 @app.get(&quot;/api/protected&quot;)
@@ -410,10 +541,43 @@ async def admin_area(user: dict = Depends(require_admin)):
 <ul class="flow-list"><li>Imports нужны для JWT, password hashing, OAuth2 dependency, Pydantic-моделей и HTTP-ошибок.</li>
 <li>Константы <code>SECRET_KEY</code>, <code>ALGORITHM</code> и время жизни token-а определяют, как создаётся JWT.</li>
 <li><code>pwd_context</code> отвечает за hash пароля. Даже в учебнике пароль не должен сравниваться как обычная строка.</li>
-<li>Pydantic-модели описывают вход и выход auth endpoint-ов.</li>
+<li><code>RegisterRequest</code> описывает body регистрации: username, email и password.</li>
+<li><code>LoginRequest</code> описывает body входа: username и password.</li>
+<li><code>AuthResponse</code> делает одинаковый формат ответа для регистрации и login.</li>
+<li><code>USERS</code> - учебное хранилище в памяти. В реальном проекте здесь была бы таблица users.</li>
+<li><code>OAuth2PasswordBearer(tokenUrl="/api/auth/token")</code> связывает кнопку Swagger Authorize с form endpoint-ом <code>/api/auth/token</code>.</li>
 <li><code>create_access_token</code> собирает payload и подписывает JWT.</li>
+<li><code>build_auth_response</code> возвращает одинаковую структуру JSON из register, login и token endpoint-а.</li>
+<li><code>authenticate_user</code> содержит общую проверку username/password, чтобы не копировать её в два login endpoint-а.</li>
 <li><code>get_current_user</code> превращает Bearer token обратно в пользователя.</li>
 <li><code>require_admin</code> добавляет вторую проверку: не просто вошёл, а вошёл с нужной ролью.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при регистрации</h2>
+<ul class="flow-list"><li>Клиент отправляет <code>POST /api/auth/register</code> с JSON body.</li>
+<li>FastAPI проверяет body через <code>RegisterRequest</code>: должны быть username, email и password.</li>
+<li>Endpoint проверяет, что username ещё не лежит в <code>USERS</code>.</li>
+<li>Endpoint проверяет, что email ещё не используется другим пользователем.</li>
+<li><code>pwd_context.hash(request.password)</code> создаёт password hash. Открытый пароль не сохраняется.</li>
+<li>В <code>USERS[request.username]</code> сохраняется username, email, password_hash и role.</li>
+<li><code>create_access_token(...)</code> создаёт JWT уже после успешного создания пользователя.</li>
+<li>Ответ возвращается через <code>AuthResponse</code>, поэтому клиент сразу получает token для защищённых endpoint-ов.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при login</h2>
+<ul class="flow-list"><li>Клиент отправляет <code>POST /api/auth/login</code> с username и password.</li>
+<li>Endpoint ищет пользователя в <code>USERS</code> по username.</li>
+<li>Если пользователя нет, возвращается <code>401</code>: сервер не смог подтвердить личность.</li>
+<li>Если пользователь есть, <code>pwd_context.verify(...)</code> сравнивает введённый пароль с сохранённым hash.</li>
+<li>Если пароль неверный, снова возвращается <code>401</code>.</li>
+<li>Если пароль верный, сервер создаёт новый JWT и возвращает его клиенту.</li>
+<li>Этот endpoint принимает JSON, поэтому в Swagger Try it out вы видите нормальное JSON-тело с username/password.</li></ul>
+</article>
+<article class="info-box"><h2>Почему есть /api/auth/login и /api/auth/token</h2>
+<ul class="flow-list"><li><code>/api/auth/login</code> сделан для обычного API-клиента: frontend, curl, Postman или Swagger Try it out отправляют JSON.</li>
+<li><code>/api/auth/token</code> сделан для OAuth2 password flow в Swagger Authorize.</li>
+<li>Swagger Authorize отправляет не JSON, а form-data с полями <code>username</code> и <code>password</code>.</li>
+<li>Если заставить один endpoint угадывать все форматы вручную, новичку сложнее понимать код и легче получить ошибку <code>JSONDecodeError</code>.</li>
+<li>Оба endpoint-а вызывают <code>authenticate_user</code>, поэтому логика проверки пароля остаётся в одном месте.</li>
+<li>Оба endpoint-а возвращают <code>AuthResponse</code>, поэтому наружу приходит одинаковый token.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при запросе /api/admin</h2>
 <ul class="flow-list"><li>Клиент отправляет header <code>Authorization: Bearer ...</code>.</li>

@@ -33,7 +33,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -43,7 +43,7 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "fastapi-book-development-secret")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 USERS: dict[str, dict] = {}
 
 
@@ -59,6 +59,7 @@ class LoginRequest(BaseModel):
 
 
 class AuthResponse(BaseModel):
+    access_token: str
     token: str
     token_type: str = "bearer"
     username: str
@@ -70,6 +71,23 @@ def create_access_token(username: str, role: str) -> tuple[str, datetime]:
     expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": username, "role": role, "exp": expires}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
+
+
+def build_auth_response(username: str, role: str, token: str, expires: datetime) -> AuthResponse:
+    return AuthResponse(
+        access_token=token,
+        token=token,
+        username=username,
+        role=role,
+        expires=expires,
+    )
+
+
+def authenticate_user(username: str, password: str) -> dict:
+    user = USERS.get(username)
+    if user is None or not pwd_context.verify(password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
+    return user
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
@@ -97,16 +115,21 @@ async def register(request: RegisterRequest):
         "role": "user",
     }
     token, expires = create_access_token(request.username, "user")
-    return AuthResponse(token=token, username=request.username, role="user", expires=expires)
+    return build_auth_response(request.username, "user", token, expires)
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login(request: LoginRequest):
-    user = USERS.get(request.username)
-    if user is None or not pwd_context.verify(request.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
+    user = authenticate_user(request.username, request.password)
     token, expires = create_access_token(user["username"], user["role"])
-    return AuthResponse(token=token, username=user["username"], role=user["role"], expires=expires)
+    return build_auth_response(user["username"], user["role"], token, expires)
+
+
+@app.post("/api/auth/token", response_model=AuthResponse)
+async def swagger_login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    token, expires = create_access_token(user["username"], user["role"])
+    return build_auth_response(user["username"], user["role"], token, expires)
 
 
 @app.get("/api/protected")
