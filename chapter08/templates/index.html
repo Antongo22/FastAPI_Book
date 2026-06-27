@@ -24,7 +24,7 @@
             <div class="lesson-meta">
                 <span><strong>Порт:</strong> 8008</span>
                 <span><strong>Swagger:</strong> <code>http://localhost:8008/docs</code></span>
-                <span><strong>Результат:</strong> После главы вы понимаете, зачем разделять access и refresh token и почему refresh token нужно хранить на сервере.</span>
+                <span><strong>Результат:</strong> После главы вы понимаете, зачем разделять access и refresh token, как работает rotation и почему refresh token должен храниться на сервере.</span>
             </div>
         </section>
 
@@ -41,7 +41,9 @@
                     <h2>Что разбираем в этой главе</h2>
                     <ul class="flow-list">
                         <li><strong>Access token</strong> - короткоживущий JWT для доступа к API.</li>
-<li><strong>Refresh token</strong> - случайная строка, которая хранится в БД и выпускает новую пару token-ов.</li>
+<li><strong>Refresh token</strong> - случайная строка, которая хранится на сервере и выпускает новую пару token-ов.</li>
+<li><strong>In-memory storage</strong> - учебное хранение в словаре Python: данные пропадают после перезапуска приложения.</li>
+<li><strong>Pydantic record</strong> - объект состояния token-а: username, expires_at, revoked, revoked_at.</li>
 <li><strong>Rotation</strong> - при refresh старый refresh token отзывается и создаётся новый.</li>
 <li><strong>Revoke</strong> - ручное прекращение действия refresh token-а.</li>
 <li><strong>Logout</strong> - отзыв всех активных refresh token-ов пользователя.</li>
@@ -55,7 +57,7 @@
                     <ol class="flow-list">
                         <li>Register/login создаёт пользователя и выдаёт access + refresh token.</li>
 <li>Access token живёт недолго и отправляется в Bearer header.</li>
-<li>Refresh token хранится в таблице <code>refresh_tokens</code>.</li>
+<li>Refresh token хранится в словаре <code>REFRESH_TOKENS</code> как Pydantic-модель <code>StoredRefreshToken</code>.</li>
 <li>При <code>/api/auth/refresh</code> сервер проверяет token, срок действия и revoked flag.</li>
 <li>Старый refresh token отзывается, новая пара token-ов возвращается клиенту.</li>
 <li>Повторное использование старого refresh token-а возвращает HTTP 401.</li>
@@ -93,22 +95,22 @@
             <div class="section-grid">
                 <article class="info-box">
                     <h2>Ключевой фрагмент</h2>
-                    <pre><code>{% raw %}import os
-import secrets
+                    <pre><code>{% raw %}import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException
-from jose import jwt
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 
-DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter08.db&quot;)
-SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-development-secret&quot;)
+SECRET_KEY = &quot;fastapi-book-development-secret&quot;
 ALGORITHM = &quot;HS256&quot;
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
+pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/login&quot;)
 
 
 app = FastAPI(
@@ -118,80 +120,137 @@ app = FastAPI(
 )
 
 
-def make_engine(database_url: str):
-    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
-    kwargs = {&quot;connect_args&quot;: connect_args}
-    if database_url == &quot;sqlite://&quot;:
-        kwargs[&quot;poolclass&quot;] = StaticPool
-    return create_engine(database_url, **kwargs)
+class UserRecord(BaseModel):
+    username: str
+    email: str
+    password_hash: str
+    role: str = &quot;user&quot;
 
 
-engine = make_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+class StoredRefreshToken(BaseModel):
+    token: str
+    username: str
+    expires_at: datetime
+    revoked: bool = False
+    revoked_at: datetime | None = None
 
 
-class Base(DeclarativeBase):
-    pass
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
 
 
-class User(Base):
-    __tablename__ = &quot;users&quot;
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
-    refresh_tokens: Mapped[list[&quot;RefreshToken&quot;]] = relationship(back_populates=&quot;user&quot;)
-
-
-class RefreshToken(Base):
-    __tablename__ = &quot;refresh_tokens&quot;
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey(&quot;users.id&quot;))
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    user: Mapped[User] = relationship(back_populates=&quot;refresh_tokens&quot;)
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = &quot;bearer&quot;
+    username: str
+    role: str
+    access_token_expires: datetime
+    refresh_token_expires: datetime
 
 
-def create_access_token(user: User) -&gt; tuple[str, datetime]:
-    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-    payload = {&quot;sub&quot;: str(user.id), &quot;username&quot;: user.username, &quot;exp&quot;: expires}
+USERS: dict[str, UserRecord] = {}
+REFRESH_TOKENS: dict[str, StoredRefreshToken] = {}
+
+
+def create_access_token(user: UserRecord) -&gt; tuple[str, datetime]:
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {&quot;sub&quot;: user.username, &quot;username&quot;: user.username, &quot;role&quot;: user.role, &quot;exp&quot;: expires}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
 
 
-def create_refresh_token(db: Session, user: User) -&gt; tuple[str, datetime]:
+def create_refresh_token(user: UserRecord) -&gt; tuple[str, datetime]:
     token = secrets.token_urlsafe(48)
     expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    db.add(RefreshToken(token=token, user_id=user.id, expires_at=expires))
-    db.commit()
+    REFRESH_TOKENS[token] = StoredRefreshToken(token=token, username=user.username, expires_at=expires)
     return token, expires
 
 
+def revoke_refresh_token(stored: StoredRefreshToken) -&gt; None:
+    stored.revoked = True
+    stored.revoked_at = datetime.utcnow()
+
+
+def authenticate_user(username: str, password: str) -&gt; UserRecord:
+    user = USERS.get(username)
+    if user is None or not pwd_context.verify(password, user.password_hash):
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    return user
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; UserRecord:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = str(payload[&quot;sub&quot;])
+    except (JWTError, KeyError) as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;Invalid token&quot;) from error
+    user = USERS.get(username)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;User not found&quot;)
+    return user
+
+
+@app.post(&quot;/api/auth/register&quot;, response_model=AuthResponse)
+async def register(request: RegisterRequest):
+    if request.username in USERS:
+        raise HTTPException(status_code=400, detail=&quot;Пользователь с таким именем уже существует&quot;)
+    user = UserRecord(
+        username=request.username,
+        email=request.email,
+        password_hash=pwd_context.hash(request.password),
+        role=&quot;user&quot;,
+    )
+    USERS[user.username] = user
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(user)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
+@app.post(&quot;/api/auth/login&quot;, response_model=AuthResponse)
+async def login(request: LoginRequest):
+    user = authenticate_user(request.username, request.password)
+    access_token, access_expires = create_access_token(user)
+    refresh_token, refresh_expires = create_refresh_token(user)
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=user.username,
+        role=user.role,
+        access_token_expires=access_expires,
+        refresh_token_expires=refresh_expires,
+    )
+
+
 @app.post(&quot;/api/auth/refresh&quot;)
-async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
-    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+async def refresh(request: RefreshTokenRequest):
+    stored = REFRESH_TOKENS.get(request.refresh_token)
     if stored is None or stored.revoked or stored.expires_at &lt;= datetime.utcnow():
         raise HTTPException(status_code=401, detail=&quot;Недействительный refresh token&quot;)
 
-    stored.revoked = True
-    user = db.get(User, stored.user_id)
+    revoke_refresh_token(stored)
+    user = USERS.get(stored.username)
     if user is None:
         raise HTTPException(status_code=401, detail=&quot;Пользователь не найден&quot;)
     access_token, access_expires = create_access_token(user)
-    refresh_token, refresh_expires = create_refresh_token(db, user)
-    db.commit()
+    refresh_token, refresh_expires = create_refresh_token(user)
     return {
         &quot;access_token&quot;: access_token,
         &quot;refresh_token&quot;: refresh_token,
@@ -204,22 +263,73 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
                     <h2>Если совсем по-простому</h2>
                     <p>Access token должен жить недолго: если его украдут, ущерб ограничен временем жизни.</p>
 <p>Refresh token нужен, чтобы пользователь не вводил пароль каждые 15 минут.</p>
-<p>Refresh token хранится на сервере, поэтому его можно отозвать.</p>
+<p>В учебной версии refresh token хранится на сервере в словаре, поэтому его можно отозвать без базы данных.</p>
+<p>Самое важное: access token доказывает право ходить в защищённые endpoint-ы, а refresh token нужен только для получения новой пары token-ов.</p>
+<p>Refresh token нельзя просто принимать на веру. Сервер каждый раз сверяет его со своим словарём.</p>
                 </article>
 
                 <article class="info-box">
                     <h2>Построчный разбор</h2>
                     <dl class="line-breakdown">
-                        <dt><code>db.query(RefreshToken)</code></dt><dd>Начинаем запрос к таблице refresh token-ов.</dd>
-<dt><code>.filter(...)</code></dt><dd>Ищем строку, где token совпадает с тем, что прислал клиент.</dd>
-<dt><code>.first()</code></dt><dd>Берём первую найденную строку или <code>None</code>.</dd>
-<dt><code>stored is None</code></dt><dd>Token вообще не найден в БД.</dd>
+                        <dt><code>import secrets</code></dt><dd>Подключаем модуль для криптографически безопасных случайных строк. Для refresh token-а нельзя использовать обычный счётчик или простую дату.</dd>
+<dt><code>from datetime import datetime, timedelta, timezone</code></dt><dd>Нужны текущая дата, прибавление времени жизни token-а и timezone-aware дата для JWT access token-а.</dd>
+<dt><code>OAuth2PasswordBearer</code></dt><dd>FastAPI dependency, которая достаёт Bearer token из заголовка <code>Authorization</code>. Она нужна для logout и защищённых endpoint-ов.</dd>
+<dt><code>SECRET_KEY</code></dt><dd>Секрет для подписи JWT access token-а. В учебнике он строкой в коде, в реальном проекте его выносят в переменные окружения.</dd>
+<dt><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></dt><dd>Сколько живёт access token. В примере мало, потому что access token должен быть короткоживущим.</dd>
+<dt><code>REFRESH_TOKEN_EXPIRE_DAYS</code></dt><dd>Сколько живёт refresh token. Он живёт дольше, потому что нужен для продления сессии.</dd>
+<dt><code>pwd_context = CryptContext(...)</code></dt><dd>Объект для hash-а пароля и проверки пароля. В словаре хранится hash, а не исходный пароль.</dd>
+<dt><code>oauth2_scheme = OAuth2PasswordBearer(...)</code></dt><dd>Объясняет FastAPI, где в Swagger находится login/token endpoint и как доставать Bearer token из запроса.</dd>
+<dt><code>class UserRecord(BaseModel)</code></dt><dd>Pydantic-модель пользователя для учебного словаря <code>USERS</code>.</dd>
+<dt><code>password_hash: str</code></dt><dd>Храним не пароль, а результат hash-функции. Поэтому при login пароль проверяется через <code>pwd_context.verify</code>.</dd>
+<dt><code>class StoredRefreshToken(BaseModel)</code></dt><dd>Pydantic-модель состояния refresh token-а для словаря <code>REFRESH_TOKENS</code>.</dd>
+<dt><code>token: str</code></dt><dd>Сама длинная случайная строка refresh token-а.</dd>
+<dt><code>username: str</code></dt><dd>Показывает, какому пользователю принадлежит refresh token.</dd>
+<dt><code>expires_at: datetime</code></dt><dd>Момент, после которого refresh token нельзя использовать.</dd>
+<dt><code>revoked: bool = False</code></dt><dd>По умолчанию новый token активен. Когда его отзывают, поле становится <code>True</code>.</dd>
+<dt><code>revoked_at: datetime | None = None</code></dt><dd>У нового token-а времени отзыва нет. Оно появляется только после revoke, refresh rotation или logout.</dd>
+<dt><code>class RefreshTokenRequest(BaseModel)</code></dt><dd>Модель тела запроса для refresh/revoke endpoint-ов. Клиент присылает JSON с полем <code>refresh_token</code>.</dd>
+<dt><code>class AuthResponse(BaseModel)</code></dt><dd>Модель ответа login/register/refresh. Клиент получает оба token-а и сроки их действия.</dd>
+<dt><code>USERS: dict[str, UserRecord]</code></dt><dd>Ключ - username, значение - объект пользователя. Это замена таблицы users на время урока.</dd>
+<dt><code>REFRESH_TOKENS: dict[str, StoredRefreshToken]</code></dt><dd>Ключ - строка refresh token-а, значение - объект с username, expires_at, revoked и revoked_at.</dd>
+<dt><code>def create_access_token(user: UserRecord)</code></dt><dd>Функция создаёт короткий JWT для конкретного пользователя.</dd>
+<dt><code>expires = datetime.now(timezone.utc) + timedelta(...)</code></dt><dd>Считаем момент, когда access token должен перестать работать.</dd>
+<dt><code>payload = &#123;"sub": user.username, ...&#125;</code></dt><dd>Payload - данные внутри JWT. <code>sub</code> обычно хранит главный id пользователя.</dd>
+<dt><code>jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)</code></dt><dd>Подписываем payload секретом. После этого клиент не сможет незаметно изменить username или role.</dd>
+<dt><code>def create_refresh_token(user: UserRecord)</code></dt><dd>Функция создаёт долгий refresh token и обязательно сохраняет его на сервере.</dd>
+<dt><code>secrets.token_urlsafe(48)</code></dt><dd>Создаёт случайную строку, которую невозможно нормально угадать.</dd>
+<dt><code>expires = datetime.utcnow() + timedelta(days=...)</code></dt><dd>Считаем срок действия refresh token-а.</dd>
+<dt><code>REFRESH_TOKENS[token] = StoredRefreshToken(...)</code></dt><dd>Сохраняем состояние refresh token-а на сервере.</dd>
+<dt><code>return token, expires</code></dt><dd>Клиенту отдаём строку token-а и дату истечения. Внутренний Pydantic-объект клиенту не отдаётся.</dd>
+<dt><code>def revoke_refresh_token(stored: StoredRefreshToken)</code></dt><dd>Единая функция для отзыва token-а. Её вызывают refresh, revoke и logout.</dd>
+<dt><code>stored.revoked = True</code></dt><dd>Помечаем token как недействительный.</dd>
+<dt><code>stored.revoked_at = datetime.utcnow()</code></dt><dd>Запоминаем время, когда token был отозван.</dd>
+<dt><code>def authenticate_user(...)</code></dt><dd>Проверяет username и password при login. Если что-то не так, сразу возвращает 401.</dd>
+<dt><code>USERS.get(username)</code></dt><dd>Ищем пользователя в учебном словаре. Если ключа нет, вернётся <code>None</code>, а не ошибка.</dd>
+<dt><code>pwd_context.verify(password, user.password_hash)</code></dt><dd>Сравнивает введённый пароль с hash-ом из пользователя.</dd>
+<dt><code>def get_current_user(token: str = Depends(oauth2_scheme))</code></dt><dd>Dependency для endpoint-ов, которым нужен текущий пользователь из access token-а.</dd>
+<dt><code>jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])</code></dt><dd>Проверяем подпись JWT и достаём payload. Если token испорчен или просрочен, будет ошибка.</dd>
+<dt><code>username = str(payload["sub"])</code></dt><dd>Берём username из проверенного JWT, а не из JSON клиента.</dd>
+<dt><code>@app.post("/api/auth/register")</code></dt><dd>Endpoint регистрации. Создаёт пользователя, сохраняет его в <code>USERS</code> и выдаёт первую пару token-ов.</dd>
+<dt><code>if request.username in USERS</code></dt><dd>Защита от повторной регистрации с тем же username.</dd>
+<dt><code>pwd_context.hash(request.password)</code></dt><dd>Превращаем пароль в hash перед сохранением.</dd>
+<dt><code>@app.post("/api/auth/login")</code></dt><dd>Endpoint входа. Пользователь уже должен существовать, поэтому сначала вызывается <code>authenticate_user</code>.</dd>
+<dt><code>@app.post("/api/auth/refresh")</code></dt><dd>Endpoint обновления token-ов. Здесь происходит refresh rotation.</dd>
+<dt><code>stored = REFRESH_TOKENS.get(request.refresh_token)</code></dt><dd>Ищем token, который прислал клиент.</dd>
+<dt><code>stored is None</code></dt><dd>Token вообще не найден в серверном словаре.</dd>
 <dt><code>stored.revoked</code></dt><dd>Token уже был отозван раньше.</dd>
 <dt><code>stored.expires_at &lt;= datetime.utcnow()</code></dt><dd>Срок действия token-а закончился.</dd>
 <dt><code>raise HTTPException(status_code=401)</code></dt><dd>Любая из этих проблем означает: клиент не может обновить сессию.</dd>
-<dt><code>stored.revoked = True</code></dt><dd>Старый refresh token больше нельзя использовать.</dd>
+<dt><code>revoke_refresh_token(stored)</code></dt><dd>Старый refresh token больше нельзя использовать; helper ставит revoked и revoked_at.</dd>
+<dt><code>user = USERS.get(stored.username)</code></dt><dd>После проверки refresh token-а достаём владельца. Если пользователя удалили, новые token-ы не выдаём.</dd>
 <dt><code>create_access_token(user)</code></dt><dd>Создаём новый короткий access token.</dd>
-<dt><code>create_refresh_token(db, user)</code></dt><dd>Создаём новый refresh token и сохраняем его в БД.</dd>
+<dt><code>create_refresh_token(user)</code></dt><dd>Создаём новый refresh token и сохраняем его в словаре.</dd>
+<dt><code>@app.post("/api/auth/revoke")</code></dt><dd>Endpoint для ручного отзыва одного refresh token-а.</dd>
+<dt><code>if stored is not None and not stored.revoked</code></dt><dd>Если token найден и ещё активен, отзываем. Если уже отозван, endpoint спокойно возвращает ответ.</dd>
+<dt><code>@app.post("/api/auth/logout")</code></dt><dd>Endpoint выхода из аккаунта. Он отзывает все активные refresh token-ы текущего пользователя.</dd>
+<dt><code>user: UserRecord = Depends(get_current_user)</code></dt><dd>Перед входом в logout FastAPI проверит access token и подставит текущего пользователя.</dd>
+<dt><code>for stored in REFRESH_TOKENS.values()</code></dt><dd>Перебираем все refresh token-ы на сервере, потому что у пользователя может быть несколько сессий.</dd>
+<dt><code>stored.username == user.username</code></dt><dd>Отзываем только token-ы текущего пользователя, не трогая чужие.</dd>
+<dt><code>count += 1</code></dt><dd>Считаем, сколько активных сессий реально завершили.</dd>
                     </dl>
                 </article>
 
@@ -227,6 +337,19 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
                     <h2>Что здесь важно</h2>
                     <ul class="flow-list">
                         <li>Refresh token не является JWT: это opaque value, смысл которого известен только серверу.</li>
+<li>Opaque value означает “непрозрачное значение”: клиент видит длинную строку, но не может сам прочитать из неё username, роль или срок действия.</li>
+<li>Access token в этой главе остаётся JWT: он содержит payload, подписывается секретом и проверяется без поиска в словаре.</li>
+<li>Refresh token сделан другой технологией специально: сервер должен иметь возможность найти его у себя и отозвать в любой момент.</li>
+<li><code>USERS</code> - учебное хранилище пользователей. Ключ словаря - username, значение - Pydantic-модель <code>UserRecord</code>.</li>
+<li><code>REFRESH_TOKENS</code> - учебное серверное хранилище. Клиент видит только строку token-а, но не видит объект <code>StoredRefreshToken</code>.</li>
+<li>Ключ в <code>REFRESH_TOKENS</code> - сама строка refresh token-а. Значение - объект, где сервер помнит владельца, срок жизни и состояние отзыва.</li>
+<li><code>StoredRefreshToken</code> показывает состояние token-а без БД: кому принадлежит, когда истекает, отозван ли, когда отозван.</li>
+<li><code>secrets.token_urlsafe(48)</code> нужен для случайной строки, которую практически невозможно угадать перебором.</li>
+<li><code>create_refresh_token</code> не просто возвращает строку клиенту. Сначала он создаёт серверную запись в словаре, и только потом отдаёт token наружу.</li>
+<li>В <code>/api/auth/refresh</code> есть несколько защитных проверок: token должен существовать, не быть отозванным, не быть просроченным, а пользователь всё ещё должен существовать.</li>
+<li><code>revoke_refresh_token</code> меняет Pydantic-объект прямо в словаре.</li>
+<li>Отдельный <code>commit</code> не нужен, потому что словарь живёт в памяти Python, а не в базе данных.</li>
+<li><code>/api/auth/logout</code> проходит по <code>REFRESH_TOKENS.values()</code>, потому что у одного пользователя может быть несколько активных refresh token-ов: браузер, телефон, второй браузер.</li>
 <li>Rotation помогает обнаруживать и блокировать повторное использование украденного token-а.</li>
 <li>В production refresh token обычно хранится в HttpOnly cookie или защищённом хранилище клиента.</li>
                     </ul>
@@ -238,6 +361,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
                         <li>Не отзывать старый refresh token при обновлении.</li>
 <li>Делать refresh token JWT без хранения на сервере, а потом не иметь возможности его отозвать.</li>
 <li>Хранить refresh token в небезопасном месте на клиенте.</li>
+<li>Думать, что словарь заменяет БД в production. Это только учебный способ увидеть механику без лишнего слоя.</li>
                     </ul>
                 </article>
 
@@ -254,15 +378,16 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
                 <article class="info-box">
                     <h2>Задача</h2>
                     <p>Сначала попробуйте решить без вкладки “Ответы”. Ниже есть подсказки и критерии, но нет готового кода.</p>
-                    <div class="callout">Добавьте поле <code>revoked_at</code>, чтобы видеть, когда token был отозван.</div>
+                    <div class="callout">Добавьте поле <code>revoked_reason</code> в Pydantic-модель <code>StoredRefreshToken</code> и заполняйте его значениями <code>rotated</code>, <code>manual</code>, <code>logout</code>.</div>
                 </article>
 
                 <article class="info-box">
                     <h2>Порядок работы без готового кода</h2>
-                    <ul class="flow-list"><li>Добавить поле <code>revoked_at</code> в модель <code>RefreshToken</code>.</li>
-<li>Заполнять <code>revoked_at</code> в <code>/refresh</code>, когда старый token отзывается.</li>
-<li>Заполнять <code>revoked_at</code> в <code>/revoke</code>.</li>
-<li>Для logout обновлять все активные token-ы пользователя.</li></ul>
+                    <ul class="flow-list"><li>Добавить поле <code>revoked_reason: str | None = None</code> в <code>StoredRefreshToken</code>.</li>
+<li>Изменить helper <code>revoke_refresh_token</code>, чтобы он принимал reason.</li>
+<li>При refresh передавать reason <code>rotated</code>.</li>
+<li>При ручном revoke передавать reason <code>manual</code>.</li>
+<li>При logout передавать reason <code>logout</code>.</li></ul>
                 </article>
 
                 <article class="info-box">
@@ -296,15 +421,15 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
                 </article>
 
                 <article class="info-box"><h2>1. Что меняем</h2>
-<p>Нужно добавить поле в ORM-модель refresh token-а и заполнять его во всех местах, где token отзывается.</p>
-<ul class="flow-list"><li>Добавить поле <code>revoked_at</code> в модель <code>RefreshToken</code>.</li>
-<li>Заполнять <code>revoked_at</code> в <code>/refresh</code>, когда старый token отзывается.</li>
-<li>Заполнять <code>revoked_at</code> в <code>/revoke</code>.</li>
-<li>Для logout обновлять все активные token-ы пользователя.</li></ul>
+<p>В этой главе БД не нужна. Refresh token хранится в словаре <code>REFRESH_TOKENS</code>, а значение словаря - Pydantic-модель <code>StoredRefreshToken</code>. Задача: добавить причину отзыва <code>revoked_reason</code> и заполнять её при refresh, revoke и logout.</p>
+<ul class="flow-list"><li>Добавить поле <code>revoked_reason: str | None = None</code> в <code>StoredRefreshToken</code>.</li>
+<li>Изменить helper <code>revoke_refresh_token</code>, чтобы он принимал reason.</li>
+<li>При refresh передавать reason <code>rotated</code>.</li>
+<li>При ручном revoke передавать reason <code>manual</code>.</li>
+<li>При logout передавать reason <code>logout</code>.</li></ul>
 </article>
 <article class="info-box"><h2>2. Полный API-код после изменения</h2>
-<pre><code>{% raw %}import os
-import secrets
+<pre><code>{% raw %}import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -312,9 +437,6 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 
 app = FastAPI(
@@ -325,8 +447,7 @@ app = FastAPI(
     redoc_url=&quot;/redoc&quot;,
 )
 
-DATABASE_URL = os.getenv(&quot;DATABASE_URL&quot;, &quot;sqlite:///./chapter08.db&quot;)
-SECRET_KEY = os.getenv(&quot;JWT_SECRET_KEY&quot;, &quot;fastapi-book-development-secret&quot;)
+SECRET_KEY = &quot;fastapi-book-development-secret&quot;
 ALGORITHM = &quot;HS256&quot;
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -334,43 +455,20 @@ pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&q
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/api/auth/login&quot;)
 
 
-def make_engine(database_url: str):
-    connect_args = {&quot;check_same_thread&quot;: False} if database_url.startswith(&quot;sqlite&quot;) else {}
-    kwargs = {&quot;connect_args&quot;: connect_args}
-    if database_url == &quot;sqlite://&quot;:
-        kwargs[&quot;poolclass&quot;] = StaticPool
-    return create_engine(database_url, **kwargs)
+class UserRecord(BaseModel):
+    username: str
+    email: str
+    password_hash: str
+    role: str = &quot;user&quot;
 
 
-engine = make_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class User(Base):
-    __tablename__ = &quot;users&quot;
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
-    email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(40), default=&quot;user&quot;)
-    refresh_tokens: Mapped[list[&quot;RefreshToken&quot;]] = relationship(back_populates=&quot;user&quot;)
-
-
-class RefreshToken(Base):
-    __tablename__ = &quot;refresh_tokens&quot;
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey(&quot;users.id&quot;))
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    user: Mapped[User] = relationship(back_populates=&quot;refresh_tokens&quot;)
+class StoredRefreshToken(BaseModel):
+    token: str
+    username: str
+    expires_at: datetime
+    revoked: bool = False
+    revoked_at: datetime | None = None
+    revoked_reason: str | None = None
 
 
 class RegisterRequest(BaseModel):
@@ -398,67 +496,61 @@ class AuthResponse(BaseModel):
     refresh_token_expires: datetime
 
 
-def init_db() -&gt; None:
-    Base.metadata.create_all(bind=engine)
+USERS: dict[str, UserRecord] = {}
+REFRESH_TOKENS: dict[str, StoredRefreshToken] = {}
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def create_access_token(user: User) -&gt; tuple[str, datetime]:
+def create_access_token(user: UserRecord) -&gt; tuple[str, datetime]:
     expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {&quot;sub&quot;: str(user.id), &quot;username&quot;: user.username, &quot;role&quot;: user.role, &quot;exp&quot;: expires}
+    payload = {&quot;sub&quot;: user.username, &quot;username&quot;: user.username, &quot;role&quot;: user.role, &quot;exp&quot;: expires}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM), expires
 
 
-def create_refresh_token(db: Session, user: User) -&gt; tuple[str, datetime]:
+def create_refresh_token(user: UserRecord) -&gt; tuple[str, datetime]:
     token = secrets.token_urlsafe(48)
     expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    db.add(RefreshToken(token=token, user_id=user.id, expires_at=expires))
-    db.commit()
+    REFRESH_TOKENS[token] = StoredRefreshToken(token=token, username=user.username, expires_at=expires)
     return token, expires
 
 
-def revoke_token(stored: RefreshToken) -&gt; None:
+def revoke_refresh_token(stored: StoredRefreshToken, reason: str) -&gt; None:
     stored.revoked = True
     stored.revoked_at = datetime.utcnow()
+    stored.revoked_reason = reason
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -&gt; User:
+def authenticate_user(username: str, password: str) -&gt; UserRecord:
+    user = USERS.get(username)
+    if user is None or not pwd_context.verify(password, user.password_hash):
+        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+    return user
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; UserRecord:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = int(payload[&quot;sub&quot;])
-    except (JWTError, KeyError, ValueError) as error:
+        username = str(payload[&quot;sub&quot;])
+    except (JWTError, KeyError) as error:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;Invalid token&quot;) from error
-    user = db.get(User, user_id)
+    user = USERS.get(username)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=&quot;User not found&quot;)
     return user
 
 
-init_db()
-
-
 @app.post(&quot;/api/auth/register&quot;, response_model=AuthResponse)
-async def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.username == request.username).first():
+async def register(request: RegisterRequest):
+    if request.username in USERS:
         raise HTTPException(status_code=400, detail=&quot;Пользователь с таким именем уже существует&quot;)
-    user = User(
+    user = UserRecord(
         username=request.username,
         email=request.email,
         password_hash=pwd_context.hash(request.password),
         role=&quot;user&quot;,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    USERS[user.username] = user
     access_token, access_expires = create_access_token(user)
-    refresh_token, refresh_expires = create_refresh_token(db, user)
+    refresh_token, refresh_expires = create_refresh_token(user)
     return AuthResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -470,12 +562,10 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @app.post(&quot;/api/auth/login&quot;, response_model=AuthResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == request.username).first()
-    if user is None or not pwd_context.verify(request.password, user.password_hash):
-        raise HTTPException(status_code=401, detail=&quot;Неверное имя пользователя или пароль&quot;)
+async def login(request: LoginRequest):
+    user = authenticate_user(request.username, request.password)
     access_token, access_expires = create_access_token(user)
-    refresh_token, refresh_expires = create_refresh_token(db, user)
+    refresh_token, refresh_expires = create_refresh_token(user)
     return AuthResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -487,17 +577,16 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.post(&quot;/api/auth/refresh&quot;, response_model=AuthResponse)
-async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
-    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+async def refresh(request: RefreshTokenRequest):
+    stored = REFRESH_TOKENS.get(request.refresh_token)
     if stored is None or stored.revoked or stored.expires_at &lt;= datetime.utcnow():
         raise HTTPException(status_code=401, detail=&quot;Недействительный refresh token&quot;)
-    revoke_token(stored)
-    user = db.get(User, stored.user_id)
+    revoke_refresh_token(stored, reason=&quot;rotated&quot;)
+    user = USERS.get(stored.username)
     if user is None:
         raise HTTPException(status_code=401, detail=&quot;Пользователь не найден&quot;)
     access_token, access_expires = create_access_token(user)
-    refresh_token, refresh_expires = create_refresh_token(db, user)
-    db.commit()
+    refresh_token, refresh_expires = create_refresh_token(user)
     return AuthResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -509,30 +598,48 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
 
 
 @app.post(&quot;/api/auth/revoke&quot;)
-async def revoke(request: RefreshTokenRequest, db: Session = Depends(get_db)):
-    stored = db.query(RefreshToken).filter(RefreshToken.token == request.refresh_token).first()
+async def revoke(request: RefreshTokenRequest):
+    stored = REFRESH_TOKENS.get(request.refresh_token)
     if stored is not None and not stored.revoked:
-        revoke_token(stored)
-        db.commit()
+        revoke_refresh_token(stored, reason=&quot;manual&quot;)
     return {&quot;message&quot;: &quot;Refresh token отозван&quot;}
 
 
 @app.post(&quot;/api/auth/logout&quot;)
-async def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    tokens = db.query(RefreshToken).filter(
-        RefreshToken.user_id == user.id,
-        RefreshToken.revoked.is_(False),
-    ).all()
-    for token in tokens:
-        revoke_token(token)
-    db.commit()
-    return {&quot;message&quot;: f&quot;Все сессии завершены. Отозвано токенов: {len(tokens)}&quot;}{% endraw %}</code></pre>
+async def logout(user: UserRecord = Depends(get_current_user)):
+    count = 0
+    for stored in REFRESH_TOKENS.values():
+        if stored.username == user.username and not stored.revoked:
+            revoke_refresh_token(stored, reason=&quot;logout&quot;)
+            count += 1
+    return {&quot;message&quot;: f&quot;Все сессии завершены. Отозвано токенов: {count}&quot;}{% endraw %}</code></pre>
 </article>
-<article class="info-box"><h2>3. Где использовать revoke_token</h2>
-<p>В полном коде выше helper <code>revoke_token</code> используется во всех местах, где refresh token становится недействительным.</p>
-<ul class="flow-list"><li>В <code>/api/auth/refresh</code> старый token отзывается перед выдачей новой пары token-ов.</li>
-<li>В <code>/api/auth/revoke</code> отзывается token, который прислал клиент.</li>
-<li>В <code>/api/auth/logout</code> отзываются все активные refresh token-ы текущего пользователя.</li></ul>
+<article class="info-box"><h2>3. Где использовать revoke_refresh_token</h2>
+<p>В полном коде выше helper <code>revoke_refresh_token</code> используется во всех местах, где refresh token становится недействительным. Он меняет Pydantic-объект в словаре, поэтому отдельный commit не нужен.</p>
+<ul class="flow-list"><li>В <code>/api/auth/refresh</code> старый token получает <code>reason='rotated'</code>.</li>
+<li>В <code>/api/auth/revoke</code> token получает <code>reason='manual'</code>.</li>
+<li>В <code>/api/auth/logout</code> активные token-ы пользователя получают <code>reason='logout'</code>.</li></ul>
+</article>
+<article class="info-box"><h2>4. Почему revoked_reason лежит в StoredRefreshToken</h2>
+<p>Причина отзыва относится не к пользователю и не к access token-у. Она описывает состояние конкретного refresh token-а, поэтому поле добавляется в <code>StoredRefreshToken</code>.</p>
+<ul class="flow-list"><li>Один пользователь может иметь несколько refresh token-ов.</li>
+<li>Один token мог быть отозван из-за refresh rotation, второй из-за logout, третий вручную.</li>
+<li>Если хранить reason в пользователе, мы потеряем информацию по конкретной сессии.</li>
+<li>Если хранить reason рядом с refresh token-ом, каждая сессия имеет свою историю.</li></ul>
+</article>
+<article class="info-box"><h2>5. Почему helper теперь принимает reason</h2>
+<p>До задачи helper знал только одно действие: пометить token отозванным. После задачи ему нужно знать причину, потому что разные endpoint-ы отзывают token по разным причинам.</p>
+<ul class="flow-list"><li><code>refresh</code> передаёт <code>rotated</code>, потому что старый refresh token заменили новым.</li>
+<li><code>revoke</code> передаёт <code>manual</code>, потому что клиент явно попросил отозвать token.</li>
+<li><code>logout</code> передаёт <code>logout</code>, потому что пользователь завершает сессии.</li>
+<li>Если reason записывать прямо в каждом endpoint-е вручную, легко забыть сделать это в одном из мест.</li>
+<li>Поэтому все три endpoint-а вызывают один helper и получают одинаковое поведение.</li></ul>
+</article>
+<article class="info-box"><h2>6. Как проверить</h2>
+<div class="endpoint-grid"><article class="endpoint-card"><strong><code>POST /api/auth/register</code></strong><span>Создайте пользователя и сохраните <code>refresh_token</code> из ответа.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/refresh</code></strong><span>Старый refresh token становится <code>revoked=True</code>, получает <code>revoked_at</code> и <code>revoked_reason='rotated'</code>.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/refresh</code></strong><span>Повтор старого refresh token-а возвращает <code>401</code>.</span></article>
+<article class="endpoint-card"><strong><code>POST /api/auth/logout</code></strong><span>Все активные refresh token-ы текущего пользователя получают <code>revoked_reason='logout'</code>.</span></article></div>
 </article>
 
                 <article class="info-box">
@@ -540,63 +647,133 @@ async def logout(user: User = Depends(get_current_user), db: Session = Depends(g
                     <p>Ниже решение разобрано по частям: что стоит на своём месте, зачем это нужно и какие ошибки чаще всего появляются, если часть кода пропустить.</p>
                 </article>
 
-                <article class="info-box"><h2>Зачем нужно поле revoked_at</h2>
-<p><code>revoked=True</code> говорит только факт: token отозван. <code>revoked_at</code> добавляет время, когда именно это произошло.</p>
-<ul class="flow-list"><li>Поле полезно для аудита: можно понять, когда пользователь вышел или когда token был заменён.</li>
-<li><code>datetime | None</code> означает: у активного token-а времени отзыва нет, у отозванного - есть.</li>
-<li><code>nullable=True</code> в базе соответствует этой идее: значение может быть пустым.</li>
-<li>Это поле должно появиться в SQLAlchemy-модели и в миграции, если БД уже существует.</li></ul>
+                <article class="info-box"><h2>Зачем StoredRefreshToken</h2>
+<p>Refresh token - это не только строка. Серверу нужно знать, кому token принадлежит, когда он истекает, отозван ли он и когда был отозван. Поэтому значение в словаре - Pydantic-модель <code>StoredRefreshToken</code>, а не просто строка.</p>
+<ul class="flow-list"><li><code>token</code> - случайная строка, которую клиент присылает в <code>/api/auth/refresh</code>.</li>
+<li><code>username</code> - владелец refresh token-а.</li>
+<li><code>expires_at</code> - срок действия refresh token-а.</li>
+<li><code>revoked</code> - можно ли ещё использовать token.</li>
+<li><code>revoked_at</code> - когда token был отозван.</li></ul>
+</article>
+<article class="info-box"><h2>Что лежит в USERS и REFRESH_TOKENS</h2>
+<p>В этой главе специально нет базы данных. Всё серверное состояние хранится в двух обычных словарях Python, чтобы новичок видел механику без SQL, миграций и sessions.</p>
+<ul class="flow-list"><li><code>USERS</code> хранит пользователей: <code>username</code> -> <code>UserRecord</code>.</li>
+<li><code>UserRecord</code> хранит email, username, hash пароля и роль.</li>
+<li><code>REFRESH_TOKENS</code> хранит refresh-сессии: строка token-а -> <code>StoredRefreshToken</code>.</li>
+<li>Клиент получает только строку refresh token-а. Полный объект <code>StoredRefreshToken</code> остаётся на сервере.</li>
+<li>После перезапуска приложения оба словаря очистятся. Это нормально для учебного примера и плохо для production.</li></ul>
+</article>
+<article class="info-box"><h2>Почему refresh token не JWT</h2>
+<p>JWT удобно проверять без хранения на сервере, но это же делает отзыв сложнее. Для refresh token-а в этой главе важнее контроль со стороны сервера.</p>
+<ul class="flow-list"><li>Access token короткий: если он украден, он скоро протухнет сам.</li>
+<li>Refresh token долгий: если он украден, сервер должен уметь сразу запретить его повторное использование.</li>
+<li>Поэтому refresh token здесь - случайная opaque-строка из <code>secrets.token_urlsafe(48)</code>.</li>
+<li>Сервер ищет эту строку в <code>REFRESH_TOKENS</code> и принимает решение по своим данным.</li>
+<li>Клиент не может поменять username или срок действия refresh token-а, потому что эти данные не лежат внутри строки.</li></ul>
 </article>
 <article class="info-box"><h2>Почему revoke лучше вынести в helper</h2>
 <ul class="flow-list"><li>Refresh token отзывается в нескольких местах: при refresh rotation, ручном revoke и logout.</li>
 <li>Если в каждом месте писать <code>token.revoked = True</code> и <code>token.revoked_at = ...</code> вручную, легко забыть одно из полей.</li>
-<li><code>revoke_token</code> делает оба действия вместе, поэтому поведение становится одинаковым.</li>
-<li>Helper принимает ORM-объект <code>RefreshToken</code>, меняет его поля, а commit остаётся у вызывающего кода.</li></ul>
+<li><code>revoke_refresh_token</code> делает оба действия вместе, поэтому поведение становится одинаковым.</li>
+<li>Helper принимает Pydantic-объект <code>StoredRefreshToken</code> из словаря и меняет его поля.</li></ul>
 </article>
 <article class="info-box"><h2>Как меняется refresh flow</h2>
 <ul class="flow-list"><li>Клиент отправляет старый refresh token в <code>/api/auth/refresh</code>.</li>
-<li>Сервер ищет token в таблице и проверяет, что он не отозван и не истёк.</li>
+<li>Сервер ищет token в словаре <code>REFRESH_TOKENS</code>.</li>
+<li>Первая проверка: <code>stored is None</code>. Если записи нет, значит сервер не знает такой refresh token.</li>
+<li>Вторая проверка: <code>stored.revoked</code>. Если token уже отозван, повторно использовать его нельзя.</li>
+<li>Третья проверка: <code>stored.expires_at &lt;= datetime.utcnow()</code>. Если срок вышел, обновлять сессию нельзя.</li>
+<li>Четвёртая проверка идёт чуть ниже: <code>USERS.get(stored.username)</code>. Если пользователь удалён, новые token-ы выдавать нельзя.</li>
 <li>Старый token помечается как отозванный и получает <code>revoked_at</code>.</li>
 <li>После этого сервер создаёт новую пару: свежий access token и свежий refresh token.</li>
 <li>Если старый token попробуют использовать повторно, проверка <code>stored.revoked</code> должна вернуть ошибку.</li></ul>
 </article>
+<article class="info-box"><h2>Что происходит при logout</h2>
+<ul class="flow-list"><li>Logout защищён через <code>Depends(get_current_user)</code>, поэтому сначала FastAPI проверяет access token из Authorization header.</li>
+<li>После проверки endpoint знает текущего пользователя и может брать <code>user.username</code> с сервера.</li>
+<li>Код проходит по <code>REFRESH_TOKENS.values()</code>, потому что одному пользователю могли выдать несколько refresh token-ов.</li>
+<li>Условие <code>stored.username == user.username and not stored.revoked</code> выбирает только активные token-ы текущего пользователя.</li>
+<li>Каждый найденный token отзывается через helper, а <code>count</code> показывает, сколько сессий реально завершили.</li></ul>
+</article>
 <article class="info-box"><h2>Что проверять</h2>
-<ul class="flow-list"><li>После refresh старый refresh token должен иметь <code>revoked=True</code> и непустой <code>revoked_at</code> в БД.</li>
+<ul class="flow-list"><li>После refresh старый refresh token должен иметь <code>revoked=True</code> и непустой <code>revoked_at</code> в словаре.</li>
 <li>После ручного <code>/api/auth/revoke</code> поле <code>revoked_at</code> тоже должно заполниться.</li>
 <li>После logout все активные refresh token-ы пользователя должны получить время отзыва.</li>
-<li>Тест должен смотреть не только HTTP status, но и состояние записи в базе.</li></ul>
+<li>Тест должен смотреть не только HTTP status, но и состояние Pydantic-объекта в <code>REFRESH_TOKENS</code>.</li></ul>
 </article>
 
                 <article class="info-box"><h2>Читаем refresh-token решение сверху вниз</h2>
-<ul class="flow-list"><li>Imports включают JWT, hashing, SQLAlchemy, datetime и secrets, потому что глава работает и с token-ами, и с базой.</li>
-<li>Таблица <code>User</code> хранит пользователей, таблица <code>RefreshToken</code> хранит долгие refresh token-ы.</li>
+<ul class="flow-list"><li>Imports включают JWT, hashing, datetime и secrets: БД в этой версии главы нет.</li>
+<li><code>secrets</code> нужен именно для refresh token-а, потому что это случайная строка, а не JWT.</li>
+<li><code>jwt</code> нужен именно для access token-а, потому что access token подписывается и потом проверяется.</li>
+<li><code>CryptContext</code> нужен для паролей: пароль нельзя хранить в открытом виде даже в учебном примере.</li>
+<li><code>UserRecord</code> хранит учебного пользователя в словаре <code>USERS</code>.</li>
+<li><code>StoredRefreshToken</code> хранит состояние refresh token-а в словаре <code>REFRESH_TOKENS</code>.</li>
 <li><code>revoked</code> отвечает на вопрос “можно ли использовать token”.</li>
 <li><code>revoked_at</code> отвечает на вопрос “когда token перестал быть действительным”.</li>
-<li>Helpers создают access/refresh token-ы и отзывают refresh token-ы.</li>
+<li><code>revoked_reason</code> в задаче добавляется, чтобы было видно не только когда, но и почему token отозвали.</li>
+<li>Helpers создают access/refresh token-ы, проверяют пользователя и отзывают refresh token-ы.</li>
 <li>Endpoint-ы <code>login</code>, <code>refresh</code>, <code>revoke</code>, <code>logout</code> используют одни и те же helpers.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при регистрации и входе</h2>
+<ul class="flow-list"><li>При регистрации клиент отправляет username, email и password.</li>
+<li>Сервер проверяет, что username ещё не занят.</li>
+<li>Пароль превращается в hash через <code>pwd_context.hash</code>.</li>
+<li>Пользователь сохраняется в <code>USERS</code>, где ключом становится username.</li>
+<li>После этого сервер сразу создаёт access token и refresh token, чтобы пользователю не пришлось логиниться отдельным запросом.</li>
+<li>При login пользователь уже существует, поэтому сервер не создаёт запись заново, а только проверяет пароль и выдаёт новую пару token-ов.</li></ul>
+</article>
+<article class="info-box"><h2>Что лежит в USERS и REFRESH_TOKENS</h2>
+<ul class="flow-list"><li><code>USERS</code> похож на простую таблицу пользователей, но живёт только в памяти процесса.</li>
+<li><code>REFRESH_TOKENS</code> похож на простую таблицу сессий, но тоже живёт только в памяти.</li>
+<li>Когда вызывается <code>create_refresh_token</code>, в словаре появляется новая запись.</li>
+<li>Когда вызывается <code>revoke_refresh_token</code>, запись не удаляется, а помечается как отозванная.</li>
+<li>Это сделано специально: по сохранённой записи можно увидеть историю состояния token-а.</li>
+<li>Если удалить запись из словаря, ученик уже не увидит, был ли token украден, просрочен или отозван.</li></ul>
 </article>
 <article class="info-box"><h2>Что происходит при refresh rotation</h2>
 <ul class="flow-list"><li>Клиент присылает старый refresh token.</li>
-<li>Сервер ищет его в таблице <code>refresh_tokens</code>.</li>
-<li>Сервер проверяет три условия: token найден, не отозван, срок действия не закончился.</li>
+<li>Сервер ищет его в словаре <code>REFRESH_TOKENS</code>.</li>
+<li>Сервер проверяет три условия у token-а: token найден, не отозван, срок действия не закончился.</li>
 <li>Если проверка не прошла, сервер возвращает <code>401</code>.</li>
+<li>Если token прошёл первые проверки, сервер смотрит пользователя через <code>USERS.get(stored.username)</code>.</li>
+<li>Это отдельная защита: refresh token мог остаться, а пользователя уже могли удалить.</li>
 <li>Если проверка прошла, старый token получает <code>revoked=True</code> и <code>revoked_at=datetime.utcnow()</code>.</li>
+<li>В решении задачи старый token дополнительно получает <code>revoked_reason="rotated"</code>.</li>
 <li>Сервер создаёт новый access token и новый refresh token.</li>
+<li>Новый refresh token попадает в <code>REFRESH_TOKENS</code> как отдельная новая запись.</li>
 <li>Клиент должен сохранить новую пару и больше не использовать старый refresh token.</li></ul>
+</article>
+<article class="info-box"><h2>Что происходит при revoke и logout</h2>
+<ul class="flow-list"><li><code>/api/auth/revoke</code> получает конкретный refresh token в JSON body.</li>
+<li>Если token найден и ещё активен, сервер вызывает <code>revoke_refresh_token(stored, reason="manual")</code>.</li>
+<li>Если token не найден, endpoint всё равно возвращает спокойный ответ: для клиента главное, что этот token больше нельзя использовать.</li>
+<li><code>/api/auth/logout</code> работает иначе: он не принимает refresh token в body.</li>
+<li>Logout сначала проверяет access token через <code>Depends(get_current_user)</code>.</li>
+<li>После этого сервер знает username текущего пользователя и проходит по <code>REFRESH_TOKENS.values()</code>.</li>
+<li>Все активные token-ы этого пользователя получают <code>reason="logout"</code>.</li>
+<li>Так logout завершает сразу несколько сессий пользователя, а не только одну строку token-а.</li></ul>
 </article>
 <article class="info-box"><h2>Почему revoked_at важен для обучения</h2>
 <ul class="flow-list"><li>Без <code>revoked_at</code> ученик видит только boolean и не понимает историю события.</li>
-<li>С <code>revoked_at</code> можно открыть БД и увидеть, когда именно token был отозван.</li>
+<li>С <code>revoked_at</code> можно посмотреть объект в <code>REFRESH_TOKENS</code> и увидеть, когда именно token был отозван.</li>
 <li>Это помогает отличить logout, manual revoke и refresh rotation, если потом добавить reason.</li>
 <li>Так появляется привычка хранить не только состояние, но и audit-информацию.</li>
 <li>В production такие поля помогают расследовать подозрительные повторные использования refresh token-а.</li></ul>
+</article>
+<article class="info-box"><h2>Что сломается, если перепутать access и refresh</h2>
+<ul class="flow-list"><li>Если отправить access token в <code>/api/auth/refresh</code>, сервер не найдёт его в <code>REFRESH_TOKENS</code> и вернёт 401.</li>
+<li>Если отправить refresh token в Authorization Bearer header, <code>jwt.decode</code> не сможет проверить его как JWT.</li>
+<li>Access token нужен для доступа к защищённым endpoint-ам.</li>
+<li>Refresh token нужен только для получения новой пары token-ов.</li>
+<li>Эта разница специально отражена в коде: access token создаёт <code>jwt.encode</code>, refresh token создаёт <code>secrets.token_urlsafe</code>.</li></ul>
 </article>
 
                 <article class="info-box">
                     <h2>Короткое резюме решения</h2>
                     <ul class="flow-list">
-                        <li>Не забудьте обновить миграцию или создать новую Alembic revision.</li>
-<li>Тест должен проверять не только HTTP 401, но и заполнение <code>revoked_at</code> в БД.</li>
+                        <li>Миграция не нужна, потому что в этой главе нет БД.</li>
+<li>Тест должен проверять не только HTTP 401, но и состояние объекта в <code>REFRESH_TOKENS</code>.</li>
                     </ul>
                 </article>
             </div>

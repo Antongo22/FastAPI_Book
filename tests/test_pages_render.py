@@ -42,7 +42,7 @@ TASK_ANSWER_MARKERS = [
     ("chapter05", chapter05_app, ["HOMEWORK_STEPS"]),
     ("chapter06", chapter06_app, ["category"]),
     ("chapter07", chapter07_app, ["require_admin", "admin_area"]),
-    ("chapter08", chapter08_app, ["revoked_at"]),
+    ("chapter08", chapter08_app, ["revoked_reason"]),
     ("chapter09", chapter09_app, ["/who"]),
     ("chapter10", chapter10_app, ["leave_room", "left_room"]),
     ("chapter11", chapter11_app, ["admin_message"]),
@@ -57,7 +57,7 @@ FULL_ANSWER_CONTEXT_MARKERS = [
     (chapter05_app, ["from pathlib import Path", "Jinja2Templates", "HOMEWORK_STEPS", "{% for step in homework_steps %}"]),
     (chapter06_app, ["from sqlmodel import", "class ProductBase(SQLModel)", "class Product(ProductBase, table=True)", "class ProductRead(ProductBase)", "def upgrade()"]),
     (chapter07_app, ["import os", "OAuth2PasswordBearer", "def require_admin", "async def admin_area"]),
-    (chapter08_app, ["import secrets", "class RefreshToken", "revoked_at", "def revoke_token"]),
+    (chapter08_app, ["import secrets", "class StoredRefreshToken(BaseModel)", "REFRESH_TOKENS", "def revoke_refresh_token"]),
     (chapter09_app, ["from uuid import uuid4", "class ConnectionManager", 'message == "/who"']),
     (chapter10_app, ["import socketio", "socketio_rooms", "async def leave_room", "app = socketio.ASGIApp"]),
     (chapter11_app, ["import socketio", "def verify_user_token", "async def admin_message", "app = socketio.ASGIApp"]),
@@ -72,7 +72,7 @@ ANSWER_WALKTHROUGH_MARKERS = [
     (chapter05_app, ["Что именно добавляем в Python", "Что именно добавляем в шаблон", "Как работает for"]),
     (chapter06_app, ["Где появляется новое поле category", "Зачем нужна Alembic migration", "Если забыть модель ответа"]),
     (chapter07_app, ["Чем authentication отличается от authorization", "Почему роль нельзя брать из запроса", "Как работает require_admin"]),
-    (chapter08_app, ["Зачем нужно поле revoked_at", "Почему revoke лучше вынести в helper", "Как меняется refresh flow"]),
+    (chapter08_app, ["Зачем StoredRefreshToken", "Что лежит в USERS и REFRESH_TOKENS", "Почему refresh token не JWT", "Как меняется refresh flow"]),
     (chapter09_app, ["Где обрабатывать команду /who", "Почему ответ отправляется только текущему клиенту", "Откуда берётся count"]),
     (chapter10_app, ["Куда добавлять leave_room", "Зачем две операции удаления", "Почему нужен ответ left_room"]),
     (chapter11_app, ["Где хранится роль", "Как роль попадает в Socket.IO подключение", "Как работает admin_message"]),
@@ -87,7 +87,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter05_app, ["Читаем простой Jinja-ответ сверху вниз", "Что происходит при GET /jinja-demo", "Почему for лучше копирования HTML"]),
     (chapter06_app, ["Читаем SQLModel-ответ сверху вниз", "Почему category проходит через несколько классов", "Что происходит при создании продукта"]),
     (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
-    (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при refresh rotation", "Почему revoked_at важен для обучения"]),
+    (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при регистрации и входе", "Что происходит при revoke и logout", "Что сломается, если перепутать access и refresh"]),
     (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит внутри receive loop", "Почему /who не должен быть broadcast"]),
     (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при leave_room", "Почему здесь есть await"]),
     (chapter11_app, ["Читаем авторизованный Socket.IO ответ сверху вниз", "Что происходит при connect", "Почему admin_message проверяется отдельно"]),
@@ -322,6 +322,39 @@ def test_chapter07_code_tab_includes_registration_flow():
     assert "access_token: str" in text
     assert "OAuth2PasswordRequestForm = Depends()" in text
     assert "Protected endpoint вообще не выполнится" in text
+
+
+def test_chapter08_uses_pydantic_dict_storage_without_database():
+    response = TestClient(chapter08_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+    code_tab = unescape(html_section(response.text, '<section id="code"', '<section id="task"'))
+    answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
+
+    assert "class StoredRefreshToken(BaseModel)" in text
+    assert "REFRESH_TOKENS: dict[str, StoredRefreshToken]" in text
+    assert "Pydantic-модель" in text
+    assert "Что лежит в USERS и REFRESH_TOKENS" in text
+    assert "Почему refresh token не JWT" in text
+    assert "secrets.token_urlsafe(48)" in text
+    assert "logout</code> проходит по <code>REFRESH_TOKENS.values()</code>" in text
+    assert "Что сломается, если перепутать access и refresh" in text
+    assert "БД не нужна" in answers
+    assert "revoked_reason" not in code_tab
+
+    forbidden = [
+        "DeclarativeBase",
+        "mapped_column",
+        "create_engine",
+        "SessionLocal",
+        "db.query",
+        "init_db()",
+        "DATABASE_URL",
+        "sqlite:///./chapter08.db",
+        "class RefreshToken(Base)",
+    ]
+    for marker in forbidden:
+        assert marker not in text
 
 
 def test_chapter03_task_uses_real_public_external_api():
