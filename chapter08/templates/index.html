@@ -362,6 +362,9 @@ async def refresh(request: RefreshTokenRequest):
 <li>Делать refresh token JWT без хранения на сервере, а потом не иметь возможности его отозвать.</li>
 <li>Хранить refresh token в небезопасном месте на клиенте.</li>
 <li>Думать, что словарь заменяет БД в production. Это только учебный способ увидеть механику без лишнего слоя.</li>
+<li>Пугаться сообщения <code>error reading bcrypt version</code>: это совместимость <code>passlib</code> и новых версий <code>bcrypt</code>, а не ошибка refresh token логики.</li>
+<li>Если видите <code>error reading bcrypt version</code>, закрепите зависимость <code>bcrypt&gt;=4.0,&lt;4.1</code> и переустановите зависимости.</li>
+<li>Получить 401 при повторном <code>/api/auth/refresh</code> со старым refresh token-ом - нормально. Старый token отзывается после первого успешного refresh.</li>
                     </ul>
                 </article>
 

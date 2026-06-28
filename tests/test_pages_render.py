@@ -73,7 +73,7 @@ ANSWER_WALKTHROUGH_MARKERS = [
     (chapter06_app, ["Где появляется новое поле category", "Зачем нужна Alembic migration", "Если забыть модель ответа"]),
     (chapter07_app, ["Чем authentication отличается от authorization", "Почему роль нельзя брать из запроса", "Как работает require_admin"]),
     (chapter08_app, ["Зачем StoredRefreshToken", "Что лежит в USERS и REFRESH_TOKENS", "Почему refresh token не JWT", "Как меняется refresh flow"]),
-    (chapter09_app, ["Где обрабатывать команду /who", "Почему ответ отправляется только текущему клиенту", "Откуда берётся count"]),
+    (chapter09_app, ["Где обрабатывать команду /who", "Почему /who добавляется именно в endpoint", "Почему ответ отправляется только текущему клиенту"]),
     (chapter10_app, ["Куда добавлять leave_room", "Зачем две операции удаления", "Почему нужен ответ left_room"]),
     (chapter11_app, ["Где хранится роль", "Как роль попадает в Socket.IO подключение", "Как работает admin_message"]),
     (chapter12_app, ["Почему начинаем с unit test сервиса", "Как fixtures готовят тестовую базу", "Как integration test проверяет полный сценарий"]),
@@ -88,7 +88,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter06_app, ["Читаем SQLModel-ответ сверху вниз", "Почему category проходит через несколько классов", "Что происходит при создании продукта"]),
     (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
     (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при регистрации и входе", "Что происходит при revoke и logout", "Что сломается, если перепутать access и refresh"]),
-    (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит внутри receive loop", "Почему /who не должен быть broadcast"]),
+    (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит при подключении", "Как использовать socket-tester для своего проекта"]),
     (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при leave_room", "Почему здесь есть await"]),
     (chapter11_app, ["Читаем авторизованный Socket.IO ответ сверху вниз", "Что происходит при connect", "Почему admin_message проверяется отдельно"]),
     (chapter12_app, ["Читаем тестовое решение сверху вниз", "Что происходит внутри fixture", "Что проверяет каждый вид теста"]),
@@ -357,6 +357,32 @@ def test_chapter08_uses_pydantic_dict_storage_without_database():
         assert marker not in text
 
 
+def test_chapter09_expands_websocket_code_and_socket_tester_instructions():
+    response = TestClient(chapter09_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+    code_tab = unescape(html_section(response.text, '<section id="code"', '<section id="task"'))
+    answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
+
+    assert '@app.websocket("/ws")' in code_tab
+    assert "async def websocket_endpoint(websocket: WebSocket)" in code_tab
+    assert "while True:" in code_tab
+    assert "message = await websocket.receive_text()" in code_tab
+    assert "except WebSocketDisconnect" in code_tab
+    assert "websocket.accept()" in text
+    assert "send_json()" in text
+    assert "Handshake" in text
+    assert "/who" not in code_tab
+
+    assert "http://localhost:8010/socket-tester" in answers
+    assert "ws://localhost:8009/ws" in answers
+    assert "ws://localhost:7001/ws" in answers
+    assert "ws://localhost:7009/ws" in answers
+    assert "выберите режим <code>WebSocket</code>" in answers
+    assert "Как подключиться к проекту ученика" in answers
+    assert '@app.websocket("/ws/")' in code_tab
+
+
 def test_chapter03_task_uses_real_public_external_api():
     response = TestClient(chapter03_app).get("/")
     assert response.status_code == 200
@@ -396,10 +422,10 @@ def test_socket_code_tabs_do_not_repeat_full_answer_blocks():
     chapter09_code = html_section(chapter09_response.text, '<section id="code"', '<section id="task"')
     chapter10_code = html_section(chapter10_response.text, '<section id="code"', '<section id="task"')
 
-    assert "Полный receive loop после изменения" not in chapter09_code
-    assert "async def websocket_endpoint" not in chapter09_code
-    assert "while True" not in chapter09_code
-    assert "receive_text" not in chapter09_code
+    assert "async def websocket_endpoint" in chapter09_code
+    assert "while True" in chapter09_code
+    assert "receive_text" in chapter09_code
+    assert "/who" not in chapter09_code
 
     assert "Полный блок Socket.IO событий для комнат" not in chapter10_code
     assert "async def leave_room" not in chapter10_code
@@ -522,6 +548,9 @@ def test_chapter10_socket_tester_page_renders_defaults():
     assert "http://localhost:8010" in response.text
     assert "/socket.io" in response.text
     assert "ws://localhost:8010/ws/chat?group=general" in response.text
+    assert "Для главы 9" in response.text
+    assert "ws://localhost:7001/ws" in response.text
+    assert "/who" in response.text
 
 
 def test_chapter12_focuses_on_tests_and_fixtures_without_socketio():

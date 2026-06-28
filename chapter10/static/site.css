@@ -147,6 +147,19 @@ a {
     margin-top: 0;
 }
 
+.hint-box {
+    margin-bottom: 16px;
+    border-left: 3px solid #5aa2ff;
+    padding: 12px 14px;
+    background: #181f26;
+    color: #e7dccb;
+}
+
+.hint-box p {
+    margin: 0;
+    line-height: 1.55;
+}
+
 .flow-list {
     display: grid;
     gap: 10px;

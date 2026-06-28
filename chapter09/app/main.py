@@ -68,6 +68,7 @@ async def websocket_info():
 
 
 @app.websocket("/ws")
+@app.websocket("/ws/")
 async def websocket_endpoint(websocket: WebSocket):
     connection_id = await manager.connect(websocket)
     try:

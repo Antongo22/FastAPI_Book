@@ -16,3 +16,12 @@ def test_websocket_broadcast():
             assert first_message["message"] == "hello"
             assert second_message["message"] == "hello"
             assert first_message["connection_id"] == first_connected["connection_id"]
+
+
+def test_websocket_accepts_trailing_slash_path():
+    manager.active_connections.clear()
+    client = TestClient(app)
+    with client.websocket_connect("/ws/") as websocket:
+        connected = websocket.receive_json()
+        assert connected["event"] == "connected"
+        assert connected["connection_id"]

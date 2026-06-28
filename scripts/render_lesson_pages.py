@@ -1552,34 +1552,44 @@ def revoke_refresh_token(stored: StoredRefreshToken, reason: str) -> None:
         "outcome": "После главы вы умеете принять WebSocket-соединение, хранить клиентов и рассылать сообщения всем участникам.",
         "concepts": [
             "<strong>WebSocket</strong> - протокол для постоянного двустороннего обмена.",
+            "<strong>Handshake</strong> - начальный HTTP-запрос, после которого соединение переключается в WebSocket.",
+            "<strong>Долгое соединение</strong> - сервер не закрывает связь после первого ответа, как в обычном REST.",
             "<strong>accept()</strong> - явное принятие соединения сервером.",
             "<strong>receive_text()</strong> - ожидание следующего сообщения клиента.",
+            "<strong>send_json()</strong> - отправка JSON-сообщения клиенту по открытому соединению.",
+            "<strong>while True</strong> - receive loop, который держит endpoint живым, пока клиент подключён.",
             "<strong>WebSocketDisconnect</strong> - штатное отключение клиента.",
             "<strong>ConnectionManager</strong> - объект, который хранит активные подключения.",
+            "<strong>Broadcast</strong> - отправка одного сообщения всем активным клиентам.",
         ],
         "flow": [
             "Клиент подключается к <code>ws://localhost:8009/ws</code>.",
+            "Браузер сначала делает handshake: просит сервер переключить HTTP-соединение в WebSocket.",
             "Сервер вызывает <code>websocket.accept()</code> и создаёт connection id.",
             "Подключение сохраняется в словаре активных клиентов.",
             "Сервер входит в бесконечный цикл приема сообщений.",
+            "Внутри цикла <code>receive_text()</code> ждёт текст от конкретного клиента.",
             "Каждое сообщение рассылается всем текущим клиентам.",
+            "Когда пользователь закрывает вкладку, FastAPI выбрасывает <code>WebSocketDisconnect</code>.",
             "При отключении connection id удаляется из manager-а.",
         ],
         "endpoints": [
             ("GET /api/websocket/info", "Показывает endpoint и количество подключений."),
             ("WS /ws", "Простой broadcast-чат."),
         ],
-        "code_title": "ConnectionManager для WebSocket-чата",
+        "code_title": "Полный код простого WebSocket-чата без решения задачи",
         "code": '''
 from uuid import uuid4
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 
 app = FastAPI(
     title="Глава 9: WebSockets",
     description="Raw WebSocket chat",
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 
@@ -1601,15 +1611,60 @@ class ConnectionManager:
         self.active_connections.pop(connection_id, None)
 
     async def broadcast(self, payload: dict) -> None:
-        for websocket in list(self.active_connections.values()):
-            await websocket.send_json(payload)
+        disconnected: list[str] = []
+        for connection_id, websocket in self.active_connections.items():
+            try:
+                await websocket.send_json(payload)
+            except RuntimeError:
+                disconnected.append(connection_id)
+        for connection_id in disconnected:
+            self.disconnect(connection_id)
 
 
 manager = ConnectionManager()
+
+
+@app.get("/api/websocket/info")
+async def websocket_info():
+    return {
+        "endpoint": "/ws",
+        "connections": len(manager.active_connections),
+    }
+
+
+@app.websocket("/ws")
+@app.websocket("/ws/")
+async def websocket_endpoint(websocket: WebSocket):
+    connection_id = await manager.connect(websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+            await manager.broadcast({
+                "event": "message",
+                "connection_id": connection_id,
+                "message": message,
+            })
+    except WebSocketDisconnect:
+        manager.disconnect(connection_id)
+        await manager.broadcast({
+            "event": "disconnected",
+            "connection_id": connection_id,
+        })
         ''',
         "code_notes": [
             "WebSocket endpoint не возвращает HTTP response, он живёт пока открыто соединение.",
+            "<code>@app.websocket(\"/ws\")</code> создаёт не REST endpoint, а отдельный endpoint для WebSocket handshake.",
+            "<code>websocket.accept()</code> обязателен: до него сервер ещё не принял WebSocket-соединение.",
+            "<code>ConnectionManager</code> нужен, чтобы endpoint не хранил список клиентов прямо внутри функции.",
+            "<code>active_connections</code> хранит живые соединения в памяти процесса: ключ - <code>connection_id</code>, значение - объект <code>WebSocket</code>.",
+            "<code>receive_text()</code> ждёт следующее сообщение от конкретного клиента и не закрывает соединение после одного сообщения.",
+            "<code>while True</code> нужен, потому что WebSocket-соединение многоразовое: клиент может отправить 1, 10 или 100 сообщений.",
+            "<code>send_json()</code> сериализует dict в JSON и отправляет его по открытому WebSocket-соединению.",
             "Broadcast должен учитывать отключившихся клиентов, иначе отправка может падать.",
+            "<code>WebSocketDisconnect</code> - нормальная ситуация: пользователь закрыл вкладку, перезагрузил страницу или потерял сеть.",
+            "<code>disconnect</code> удаляет connection id из словаря, чтобы сервер не считал закрытое соединение активным.",
+            "<code>/api/websocket/info</code> оставлен обычным HTTP endpoint-ом, чтобы быстро посмотреть состояние manager-а через браузер или Swagger.",
+            "<code>@app.websocket(\"/ws/\")</code> добавлен рядом с <code>/ws</code>, чтобы лишний слэш в тестере не превращался в 403.",
             "Для масштабирования на несколько процессов нужен внешний broker, например Redis Pub/Sub.",
         ],
         "task": "Добавьте команду <code>/who</code>, которая отправляет текущему клиенту количество активных подключений.",
@@ -3597,6 +3652,7 @@ async def websocket_info():
 
 
 @app.websocket("/ws")
+@app.websocket("/ws/")
 async def websocket_endpoint(websocket: WebSocket):
     connection_id = await manager.connect(websocket)
     try:
@@ -3625,6 +3681,41 @@ async def websocket_endpoint(websocket: WebSocket):
             "checks": [
                 ("WS /ws", "Отправьте <code>/who</code> и получите count только в текущем клиенте."),
                 ("WS /ws", "Отправьте обычный текст и получите broadcast у всех клиентов."),
+            ],
+        },
+        {
+            "title": "Как проверить через страницу теста сокетов",
+            "body": "Страница <code>http://localhost:8010/socket-tester</code> умеет проверять и Socket.IO, и обычный WebSocket. Для 9-й главы нужен режим обычного WebSocket.",
+            "items": [
+                "Сначала запустите 9-ю главу, например <code>uvicorn chapter09.app.main:app --reload --port 8009</code> из корня учебника.",
+                "Откройте <code>http://localhost:8010/socket-tester</code>.",
+                "В блоке подключения выберите режим <code>WebSocket</code>, а не <code>Socket.IO</code>.",
+                "В поле URL для готовой главы укажите <code>ws://localhost:8009/ws</code>.",
+                "Если вы запускаете учебный файл как <code>python main.py</code> и Uvicorn пишет <code>http://127.0.0.1:7001</code>, в тестере укажите <code>ws://localhost:7001/ws</code>.",
+                "Поле <code>Socket.IO path</code>, <code>Имя пользователя</code>, <code>Комната</code> и <code>Событие</code> для главы 9 не нужны: они относятся к режиму Socket.IO.",
+                "В поле <code>Сообщение / payload</code> для первой проверки напишите обычный текст <code>hello</code>, без JSON.",
+                "Нажмите кнопку подключения. В логе должно появиться сообщение <code>connected</code> с <code>connection_id</code>.",
+                "Отправьте обычный текст, например <code>hello</code>. Сервер должен вернуть JSON с <code>event: \"message\"</code>.",
+                "Откройте вторую вкладку тестера, подключитесь к тому же URL и отправьте текст из первой вкладки. Сообщение должно прийти в обе вкладки.",
+                "После выполнения задачи отправьте <code>/who</code>. Ответ <code>connections</code> должен прийти только в ту вкладку, которая отправила команду.",
+                "Если видите в терминале <code>WebSocket /ws/ 403</code>, значит тестер подключался к адресу со слэшем на конце. В обновлённом примере работают оба адреса: <code>/ws</code> и <code>/ws/</code>.",
+            ],
+        },
+        {
+            "title": "Как подключиться к проекту ученика",
+            "body": "Если ученик тренируется в отдельном проекте, на странице тестера меняется только URL. Остальная логика проверки такая же.",
+            "items": [
+                "Запустите свой проект на своём порту, например <code>uvicorn main:app --reload --port 7009</code>.",
+                "Убедитесь, что в проекте есть endpoint <code>@app.websocket(\"/ws\")</code>. Если путь другой, используйте свой путь.",
+                "На странице <code>http://localhost:8010/socket-tester</code> выберите режим <code>WebSocket</code>.",
+                "В URL напишите адрес своего сервиса: <code>ws://localhost:7009/ws</code>.",
+                "Если ваш терминал показывает порт <code>7001</code>, пишите <code>ws://localhost:7001/ws</code>.",
+                "Если ваш endpoint называется, например, <code>/chat</code>, URL будет <code>ws://localhost:7009/chat</code>.",
+                "В поле сообщения пишите обычный текст: <code>hello</code>. После выполнения задачи можно отправить <code>/who</code>.",
+                "Если приложение запущено на другом компьютере или в Docker, замените <code>localhost</code> на нужный host.",
+                "Если тестер пишет ошибку подключения, сначала проверьте, что ваш проект реально открыт: в терминале uvicorn должен быть запущен без traceback.",
+                "Если URL заканчивается на <code>/ws/</code>, а в коде есть только <code>@app.websocket(\"/ws\")</code>, старый пример может вернуть 403. Либо уберите последний слэш в тестере, либо добавьте второй декоратор <code>@app.websocket(\"/ws/\")</code>.",
+                "Не используйте <code>http://</code> для обычного WebSocket. Для локального WebSocket нужен адрес с <code>ws://</code>.",
             ],
         },
     ],
@@ -4610,6 +4701,16 @@ ANSWER_WALKTHROUGHS = {
                 "После этой строки можно проверить, является ли сообщение командой.",
                 "<code>if message == \"/who\"</code> отделяет служебную команду от обычного текста чата.",
                 "Команду нужно обработать до <code>manager.broadcast</code>, иначе она улетит всем как обычное сообщение.",
+                "<code>continue</code> после ответа на команду нужен, чтобы код не пошёл дальше и не выполнил общий broadcast.",
+            ],
+        },
+        {
+            "title": "Почему /who добавляется именно в endpoint",
+            "items": [
+                "<code>/who</code> зависит от текста конкретного сообщения, поэтому проверка находится после <code>receive_text()</code>.",
+                "Manager не должен решать, команда это или обычный текст. Его задача проще: хранить подключения и отправлять сообщения.",
+                "Endpoint знает текущий <code>websocket</code>, поэтому может ответить только отправителю.",
+                "Если спрятать эту проверку внутрь <code>broadcast</code>, будет сложнее отделить личные команды от сообщений для всех.",
             ],
         },
         {
@@ -4637,6 +4738,7 @@ ANSWER_WALKTHROUGHS = {
                 "Откройте две вкладки и отправьте <code>/who</code> из одной. Ответ должен прийти только в эту вкладку.",
                 "Отправьте обычный текст. Он должен по-прежнему прийти всем клиентам через broadcast.",
                 "Если <code>/who</code> видят все вкладки, значит команда ошибочно отправляется через <code>broadcast</code>.",
+                "Для ручной проверки удобно использовать <code>http://localhost:8010/socket-tester</code>, режим <code>WebSocket</code>, URL <code>ws://localhost:8009/ws</code>.",
             ],
         },
     ],
@@ -5149,10 +5251,25 @@ ANSWER_DEEP_DIVES = {
             "items": [
                 "Imports нужны для <code>WebSocket</code>, <code>WebSocketDisconnect</code> и генерации id через <code>uuid4</code>.",
                 "<code>ConnectionManager</code> держит словарь активных подключений.",
+                "<code>connect</code> делает сразу три вещи: принимает соединение, создаёт id и сохраняет WebSocket в словарь.",
                 "Метод <code>connect</code> принимает соединение, сохраняет его и отправляет клиенту служебное сообщение.",
                 "Метод <code>disconnect</code> удаляет соединение, когда клиент ушёл.",
-                "Метод <code>broadcast</code> проходит по всем соединениям и отправляет одинаковый payload.",
+                "Метод <code>broadcast</code> проходит по всем соединениям и отправляет одинаковый payload каждому активному клиенту.",
+                "<code>websocket_info</code> - обычный HTTP endpoint, который показывает состояние manager-а без WebSocket-клиента.",
                 "WebSocket endpoint содержит бесконечный receive loop, потому что соединение живёт дольше одного HTTP request.",
+            ],
+        },
+        {
+            "title": "Что происходит при подключении",
+            "items": [
+                "Клиент открывает адрес <code>ws://localhost:8009/ws</code>.",
+                "FastAPI вызывает функцию <code>websocket_endpoint</code>.",
+                "Первой строкой endpoint вызывает <code>manager.connect(websocket)</code>.",
+                "Внутри manager-а выполняется <code>await websocket.accept()</code>, и сервер принимает соединение.",
+                "Потом создаётся <code>connection_id</code>, например <code>7c5...</code>.",
+                "Соединение сохраняется в <code>active_connections</code>.",
+                "Клиент получает первое JSON-сообщение <code>{\"event\": \"connected\", \"connection_id\": ...}</code>.",
+                "После этого endpoint не завершается, а переходит в <code>while True</code> и ждёт сообщения.",
             ],
         },
         {
@@ -5167,6 +5284,18 @@ ANSWER_DEEP_DIVES = {
             ],
         },
         {
+            "title": "Что происходит при обычном сообщении",
+            "items": [
+                "Клиент отправляет текст, например <code>hello</code>.",
+                "<code>receive_text()</code> возвращает строку <code>hello</code>.",
+                "Проверка <code>message == \"/who\"</code> не проходит.",
+                "Endpoint собирает payload с <code>event</code>, <code>connection_id</code> и <code>message</code>.",
+                "<code>manager.broadcast</code> проходит по словарю активных соединений.",
+                "Каждый клиент получает одинаковый JSON.",
+                "После рассылки цикл возвращается наверх и снова ждёт следующее сообщение.",
+            ],
+        },
+        {
             "title": "Почему /who не должен быть broadcast",
             "items": [
                 "<code>/who</code> - команда управления, а не сообщение чата.",
@@ -5174,6 +5303,29 @@ ANSWER_DEEP_DIVES = {
                 "Личный ответ через <code>websocket.send_json</code> показывает, что сервер может отвечать не только broadcast-ом.",
                 "Так глава готовит ученика к личным сообщениям, комнатам и авторизации в следующих главах.",
                 "Обычные сообщения всё равно остаются broadcast, поэтому существующее поведение чата не ломается.",
+            ],
+        },
+        {
+            "title": "Что происходит при отключении",
+            "items": [
+                "Пользователь закрывает вкладку, обновляет страницу или теряет соединение.",
+                "<code>await websocket.receive_text()</code> больше не может получить текст и FastAPI выбрасывает <code>WebSocketDisconnect</code>.",
+                "Код переходит в блок <code>except WebSocketDisconnect</code>.",
+                "<code>manager.disconnect(connection_id)</code> удаляет соединение из <code>active_connections</code>.",
+                "После удаления manager делает broadcast события <code>disconnected</code> оставшимся клиентам.",
+                "Если не удалить соединение, счётчик подключений будет неправильным, а broadcast будет пытаться писать в закрытый WebSocket.",
+            ],
+        },
+        {
+            "title": "Как использовать socket-tester для своего проекта",
+            "items": [
+                "Страница тестера находится на <code>http://localhost:8010/socket-tester</code>.",
+                "Для 9-й главы выбирайте режим <code>WebSocket</code>.",
+                "Для готовой главы URL: <code>ws://localhost:8009/ws</code>.",
+                "Для проекта ученика URL строится так: <code>ws://localhost:ВАШ_ПОРТ/ВАШ_ПУТЬ</code>.",
+                "Если проект запущен командой <code>uvicorn main:app --reload --port 7009</code> и endpoint называется <code>/ws</code>, URL будет <code>ws://localhost:7009/ws</code>.",
+                "После подключения отправьте обычный текст, затем откройте вторую вкладку и проверьте broadcast.",
+                "После выполнения задачи отправьте <code>/who</code> и убедитесь, что ответ видит только отправитель.",
             ],
         },
     ],
@@ -5716,6 +5868,9 @@ BEGINNER_GUIDES = {
             "Делать refresh token JWT без хранения на сервере, а потом не иметь возможности его отозвать.",
             "Хранить refresh token в небезопасном месте на клиенте.",
             "Думать, что словарь заменяет БД в production. Это только учебный способ увидеть механику без лишнего слоя.",
+            "Пугаться сообщения <code>error reading bcrypt version</code>: это совместимость <code>passlib</code> и новых версий <code>bcrypt</code>, а не ошибка refresh token логики.",
+            "Если видите <code>error reading bcrypt version</code>, закрепите зависимость <code>bcrypt&gt;=4.0,&lt;4.1</code> и переустановите зависимости.",
+            "Получить 401 при повторном <code>/api/auth/refresh</code> со старым refresh token-ом - нормально. Старый token отзывается после первого успешного refresh.",
         ],
     },
     "chapter09": {
@@ -5723,22 +5878,53 @@ BEGINNER_GUIDES = {
             "Обычный HTTP-запрос короткий: клиент спросил, сервер ответил, соединение закончилось.",
             "WebSocket остаётся открытым. Клиент и сервер могут обмениваться сообщениями много раз.",
             "Для чата серверу нужно помнить, кто сейчас подключён.",
+            "REST endpoint обычно проверяют через браузер, curl или Swagger. WebSocket endpoint так не проверяется: нужен WebSocket-клиент.",
+            "Адрес WebSocket начинается с <code>ws://</code>, а не с <code>http://</code>. Для HTTPS-сайтов используется <code>wss://</code>.",
+            "Главная схема главы: подключиться, сохранить соединение, ждать сообщения в цикле, рассылать сообщения, убрать соединение при отключении.",
         ],
         "line_by_line": [
+            ("<code>from uuid import uuid4</code>", "Подключаем генератор случайных id. Так каждое подключение получает свой <code>connection_id</code>."),
+            ("<code>from fastapi import FastAPI, WebSocket, WebSocketDisconnect</code>", "Берём FastAPI-приложение, тип WebSocket-соединения и исключение штатного отключения."),
+            ("<code>app = FastAPI(...)</code>", "Создаём приложение. Обычные HTTP endpoint-ы и WebSocket endpoint-ы живут в одном FastAPI app."),
             ("<code>class ConnectionManager:</code>", "Создаём отдельный объект, который отвечает только за список подключений и отправку сообщений."),
+            ("<code>def __init__(self)</code>", "Конструктор manager-а. Он создаёт пустой словарь подключений при старте приложения."),
             ("<code>self.active_connections</code>", "Словарь активных клиентов: ключ - id подключения, значение - объект <code>WebSocket</code>."),
             ("<code>async def connect(...)</code>", "Метод подключения. Он принимает WebSocket, сохраняет его и возвращает id клиента."),
             ("<code>await websocket.accept()</code>", "Сервер явно принимает WebSocket-соединение. Без этого обмен сообщениями не начнётся."),
             ("<code>connection_id = str(uuid4())</code>", "Создаём случайный id, чтобы отличать одно подключение от другого."),
+            ("<code>self.active_connections[connection_id] = websocket</code>", "Кладём открытое соединение в словарь. После этого manager сможет отправлять этому клиенту сообщения."),
             ("<code>await websocket.send_json(...)</code>", "Отправляем новому клиенту первое служебное сообщение: соединение принято, вот твой id."),
+            ("<code>return connection_id</code>", "Возвращаем id в endpoint, чтобы endpoint знал, кто отправил следующее сообщение."),
             ("<code>def disconnect(...)</code>", "Удаляем клиента из словаря, когда соединение закрыто."),
+            ("<code>pop(connection_id, None)</code>", "Удаляет ключ, но не падает с ошибкой, если ключа уже нет."),
             ("<code>async def broadcast(...)</code>", "Проходим по всем активным клиентам и отправляем каждому одинаковый payload."),
-            ("<code>list(self.active_connections.values())</code>", "Берём копию списка подключений, чтобы обход не ломался, если словарь изменится во время рассылки."),
+            ("<code>disconnected: list[str] = []</code>", "Сюда складываем id клиентов, которым не удалось отправить сообщение."),
+            ("<code>for connection_id, websocket in self.active_connections.items()</code>", "Идём по всем активным соединениям: нам нужен и id, и сам WebSocket."),
+            ("<code>try: await websocket.send_json(payload)</code>", "Пробуем отправить JSON. Если соединение уже закрыто, отправка может упасть."),
+            ("<code>except RuntimeError</code>", "Учебная защита от ситуации, когда соединение умерло между сохранением в словарь и отправкой."),
+            ("<code>self.disconnect(connection_id)</code>", "Удаляем мёртвое соединение из manager-а."),
+            ("<code>manager = ConnectionManager()</code>", "Создаём один общий manager для всего приложения."),
+            ("<code>@app.get(\"/api/websocket/info\")</code>", "Обычный HTTP endpoint для проверки состояния: сколько подключений сейчас в manager-е."),
+            ("<code>@app.websocket(\"/ws\")</code>", "Регистрируем WebSocket endpoint. Подключаться к нему надо по адресу <code>ws://localhost:8009/ws</code>."),
+            ("<code>connection_id = await manager.connect(websocket)</code>", "При новом подключении принимаем WebSocket, сохраняем его и получаем id клиента."),
+            ("<code>try:</code>", "Начинаем блок, где будет жить receive loop. Если клиент отключится, перейдём в <code>except WebSocketDisconnect</code>."),
+            ("<code>while True:</code>", "Бесконечный цикл нужен, потому что WebSocket может принимать много сообщений подряд."),
+            ("<code>message = await websocket.receive_text()</code>", "Ждём следующее текстовое сообщение от текущего клиента."),
+            ("<code>await manager.broadcast({...})</code>", "Отправляем сообщение всем активным клиентам, включая отправителя."),
+            ("<code>\"event\": \"message\"</code>", "Поле event помогает клиенту понять, что это обычное сообщение чата."),
+            ("<code>\"connection_id\": connection_id</code>", "Показывает, кто отправил сообщение."),
+            ("<code>except WebSocketDisconnect:</code>", "Этот блок срабатывает, когда клиент закрыл вкладку или соединение оборвалось."),
+            ("<code>manager.disconnect(connection_id)</code>", "После отключения удаляем клиента из словаря."),
+            ("<code>await manager.broadcast({\"event\": \"disconnected\", ...})</code>", "Сообщаем оставшимся клиентам, что один участник отключился."),
         ],
         "mistakes": [
             "Забыть <code>await websocket.accept()</code> внутри connect.",
             "Не удалить отключившегося клиента из manager-а.",
             "Думать, что WebSocket endpoint можно проверить обычным curl как HTTP.",
+            "Подключаться к <code>http://localhost:8009/ws</code> вместо <code>ws://localhost:8009/ws</code>.",
+            "Выбрать режим Socket.IO в тестере для обычного WebSocket endpoint-а. Для 9-й главы нужен режим <code>WebSocket</code>.",
+            "Писать <code>return</code> внутри receive loop после первого сообщения. Тогда соединение закроется слишком рано.",
+            "Забывать <code>await</code> перед <code>receive_text()</code>, <code>send_json()</code> или <code>broadcast()</code>.",
         ],
     },
     "chapter10": {
@@ -6219,7 +6405,7 @@ def browser_targets(data: dict) -> list[tuple[str, str]]:
         (f"http://localhost:{port}/redoc", "ReDoc: статичная документация для спокойного чтения схемы API."),
         ("http://localhost:8000", "Gateway: общая главная страница со всеми главами."),
     ]
-    if data["number"] == 10:
+    if data["number"] in {9, 10}:
         targets.insert(1, ("http://localhost:8010/socket-tester", "Тестер Socket.IO и raw WebSocket: можно ввести URL своего сервиса и отправить сообщение."))
     return targets
 
