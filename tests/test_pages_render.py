@@ -89,7 +89,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
     (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при регистрации и входе", "Что происходит при revoke и logout", "Что сломается, если перепутать access и refresh"]),
     (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит при подключении", "Как использовать socket-tester для своего проекта"]),
-    (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при leave_room", "Почему здесь есть await"]),
+    (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при Socket.IO connect", "Как вручную проверить leave_room"]),
     (chapter11_app, ["Читаем авторизованный Socket.IO ответ сверху вниз", "Что происходит при connect", "Почему admin_message проверяется отдельно"]),
     (chapter12_app, ["Читаем тестовое решение сверху вниз", "Что происходит внутри fixture", "Что проверяет каждый вид теста"]),
 ]
@@ -540,6 +540,22 @@ def test_chapter10_uses_socketio_wording_without_old_comparison():
     assert old_comparison_term not in gateway_response.text
 
 
+def test_chapter10_explains_socketio_connection_fields_for_port_7001():
+    response = TestClient(chapter10_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+    answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
+
+    assert "http://localhost:7001" in text
+    assert "/socket.io" in text
+    assert "WebSocket / 403" in text
+    assert "режим <code>Socket.IO</code>" in answers
+    assert "не <code>WebSocket</code>" in answers
+    assert "Socket.IO path" in answers
+    assert "{\"room\":\"python\"}" in answers
+    assert "leave_room" in answers
+
+
 def test_chapter10_socket_tester_page_renders_defaults():
     response = TestClient(chapter10_app).get("/socket-tester")
 
@@ -551,6 +567,10 @@ def test_chapter10_socket_tester_page_renders_defaults():
     assert "Для главы 9" in response.text
     assert "ws://localhost:7001/ws" in response.text
     assert "/who" in response.text
+    assert "Для главы 10" in response.text
+    assert "http://localhost:7001" in response.text
+    assert "leave_room" in response.text
+    assert '{"room":"python"}' in response.text
 
 
 def test_chapter12_focuses_on_tests_and_fixtures_without_socketio():
