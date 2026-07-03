@@ -89,7 +89,7 @@ ANSWER_DEEP_DIVE_MARKERS = [
     (chapter07_app, ["Читаем auth-ответ сверху вниз", "Что происходит при запросе /api/admin", "Почему 401 и 403 разные"]),
     (chapter08_app, ["Читаем refresh-token решение сверху вниз", "Что происходит при регистрации и входе", "Что происходит при revoke и logout", "Что сломается, если перепутать access и refresh"]),
     (chapter09_app, ["Читаем WebSocket-ответ сверху вниз", "Что происходит при подключении", "Как использовать socket-tester для своего проекта"]),
-    (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при Socket.IO connect", "Как вручную проверить leave_room"]),
+    (chapter10_app, ["Читаем Socket.IO-ответ сверху вниз", "Что происходит при Socket.IO connect", "Какие события тестировать руками"]),
     (chapter11_app, ["Читаем авторизованный Socket.IO ответ сверху вниз", "Что происходит при connect", "Почему admin_message проверяется отдельно"]),
     (chapter12_app, ["Читаем тестовое решение сверху вниз", "Что происходит внутри fixture", "Что проверяет каждый вид теста"]),
 ]
@@ -429,8 +429,8 @@ def test_socket_code_tabs_do_not_repeat_full_answer_blocks():
 
     assert "Полный блок Socket.IO событий для комнат" not in chapter10_code
     assert "async def leave_room" not in chapter10_code
-    assert "async def join_room" not in chapter10_code
-    assert "async def chat_message" not in chapter10_code
+    assert "async def join_room(sid, data)" in chapter10_code
+    assert "async def chat_message(sid, data)" in chapter10_code
 
 
 def test_chapter05_jinja_demo_render():
@@ -544,6 +544,7 @@ def test_chapter10_explains_socketio_connection_fields_for_port_7001():
     response = TestClient(chapter10_app).get("/")
     assert response.status_code == 200
     text = unescape(response.text)
+    code_tab = unescape(html_section(response.text, '<section id="code"', '<section id="task"'))
     answers = unescape(html_section(response.text, '<section id="answers"', "</body>"))
 
     assert "http://localhost:7001" in text
@@ -554,6 +555,20 @@ def test_chapter10_explains_socketio_connection_fields_for_port_7001():
     assert "Socket.IO path" in answers
     assert "{\"room\":\"python\"}" in answers
     assert "leave_room" in answers
+    assert "Как проверить каждое Socket.IO событие" in answers
+    assert "direct_message" in answers
+    assert "SID_ВТОРОЙ_ВКЛАДКИ" in answers
+    assert "event routing" in text
+    assert "Как код понимает, какому сокету отправлять событие" in answers
+    assert "emit(\"join_room\"" in answers
+    assert "to=sid" in text
+    assert "room=room" in text
+    assert "без <code>to</code> и <code>room</code>" in text
+    assert "async def join_room(sid, data)" in code_tab
+    assert "await sio.enter_room(sid, room)" in code_tab
+    assert "async def chat_message(sid, data)" in code_tab
+    assert "await sio.emit(\"chat_message\", payload, room=room)" in code_tab
+    assert "async def leave_room" not in code_tab
 
 
 def test_chapter10_socket_tester_page_renders_defaults():
@@ -571,6 +586,10 @@ def test_chapter10_socket_tester_page_renders_defaults():
     assert "http://localhost:7001" in response.text
     assert "leave_room" in response.text
     assert '{"room":"python"}' in response.text
+    assert "Шпаргалка событий" in response.text
+    assert "socketioPayloads" in response.text
+    assert "PASTE_TARGET_SID" in response.text
+    assert "direct_message" in response.text
 
 
 def test_chapter12_focuses_on_tests_and_fixtures_without_socketio():

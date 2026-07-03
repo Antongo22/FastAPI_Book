@@ -1694,15 +1694,22 @@ else:
             "<strong>event</strong> - именованное сообщение, например <code>chat_message</code> или <code>join_room</code>.",
             "<strong>room</strong> - комната, куда можно добавить несколько подключений и отправлять события группе.",
             "<strong>emit</strong> - отправка события одному клиенту, комнате или всем подключённым клиентам.",
+            "<strong>event routing</strong> - Socket.IO вызывает Python-функцию по имени события: <code>emit(\"join_room\")</code> попадает в <code>async def join_room</code>.",
+            "<strong>to=sid</strong> - отправка события одному конкретному подключению.",
+            "<strong>room=room</strong> - отправка события всем подключениям, которые вошли в комнату.",
         ],
         "flow": [
             "Клиент подключается через Socket.IO к <code>http://localhost:8010</code> с path <code>/socket.io</code>.",
             "Если приложение запущено в отдельном проекте на порту <code>7001</code>, клиент подключается к <code>http://localhost:7001</code> с тем же path <code>/socket.io</code>.",
             "Для Socket.IO не пишут <code>ws://localhost:7001/</code> вручную: Socket.IO-клиент сам договорится о transport-е через path <code>/socket.io</code>.",
             "Сервер получает событие <code>connect</code>, запоминает <code>sid</code> и отправляет клиенту событие <code>connected</code>.",
+            "Когда клиент отправляет <code>socket.emit(\"set_name\", {...})</code>, Socket.IO находит обработчик <code>async def set_name(sid, data)</code>.",
+            "Первый аргумент <code>sid</code> сервер подставляет сам: так код понимает, от какого подключения пришло событие.",
+            "Второй аргумент <code>data</code> - это payload, который клиент передал вторым параметром в <code>emit</code>.",
             "Клиент отправляет событие <code>set_name</code>, чтобы сервер связал <code>sid</code> с именем пользователя.",
             "Клиент отправляет <code>join_room</code>, и сервер добавляет подключение в комнату.",
             "Клиент отправляет <code>chat_message</code>, а сервер делает <code>emit</code> всем или выбранной комнате.",
+            "Если в серверном <code>emit</code> указан <code>to=sid</code>, ответ уйдёт одному клиенту; если указан <code>room=room</code>, ответ уйдёт всей комнате; если ничего не указано, ответ уйдёт всем.",
             "При <code>disconnect</code> сервер очищает локальные словари подключений и комнат.",
         ],
         "endpoints": [
@@ -1743,6 +1750,29 @@ async def set_name(sid, data):
 
 
 @sio.event
+async def join_room(sid, data):
+    room = data.get("room", "general")
+    await sio.enter_room(sid, room)
+    socketio_rooms[room].add(sid)
+    await sio.emit("joined_room", {"room": room}, to=sid)
+
+
+@sio.event
+async def chat_message(sid, data):
+    room = data.get("room")
+    payload = {
+        "event": "chat_message",
+        "from": socketio_clients.get(sid, "anonymous"),
+        "message": data.get("message", ""),
+        "room": room,
+    }
+    if room:
+        await sio.emit("chat_message", payload, room=room)
+    else:
+        await sio.emit("chat_message", payload)
+
+
+@sio.event
 async def direct_message(sid, data):
     target_sid = data.get("sid")
     payload = {
@@ -1767,6 +1797,16 @@ async def disconnect(sid):
             "<code>app = socketio.ASGIApp(..., socketio_path=\"socket.io\")</code> говорит серверу принимать Socket.IO handshake на пути <code>/socket.io</code>.",
             "В тестере для проекта на порту <code>7001</code> заполните URL как <code>http://localhost:7001</code>, а Socket.IO path как <code>/socket.io</code>.",
             "После подключения тестер автоматически отправляет события <code>set_name</code> и <code>join_room</code>, поэтому в логе должны появиться <code>connected</code>, <code>name_set</code> и <code>joined_room</code>.",
+            "Имя события выбирает обработчик: <code>emit(\"direct_message\", data)</code> вызывает <code>async def direct_message(sid, data)</code>.",
+            "<code>sid</code> не берётся из JSON. Socket.IO сам знает, какое подключение отправило событие, и передаёт его первым аргументом handler-а.",
+            "<code>await sio.emit(\"name_set\", payload, to=sid)</code> отправляет ответ только текущему клиенту.",
+            "<code>await sio.emit(\"chat_message\", payload, room=room)</code> отправляет ответ всем клиентам в комнате.",
+            "<code>await sio.emit(\"chat_message\", payload)</code> без <code>to</code> и <code>room</code> отправляет событие всем подключённым клиентам.",
+            "Событие <code>set_name</code> проверяется payload-ом <code>{\"username\":\"student\"}</code>, ответ - <code>name_set</code>.",
+            "Событие <code>join_room</code> проверяется payload-ом <code>{\"room\":\"python\"}</code>, ответ - <code>joined_room</code>.",
+            "Событие <code>chat_message</code> проверяется payload-ом <code>{\"room\":\"python\",\"message\":\"Привет\"}</code>, ответ - <code>chat_message</code>.",
+            "Событие <code>direct_message</code> проверяется в двух вкладках: из второй вкладки копируете <code>sid</code> из события <code>connected</code>, в первой отправляете <code>{\"sid\":\"...\",\"message\":\"Лично\"}</code>.",
+            "События входа в комнату и отправки сообщения уже есть в базовом коде урока, чтобы тестер работал сразу. Задача главы - добавить недостающее событие выхода из комнаты.",
             "Комнаты удобнее ручного хранения списков получателей: сервер вызывает <code>enter_room</code> и отправляет событие в room.",
             "В этой главе также оставлен raw WebSocket endpoint, чтобы было видно, чем ручной протокол отличается от событий Socket.IO.",
         ],
@@ -3910,6 +3950,17 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io
             ],
         },
         {
+            "title": "Как проверить каждое Socket.IO событие",
+            "body": "В тестере выберите режим <code>Socket.IO</code>, подключитесь к серверу, затем меняйте поле <code>Событие</code>. При выборе события тестер подставляет подходящий payload.",
+            "items": [
+                "<code>set_name</code>: отправьте <code>{\"username\":\"student\"}</code>. В логе должно появиться событие <code>name_set</code>.",
+                "<code>join_room</code>: отправьте <code>{\"room\":\"python\"}</code>. В логе должно появиться <code>joined_room</code>.",
+                "<code>chat_message</code>: отправьте <code>{\"room\":\"python\",\"message\":\"Привет из тестера\"}</code>. В логе должно появиться <code>chat_message</code>.",
+                "<code>leave_room</code>: отправьте <code>{\"room\":\"python\"}</code>. В логе должно появиться <code>left_room</code>.",
+                "<code>direct_message</code>: откройте вторую вкладку тестера, скопируйте её <code>sid</code> из события <code>connected</code>, в первой вкладке отправьте <code>{\"sid\":\"SID_ВТОРОЙ_ВКЛАДКИ\",\"message\":\"Личное сообщение\"}</code>. Событие <code>direct_message</code> должно появиться во второй вкладке.",
+            ],
+        },
+        {
             "title": "Как подключиться через страницу теста сокетов",
             "body": "Для 10-й главы проверяйте именно Socket.IO-подключение. Если выбрать обычный WebSocket и URL <code>ws://localhost:7001/</code>, сервер увидит попытку подключения к корню <code>/</code> и вернёт <code>403</code>.",
             "items": [
@@ -5389,6 +5440,30 @@ ANSWER_DEEP_DIVES = {
             ],
         },
         {
+            "title": "Как код понимает, какому сокету отправлять событие",
+            "items": [
+                "Клиент отправляет событие по имени: <code>socket.emit(\"join_room\", payload)</code>.",
+                "Socket.IO на сервере ищет handler с таким же именем: <code>async def join_room(sid, data)</code>.",
+                "Аргумент <code>sid</code> сервер подставляет сам. Это id конкретного подключения, которое отправило событие.",
+                "Аргумент <code>data</code> - это payload из второго аргумента <code>emit</code>.",
+                "<code>await sio.emit(\"name_set\", payload, to=sid)</code> отправляет событие только одному подключению.",
+                "<code>await sio.emit(\"chat_message\", payload, room=\"python\")</code> отправляет событие всем подключениям в комнате <code>python</code>.",
+                "<code>await sio.emit(\"chat_message\", payload)</code> без <code>to</code> и <code>room</code> отправляет событие всем подключённым клиентам.",
+                "<code>direct_message</code> работает через <code>target_sid</code>: клиент передаёт sid получателя в payload, а сервер делает <code>emit(..., to=target_sid)</code>.",
+            ],
+        },
+        {
+            "title": "Какие события тестировать руками",
+            "items": [
+                "<code>connected</code> не отправляется вручную. Это ответ сервера после успешного подключения.",
+                "<code>name_set</code> не отправляется вручную. Он приходит после вашего события <code>set_name</code>.",
+                "<code>joined_room</code> не отправляется вручную. Он приходит после вашего события <code>join_room</code>.",
+                "<code>left_room</code> не отправляется вручную. Он приходит после вашего события <code>leave_room</code>.",
+                "Вручную через dropdown отправляются <code>set_name</code>, <code>join_room</code>, <code>chat_message</code>, <code>leave_room</code>, <code>direct_message</code>.",
+                "Если событие ничего не возвращает, проверьте, совпадает ли имя события в dropdown с именем Python-функции под <code>@sio.event</code>.",
+            ],
+        },
+        {
             "title": "Что происходит при leave_room",
             "items": [
                 "Клиент отправляет событие <code>leave_room</code> с payload, например <code>{\"room\": \"python\"}</code>.",
@@ -5993,6 +6068,9 @@ BEGINNER_GUIDES = {
             "Socket.IO - это отдельная real-time технология, где общение строится вокруг событий: клиент отправляет событие, сервер обрабатывает его по имени.",
             "Вместо ручного поля <code>action</code> у каждого действия есть своё имя: <code>join_room</code>, <code>chat_message</code>, <code>direct_message</code>.",
             "Главная мысль: WebSocket может быть транспортом, а Socket.IO добавляет поверх него удобные события, комнаты и клиентскую библиотеку.",
+            "Сервер понимает, какую функцию вызвать, по имени события. Событие <code>join_room</code> вызывает функцию <code>join_room</code>.",
+            "Сервер понимает, кто отправил событие, по <code>sid</code>. Этот id Socket.IO передаёт в handler автоматически.",
+            "Сервер понимает, куда отправить ответ, по параметрам <code>to=sid</code>, <code>room=...</code> или по их отсутствию.",
         ],
         "line_by_line": [
             ("<code>sio = socketio.AsyncServer(...)</code>", "Создаём Socket.IO server, который умеет принимать асинхронные события."),
@@ -6000,11 +6078,17 @@ BEGINNER_GUIDES = {
             ("<code>socketio.ASGIApp(...)</code>", "Объединяем Socket.IO server и FastAPI-приложение в одно ASGI-приложение."),
             ("<code>socketio_path=\"socket.io\"</code>", "Указываем путь Socket.IO внутри ASGI-приложения. В браузере этот путь обычно выглядит как <code>/socket.io</code>."),
             ("<code>@sio.event</code>", "Декоратор регистрирует функцию как обработчик события. Имя функции становится именем события."),
+            ("<code>async def join_room(...)</code>", "Если клиент отправит <code>socket.emit(\"join_room\", payload)</code>, Socket.IO вызовет функцию <code>join_room</code>."),
             ("<code>async def connect(sid, environ, auth)</code>", "Срабатывает при новом подключении клиента."),
             ("<code>sid</code>", "Уникальный id подключения. Его выдаёт Socket.IO server."),
+            ("<code>sid</code> в handler-е", "Это не поле из JSON. Socket.IO сам подставляет id того подключения, которое отправило событие."),
             ("<code>data</code>", "Payload события. Обычно это обычный словарь с данными от клиента."),
             ("<code>socketio_clients[sid] = \"anonymous\"</code>", "Сохраняем подключение с временным именем, пока пользователь не отправит своё имя."),
             ("<code>async def set_name(...)</code>", "Обрабатываем событие, которое меняет имя пользователя в учебном словаре."),
+            ("<code>await sio.emit(\"name_set\", ..., to=sid)</code>", "Отправляем ответ только текущему сокету, потому что указан адрес конкретного подключения."),
+            ("<code>await sio.enter_room(sid, room)</code>", "Добавляем текущее подключение в комнату. После этого в эту комнату можно отправлять сообщения."),
+            ("<code>await sio.emit(..., room=room)</code>", "Отправляем событие всем подключениям, которые находятся в указанной комнате."),
+            ("<code>await sio.emit(...)</code>", "Если не указать <code>to</code> и <code>room</code>, событие уйдёт всем подключённым клиентам."),
             ("<code>async def direct_message(...)</code>", "Обрабатываем событие личного сообщения."),
             ("<code>target_sid = data.get(\"sid\")</code>", "Берём id клиента, которому нужно отправить личное сообщение."),
             ("<code>await sio.emit(..., to=target_sid)</code>", "Отправляем событие только выбранному клиенту."),

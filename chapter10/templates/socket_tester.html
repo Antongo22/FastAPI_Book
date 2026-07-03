@@ -70,6 +70,16 @@
                         <label>Сообщение / payload
                             <textarea id="socket-message" name="socket_message" rows="8">{"room":"python","message":"Привет из тестера"}</textarea>
                         </label>
+                        <div class="hint-box socketio-only" id="event-help">
+                            <h3>Шпаргалка событий</h3>
+                            <ul class="event-cheatsheet">
+                                <li><strong>set_name</strong>: <code>{"username":"student"}</code> -> ждём <code>name_set</code>.</li>
+                                <li><strong>join_room</strong>: <code>{"room":"python"}</code> -> ждём <code>joined_room</code>.</li>
+                                <li><strong>chat_message</strong>: <code>{"room":"python","message":"Привет"}</code> -> ждём <code>chat_message</code>.</li>
+                                <li><strong>leave_room</strong>: <code>{"room":"python"}</code> -> ждём <code>left_room</code>.</li>
+                                <li><strong>direct_message</strong>: <code>{"sid":"SID_ДРУГОГО_КЛИЕНТА","message":"Лично"}</code> -> ждём <code>direct_message</code> во второй вкладке.</li>
+                            </ul>
+                        </div>
                         <div class="button-row">
                             <button type="button" id="connect-button">Подключиться</button>
                             <button type="button" id="disconnect-button" class="secondary-action" disabled>Отключиться</button>
@@ -104,6 +114,14 @@
                 url: "ws://localhost:8010/ws/chat?group=general",
                 message: '{"action":"send_to_group","group":"python","user":"student","message":"Привет из тестера"}',
             },
+        };
+
+        const socketioPayloads = {
+            set_name: '{"username":"student"}',
+            join_room: '{"room":"python"}',
+            chat_message: '{"room":"python","message":"Привет из тестера"}',
+            leave_room: '{"room":"python"}',
+            direct_message: '{"sid":"PASTE_TARGET_SID","message":"Личное сообщение"}',
         };
 
         const modeButtons = document.querySelectorAll("[data-mode]");
@@ -255,9 +273,20 @@
             }
         }
 
+        function applySocketIOEventPayload() {
+            if (state.mode !== "socketio") {
+                return;
+            }
+            const payload = socketioPayloads[eventName.value];
+            if (payload) {
+                message.value = payload;
+            }
+        }
+
         modeButtons.forEach((button) => {
             button.addEventListener("click", () => applyMode(button.dataset.mode));
         });
+        eventName.addEventListener("change", applySocketIOEventPayload);
 
         connectButton.addEventListener("click", connect);
         disconnectButton.addEventListener("click", disconnect);
