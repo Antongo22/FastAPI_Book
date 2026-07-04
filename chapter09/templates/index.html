@@ -87,6 +87,27 @@
                     <article class="info-box command-box"><h2>Быстрая проверка в консоли браузера</h2><pre><code>{% raw %}const ws = new WebSocket(&quot;ws://localhost:8009/ws&quot;);
 ws.onmessage = event =&gt; console.log(event.data);
 ws.onopen = () =&gt; ws.send(&quot;hello&quot;);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>JS-клиент для вашего проекта на 7001</h2><pre><code>{% raw %}const ws = new WebSocket(&quot;ws://localhost:7001/ws&quot;);
+
+ws.addEventListener(&quot;open&quot;, () =&gt; {
+  console.log(&quot;connected&quot;);
+  ws.send(&quot;Привет из JS-клиента&quot;);
+});
+
+ws.addEventListener(&quot;message&quot;, (event) =&gt; {
+  console.log(&quot;server message:&quot;, JSON.parse(event.data));
+});
+
+ws.addEventListener(&quot;close&quot;, (event) =&gt; {
+  console.log(&quot;closed:&quot;, event.code, event.reason);
+});
+
+window.lesson09Socket = ws;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Отправить сообщение после подключения</h2><pre><code>{% raw %}lesson09Socket.send(&quot;Сообщение из консоли&quot;);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить broadcast в двух вкладках</h2><pre><code>{% raw %}/* Выполните JS-клиент в двух вкладках.
+   Потом в первой вкладке выполните: */
+lesson09Socket.send(&quot;Это сообщение должны увидеть обе вкладки&quot;);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить /who после задачи</h2><pre><code>{% raw %}lesson09Socket.send(&quot;/who&quot;);{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Что должно произойти</h2><pre><code>{% raw %}Откройте две вкладки с кодом выше. Сообщение из одной вкладки должно прийти в обе.{% endraw %}</code></pre></article>
                 </div>
             </div>
@@ -168,6 +189,33 @@ async def websocket_endpoint(websocket: WebSocket):
             &quot;connection_id&quot;: connection_id,
         }){% endraw %}</code></pre>
                 </article>
+
+                <article class="info-box command-box"><h2>JS-клиент для проверки WebSocket</h2><pre><code>{% raw %}const ws = new WebSocket(&quot;ws://localhost:7001/ws&quot;);
+
+ws.addEventListener(&quot;open&quot;, () =&gt; {
+  console.log(&quot;WebSocket подключён&quot;);
+  ws.send(&quot;Привет из JS-клиента&quot;);
+});
+
+ws.addEventListener(&quot;message&quot;, (event) =&gt; {
+  const data = JSON.parse(event.data);
+  console.log(&quot;server message:&quot;, data);
+});
+
+ws.addEventListener(&quot;close&quot;, (event) =&gt; {
+  console.log(&quot;WebSocket закрыт:&quot;, event.code, event.reason);
+});
+
+ws.addEventListener(&quot;error&quot;, () =&gt; {
+  console.log(&quot;WebSocket ошибка&quot;);
+});
+
+window.lesson09Socket = ws;{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>JS-проверка broadcast</h2><pre><code>{% raw %}// 1. Откройте две вкладки браузера.
+// 2. В каждой вкладке выполните код подключения выше.
+// 3. В первой вкладке отправьте сообщение:
+
+lesson09Socket.send(&quot;Это сообщение должны увидеть обе вкладки&quot;);{% endraw %}</code></pre></article>
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
@@ -388,7 +436,49 @@ async def websocket_endpoint(websocket: WebSocket):
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Отправьте <code>/who</code> и получите count только в текущем клиенте.</span></article>
 <article class="endpoint-card"><strong><code>WS /ws</code></strong><span>Отправьте обычный текст и получите broadcast у всех клиентов.</span></article></div>
 </article>
-<article class="info-box"><h2>4. Как проверить через страницу теста сокетов</h2>
+<article class="info-box"><h2>4. JS-код для проверки ответа с /who</h2>
+<p>Этот код запускается после выполнения задачи. Он подключается к WebSocket, отправляет обычное сообщение, а потом отправляет команду <code>/who</code>.</p>
+<pre><code>{% raw %}const ws = new WebSocket(&quot;ws://localhost:7001/ws&quot;);
+
+ws.addEventListener(&quot;open&quot;, () =&gt; {
+  console.log(&quot;WebSocket connected&quot;);
+  ws.send(&quot;Привет из JS-клиента&quot;);
+  ws.send(&quot;/who&quot;);
+});
+
+ws.addEventListener(&quot;message&quot;, (event) =&gt; {
+  const data = JSON.parse(event.data);
+  console.log(&quot;server message:&quot;, data);
+});
+
+ws.addEventListener(&quot;close&quot;, (event) =&gt; {
+  console.log(&quot;WebSocket closed:&quot;, event.code, event.reason);
+});
+
+ws.addEventListener(&quot;error&quot;, () =&gt; {
+  console.log(&quot;WebSocket error&quot;);
+});
+
+window.lesson09Socket = ws;{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>5. JS-код для проверки broadcast в двух вкладках</h2>
+<p>Откройте две вкладки браузера, выполните этот код в обеих, затем отправьте сообщение из первой вкладки. Сообщение должно прийти в обе вкладки.</p>
+<pre><code>{% raw %}const ws = new WebSocket(&quot;ws://localhost:7001/ws&quot;);
+
+ws.addEventListener(&quot;open&quot;, () =&gt; {
+  console.log(&quot;connected&quot;);
+});
+
+ws.addEventListener(&quot;message&quot;, (event) =&gt; {
+  console.log(&quot;received:&quot;, JSON.parse(event.data));
+});
+
+window.lesson09Socket = ws;
+
+// После подключения выполните в первой вкладке:
+// lesson09Socket.send(&quot;Сообщение для всех вкладок&quot;);{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>6. Как проверить через страницу теста сокетов</h2>
 <p>Страница <code>http://localhost:8010/socket-tester</code> умеет проверять и Socket.IO, и обычный WebSocket. Для 9-й главы нужен режим обычного WebSocket.</p>
 <ul class="flow-list"><li>Сначала запустите 9-ю главу, например <code>uvicorn chapter09.app.main:app --reload --port 8009</code> из корня учебника.</li>
 <li>Откройте <code>http://localhost:8010/socket-tester</code>.</li>
@@ -403,7 +493,7 @@ async def websocket_endpoint(websocket: WebSocket):
 <li>После выполнения задачи отправьте <code>/who</code>. Ответ <code>connections</code> должен прийти только в ту вкладку, которая отправила команду.</li>
 <li>Если видите в терминале <code>WebSocket /ws/ 403</code>, значит тестер подключался к адресу со слэшем на конце. В обновлённом примере работают оба адреса: <code>/ws</code> и <code>/ws/</code>.</li></ul>
 </article>
-<article class="info-box"><h2>5. Как подключиться к проекту ученика</h2>
+<article class="info-box"><h2>7. Как подключиться к проекту ученика</h2>
 <p>Если ученик тренируется в отдельном проекте, на странице тестера меняется только URL. Остальная логика проверки такая же.</p>
 <ul class="flow-list"><li>Запустите свой проект на своём порту, например <code>uvicorn main:app --reload --port 7009</code>.</li>
 <li>Убедитесь, что в проекте есть endpoint <code>@app.websocket("/ws")</code>. Если путь другой, используйте свой путь.</li>

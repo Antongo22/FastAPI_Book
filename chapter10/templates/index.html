@@ -98,6 +98,27 @@ document.head.append(script);{% endraw %}</code></pre></article>
 <article class="info-box command-box"><h2>Вступить в комнату и отправить сообщение</h2><pre><code>{% raw %}socket.emit(&quot;set_name&quot;, { username: &quot;anna&quot; });
 socket.emit(&quot;join_room&quot;, { room: &quot;python&quot; });
 socket.emit(&quot;chat_message&quot;, { room: &quot;python&quot;, message: &quot;Привет комнате&quot; });{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить все базовые события через JS</h2><pre><code>{% raw %}const script = document.createElement(&quot;script&quot;);
+script.src = &quot;https://cdn.socket.io/4.7.5/socket.io.min.js&quot;;
+script.onload = () =&gt; {
+  const socket = io(&quot;http://localhost:7001&quot;, { path: &quot;/socket.io&quot;, transports: [&quot;websocket&quot;, &quot;polling&quot;] });
+  socket.onAny((event, payload) =&gt; console.log(&quot;server event:&quot;, event, payload));
+  socket.on(&quot;connect&quot;, () =&gt; {
+    console.log(&quot;sid:&quot;, socket.id);
+    socket.emit(&quot;set_name&quot;, { username: &quot;student&quot; });
+    socket.emit(&quot;join_room&quot;, { room: &quot;python&quot; });
+    socket.emit(&quot;chat_message&quot;, { room: &quot;python&quot;, message: &quot;Привет из JS&quot; });
+  });
+  window.lesson10Socket = socket;
+};
+document.head.append(script);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>Проверить direct_message через две вкладки</h2><pre><code>{% raw %}/* Выполните предыдущий пример в двух вкладках.
+   Во второй вкладке скопируйте lesson10Socket.id.
+   В первой вкладке выполните: */
+lesson10Socket.emit(&quot;direct_message&quot;, {
+  sid: &quot;PASTE_SECOND_TAB_SID&quot;,
+  message: &quot;Личное сообщение&quot;
+});{% endraw %}</code></pre></article>
                 </div>
             </div>
         </section>
@@ -177,6 +198,45 @@ async def disconnect(sid):
     for members in socketio_rooms.values():
         members.discard(sid){% endraw %}</code></pre>
                 </article>
+
+                <article class="info-box command-box"><h2>JS-клиент для Socket.IO</h2><pre><code>{% raw %}const script = document.createElement(&quot;script&quot;);
+script.src = &quot;https://cdn.socket.io/4.7.5/socket.io.min.js&quot;;
+script.onload = () =&gt; {
+  const socket = io(&quot;http://localhost:7001&quot;, {
+    path: &quot;/socket.io&quot;,
+    transports: [&quot;websocket&quot;, &quot;polling&quot;],
+  });
+
+  socket.onAny((event, payload) =&gt; {
+    console.log(&quot;server event:&quot;, event, payload);
+  });
+
+  socket.on(&quot;connect&quot;, () =&gt; {
+    console.log(&quot;connected sid:&quot;, socket.id);
+
+    socket.emit(&quot;set_name&quot;, { username: &quot;student&quot; });
+    socket.emit(&quot;join_room&quot;, { room: &quot;python&quot; });
+    socket.emit(&quot;chat_message&quot;, {
+      room: &quot;python&quot;,
+      message: &quot;Привет из JS-клиента&quot;,
+    });
+  });
+
+  window.lesson10Socket = socket;
+};
+document.head.append(script);{% endraw %}</code></pre></article>
+<article class="info-box command-box"><h2>JS-проверка direct_message</h2><pre><code>{% raw %}// 1. Откройте две вкладки браузера.
+// 2. В обеих выполните JS-клиент выше.
+// 3. Во второй вкладке скопируйте:
+
+lesson10Socket.id
+
+// 4. В первой вкладке вставьте sid второй вкладки:
+
+lesson10Socket.emit(&quot;direct_message&quot;, {
+  sid: &quot;PASTE_SECOND_TAB_SID&quot;,
+  message: &quot;Личное сообщение&quot;,
+});{% endraw %}</code></pre></article>
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
@@ -474,7 +534,37 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <div class="endpoint-grid"><article class="endpoint-card"><strong><code>Socket.IO join_room</code></strong><span>Отправьте <code>&#123; room: "python" &#125;</code> и получите событие <code>joined_room</code>.</span></article>
 <article class="endpoint-card"><strong><code>Socket.IO leave_room</code></strong><span>Отправьте <code>&#123; room: "python" &#125;</code> и получите событие <code>left_room</code>.</span></article></div>
 </article>
-<article class="info-box"><h2>4. Как проверить каждое Socket.IO событие</h2>
+<article class="info-box"><h2>4. JS-код для проверки ответа с leave_room</h2>
+<p>Этот код проверяет полный сценарий после выполнения задачи: подключение, имя, вход в комнату, сообщение, выход из комнаты.</p>
+<pre><code>{% raw %}const script = document.createElement(&quot;script&quot;);
+script.src = &quot;https://cdn.socket.io/4.7.5/socket.io.min.js&quot;;
+script.onload = () =&gt; {
+  const socket = io(&quot;http://localhost:7001&quot;, {
+    path: &quot;/socket.io&quot;,
+    transports: [&quot;websocket&quot;, &quot;polling&quot;],
+  });
+
+  socket.onAny((event, payload) =&gt; {
+    console.log(&quot;server event:&quot;, event, payload);
+  });
+
+  socket.on(&quot;connect&quot;, () =&gt; {
+    console.log(&quot;connected sid:&quot;, socket.id);
+
+    socket.emit(&quot;set_name&quot;, { username: &quot;student&quot; });
+    socket.emit(&quot;join_room&quot;, { room: &quot;python&quot; });
+    socket.emit(&quot;chat_message&quot;, {
+      room: &quot;python&quot;,
+      message: &quot;До выхода из комнаты&quot;,
+    });
+    socket.emit(&quot;leave_room&quot;, { room: &quot;python&quot; });
+  });
+
+  window.lesson10AnswerSocket = socket;
+};
+document.head.append(script);{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>5. Как проверить каждое Socket.IO событие</h2>
 <p>В тестере выберите режим <code>Socket.IO</code>, подключитесь к серверу, затем меняйте поле <code>Событие</code>. При выборе события тестер подставляет подходящий payload.</p>
 <ul class="flow-list"><li><code>set_name</code>: отправьте <code>&#123;"username":"student"&#125;</code>. В логе должно появиться событие <code>name_set</code>.</li>
 <li><code>join_room</code>: отправьте <code>&#123;"room":"python"&#125;</code>. В логе должно появиться <code>joined_room</code>.</li>
@@ -482,7 +572,49 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <li><code>leave_room</code>: отправьте <code>&#123;"room":"python"&#125;</code>. В логе должно появиться <code>left_room</code>.</li>
 <li><code>direct_message</code>: откройте вторую вкладку тестера, скопируйте её <code>sid</code> из события <code>connected</code>, в первой вкладке отправьте <code>&#123;"sid":"SID_ВТОРОЙ_ВКЛАДКИ","message":"Личное сообщение"&#125;</code>. Событие <code>direct_message</code> должно появиться во второй вкладке.</li></ul>
 </article>
-<article class="info-box"><h2>5. Как подключиться через страницу теста сокетов</h2>
+<article class="info-box"><h2>6. JS-код для проверки базовых событий</h2>
+<p>Этот код можно вставить в DevTools Console на любой странице браузера. Если ваш сервер запущен на другом порту, поменяйте <code>SERVER_URL</code>.</p>
+<pre><code>{% raw %}const script = document.createElement(&quot;script&quot;);
+script.src = &quot;https://cdn.socket.io/4.7.5/socket.io.min.js&quot;;
+script.onload = () =&gt; {
+  const SERVER_URL = &quot;http://localhost:7001&quot;;
+
+  const socket = io(SERVER_URL, {
+    path: &quot;/socket.io&quot;,
+    transports: [&quot;websocket&quot;, &quot;polling&quot;],
+  });
+
+  socket.onAny((event, payload) =&gt; {
+    console.log(&quot;server event:&quot;, event, payload);
+  });
+
+  socket.on(&quot;connect&quot;, () =&gt; {
+    console.log(&quot;connected sid:&quot;, socket.id);
+
+    socket.emit(&quot;set_name&quot;, { username: &quot;student&quot; });
+    socket.emit(&quot;join_room&quot;, { room: &quot;python&quot; });
+    socket.emit(&quot;chat_message&quot;, {
+      room: &quot;python&quot;,
+      message: &quot;Привет из JS-клиента&quot;,
+    });
+  });
+
+  window.lesson10Socket = socket;
+};
+document.head.append(script);{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>7. JS-код для проверки direct_message</h2>
+<p>Откройте две вкладки браузера, выполните базовый JS-код в обеих, скопируйте <code>socket.id</code> из второй вкладки и вставьте его в первой.</p>
+<pre><code>{% raw %}// Во второй вкладке посмотрите sid:
+lesson10Socket.id
+
+// В первой вкладке отправьте личное сообщение во вторую:
+lesson10Socket.emit(&quot;direct_message&quot;, {
+  sid: &quot;PASTE_SECOND_TAB_SID&quot;,
+  message: &quot;Личное сообщение из первой вкладки&quot;,
+});{% endraw %}</code></pre>
+</article>
+<article class="info-box"><h2>8. Как подключиться через страницу теста сокетов</h2>
 <p>Для 10-й главы проверяйте именно Socket.IO-подключение. Если выбрать обычный WebSocket и URL <code>ws://localhost:7001/</code>, сервер увидит попытку подключения к корню <code>/</code> и вернёт <code>403</code>.</p>
 <ul class="flow-list"><li>Запустите приложение. Если в терминале написано <code>Uvicorn running on http://127.0.0.1:7001</code>, значит порт для тестера - <code>7001</code>.</li>
 <li>Откройте <code>http://localhost:8010/socket-tester</code>.</li>
@@ -495,7 +627,7 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;sock
 <li>Для проверки обычного сообщения выберите событие <code>chat_message</code> и payload <code>&#123;"room":"python","message":"Привет из тестера"&#125;</code>.</li>
 <li>Для проверки задачи выберите событие <code>leave_room</code> и payload <code>&#123;"room":"python"&#125;</code>. В ответе должно прийти событие <code>left_room</code>.</li></ul>
 </article>
-<article class="info-box"><h2>6. Почему WebSocket / даёт 403</h2>
+<article class="info-box"><h2>9. Почему WebSocket / даёт 403</h2>
 <ul class="flow-list"><li>Socket.IO - это не просто прямой raw WebSocket на <code>/</code>.</li>
 <li>Socket.IO клиент сначала делает служебный handshake на пути <code>/socket.io</code>.</li>
 <li>Если подключиться как raw WebSocket к <code>ws://localhost:7001/</code>, запрос попадёт в корень <code>/</code>, где WebSocket endpoint-а нет.</li>

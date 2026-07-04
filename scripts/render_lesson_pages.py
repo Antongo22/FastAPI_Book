@@ -1681,6 +1681,44 @@ else:
             "Команды, предназначенные только отправителю, не нужно рассылать через broadcast.",
             "Так появляется первая серверная логика поверх обычного транспорта.",
         ],
+        "code_examples": [
+            (
+                "JS-клиент для проверки WebSocket",
+                '''
+const ws = new WebSocket("ws://localhost:7001/ws");
+
+ws.addEventListener("open", () => {
+  console.log("WebSocket подключён");
+  ws.send("Привет из JS-клиента");
+});
+
+ws.addEventListener("message", (event) => {
+  const data = JSON.parse(event.data);
+  console.log("server message:", data);
+});
+
+ws.addEventListener("close", (event) => {
+  console.log("WebSocket закрыт:", event.code, event.reason);
+});
+
+ws.addEventListener("error", () => {
+  console.log("WebSocket ошибка");
+});
+
+window.lesson09Socket = ws;
+                ''',
+            ),
+            (
+                "JS-проверка broadcast",
+                '''
+// 1. Откройте две вкладки браузера.
+// 2. В каждой вкладке выполните код подключения выше.
+// 3. В первой вкладке отправьте сообщение:
+
+lesson09Socket.send("Это сообщение должны увидеть обе вкладки");
+                ''',
+            ),
+        ],
     },
     "chapter10": {
         "number": 10,
@@ -1822,6 +1860,56 @@ async def leave_room(sid, data):
         "answer_notes": [
             "Метод <code>leave_room</code> убирает sid из внутренней комнаты Socket.IO.",
             "Локальный словарь <code>socketio_rooms</code> нужен только для учебного endpoint-а <code>/api/chat/info</code>.",
+        ],
+        "code_examples": [
+            (
+                "JS-клиент для Socket.IO",
+                '''
+const script = document.createElement("script");
+script.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";
+script.onload = () => {
+  const socket = io("http://localhost:7001", {
+    path: "/socket.io",
+    transports: ["websocket", "polling"],
+  });
+
+  socket.onAny((event, payload) => {
+    console.log("server event:", event, payload);
+  });
+
+  socket.on("connect", () => {
+    console.log("connected sid:", socket.id);
+
+    socket.emit("set_name", { username: "student" });
+    socket.emit("join_room", { room: "python" });
+    socket.emit("chat_message", {
+      room: "python",
+      message: "Привет из JS-клиента",
+    });
+  });
+
+  window.lesson10Socket = socket;
+};
+document.head.append(script);
+                ''',
+            ),
+            (
+                "JS-проверка direct_message",
+                '''
+// 1. Откройте две вкладки браузера.
+// 2. В обеих выполните JS-клиент выше.
+// 3. Во второй вкладке скопируйте:
+
+lesson10Socket.id
+
+// 4. В первой вкладке вставьте sid второй вкладки:
+
+lesson10Socket.emit("direct_message", {
+  sid: "PASTE_SECOND_TAB_SID",
+  message: "Личное сообщение",
+});
+                ''',
+            ),
         ],
     },
     "chapter11": {
@@ -3731,6 +3819,54 @@ async def websocket_endpoint(websocket: WebSocket):
             ],
         },
         {
+            "title": "JS-код для проверки ответа с /who",
+            "body": "Этот код запускается после выполнения задачи. Он подключается к WebSocket, отправляет обычное сообщение, а потом отправляет команду <code>/who</code>.",
+            "code": '''
+const ws = new WebSocket("ws://localhost:7001/ws");
+
+ws.addEventListener("open", () => {
+  console.log("WebSocket connected");
+  ws.send("Привет из JS-клиента");
+  ws.send("/who");
+});
+
+ws.addEventListener("message", (event) => {
+  const data = JSON.parse(event.data);
+  console.log("server message:", data);
+});
+
+ws.addEventListener("close", (event) => {
+  console.log("WebSocket closed:", event.code, event.reason);
+});
+
+ws.addEventListener("error", () => {
+  console.log("WebSocket error");
+});
+
+window.lesson09Socket = ws;
+            ''',
+        },
+        {
+            "title": "JS-код для проверки broadcast в двух вкладках",
+            "body": "Откройте две вкладки браузера, выполните этот код в обеих, затем отправьте сообщение из первой вкладки. Сообщение должно прийти в обе вкладки.",
+            "code": '''
+const ws = new WebSocket("ws://localhost:7001/ws");
+
+ws.addEventListener("open", () => {
+  console.log("connected");
+});
+
+ws.addEventListener("message", (event) => {
+  console.log("received:", JSON.parse(event.data));
+});
+
+window.lesson09Socket = ws;
+
+// После подключения выполните в первой вкладке:
+// lesson09Socket.send("Сообщение для всех вкладок");
+            ''',
+        },
+        {
             "title": "Как проверить через страницу теста сокетов",
             "body": "Страница <code>http://localhost:8010/socket-tester</code> умеет проверять и Socket.IO, и обычный WebSocket. Для 9-й главы нужен режим обычного WebSocket.",
             "items": [
@@ -3950,6 +4086,39 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io
             ],
         },
         {
+            "title": "JS-код для проверки ответа с leave_room",
+            "body": "Этот код проверяет полный сценарий после выполнения задачи: подключение, имя, вход в комнату, сообщение, выход из комнаты.",
+            "code": '''
+const script = document.createElement("script");
+script.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";
+script.onload = () => {
+  const socket = io("http://localhost:7001", {
+    path: "/socket.io",
+    transports: ["websocket", "polling"],
+  });
+
+  socket.onAny((event, payload) => {
+    console.log("server event:", event, payload);
+  });
+
+  socket.on("connect", () => {
+    console.log("connected sid:", socket.id);
+
+    socket.emit("set_name", { username: "student" });
+    socket.emit("join_room", { room: "python" });
+    socket.emit("chat_message", {
+      room: "python",
+      message: "До выхода из комнаты",
+    });
+    socket.emit("leave_room", { room: "python" });
+  });
+
+  window.lesson10AnswerSocket = socket;
+};
+document.head.append(script);
+            ''',
+        },
+        {
             "title": "Как проверить каждое Socket.IO событие",
             "body": "В тестере выберите режим <code>Socket.IO</code>, подключитесь к серверу, затем меняйте поле <code>Событие</code>. При выборе события тестер подставляет подходящий payload.",
             "items": [
@@ -3959,6 +4128,54 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="socket.io
                 "<code>leave_room</code>: отправьте <code>{\"room\":\"python\"}</code>. В логе должно появиться <code>left_room</code>.",
                 "<code>direct_message</code>: откройте вторую вкладку тестера, скопируйте её <code>sid</code> из события <code>connected</code>, в первой вкладке отправьте <code>{\"sid\":\"SID_ВТОРОЙ_ВКЛАДКИ\",\"message\":\"Личное сообщение\"}</code>. Событие <code>direct_message</code> должно появиться во второй вкладке.",
             ],
+        },
+        {
+            "title": "JS-код для проверки базовых событий",
+            "body": "Этот код можно вставить в DevTools Console на любой странице браузера. Если ваш сервер запущен на другом порту, поменяйте <code>SERVER_URL</code>.",
+            "code": '''
+const script = document.createElement("script");
+script.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";
+script.onload = () => {
+  const SERVER_URL = "http://localhost:7001";
+
+  const socket = io(SERVER_URL, {
+    path: "/socket.io",
+    transports: ["websocket", "polling"],
+  });
+
+  socket.onAny((event, payload) => {
+    console.log("server event:", event, payload);
+  });
+
+  socket.on("connect", () => {
+    console.log("connected sid:", socket.id);
+
+    socket.emit("set_name", { username: "student" });
+    socket.emit("join_room", { room: "python" });
+    socket.emit("chat_message", {
+      room: "python",
+      message: "Привет из JS-клиента",
+    });
+  });
+
+  window.lesson10Socket = socket;
+};
+document.head.append(script);
+            ''',
+        },
+        {
+            "title": "JS-код для проверки direct_message",
+            "body": "Откройте две вкладки браузера, выполните базовый JS-код в обеих, скопируйте <code>socket.id</code> из второй вкладки и вставьте его в первой.",
+            "code": '''
+// Во второй вкладке посмотрите sid:
+lesson10Socket.id
+
+// В первой вкладке отправьте личное сообщение во вторую:
+lesson10Socket.emit("direct_message", {
+  sid: "PASTE_SECOND_TAB_SID",
+  message: "Личное сообщение из первой вкладки",
+});
+            ''',
         },
         {
             "title": "Как подключиться через страницу теста сокетов",
@@ -6272,11 +6489,17 @@ REQUEST_EXAMPLES = {
     ],
     "chapter09": [
         ("Быстрая проверка в консоли браузера", 'const ws = new WebSocket("ws://localhost:8009/ws");\nws.onmessage = event => console.log(event.data);\nws.onopen = () => ws.send("hello");'),
+        ("JS-клиент для вашего проекта на 7001", 'const ws = new WebSocket("ws://localhost:7001/ws");\n\nws.addEventListener("open", () => {\n  console.log("connected");\n  ws.send("Привет из JS-клиента");\n});\n\nws.addEventListener("message", (event) => {\n  console.log("server message:", JSON.parse(event.data));\n});\n\nws.addEventListener("close", (event) => {\n  console.log("closed:", event.code, event.reason);\n});\n\nwindow.lesson09Socket = ws;'),
+        ("Отправить сообщение после подключения", 'lesson09Socket.send("Сообщение из консоли");'),
+        ("Проверить broadcast в двух вкладках", '/* Выполните JS-клиент в двух вкладках.\n   Потом в первой вкладке выполните: */\nlesson09Socket.send("Это сообщение должны увидеть обе вкладки");'),
+        ("Проверить /who после задачи", 'lesson09Socket.send("/who");'),
         ("Что должно произойти", "Откройте две вкладки с кодом выше. Сообщение из одной вкладки должно прийти в обе."),
     ],
     "chapter10": [
         ("Подключить Socket.IO клиент", 'const script = document.createElement("script");\nscript.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";\nscript.onload = () => {\n  const socket = io("http://localhost:8010", { path: "/socket.io" });\n  socket.on("connected", data => console.log("connected", data));\n  socket.on("chat_message", data => console.log("message", data));\n  window.socket = socket;\n};\ndocument.head.append(script);'),
         ("Вступить в комнату и отправить сообщение", 'socket.emit("set_name", { username: "anna" });\nsocket.emit("join_room", { room: "python" });\nsocket.emit("chat_message", { room: "python", message: "Привет комнате" });'),
+        ("Проверить все базовые события через JS", 'const script = document.createElement("script");\nscript.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";\nscript.onload = () => {\n  const socket = io("http://localhost:7001", { path: "/socket.io", transports: ["websocket", "polling"] });\n  socket.onAny((event, payload) => console.log("server event:", event, payload));\n  socket.on("connect", () => {\n    console.log("sid:", socket.id);\n    socket.emit("set_name", { username: "student" });\n    socket.emit("join_room", { room: "python" });\n    socket.emit("chat_message", { room: "python", message: "Привет из JS" });\n  });\n  window.lesson10Socket = socket;\n};\ndocument.head.append(script);'),
+        ("Проверить direct_message через две вкладки", '/* Выполните предыдущий пример в двух вкладках.\n   Во второй вкладке скопируйте lesson10Socket.id.\n   В первой вкладке выполните: */\nlesson10Socket.emit("direct_message", {\n  sid: "PASTE_SECOND_TAB_SID",\n  message: "Личное сообщение"\n});'),
     ],
     "chapter11": [
         ("Получить access token", 'curl -X POST http://localhost:8011/api/auth/login \\\n  -H "Content-Type: application/json" \\\n  -d \'{"username":"demo","password":"password"}\''),
@@ -6643,6 +6866,8 @@ def render_lesson(service: str, data: dict) -> str:
                     <h2>{protect_jinja(data.get("code_title", "Ключевой фрагмент"))}</h2>
                     {code_block(data["code"])}
                 </article>
+
+                {titled_code_blocks(data.get("code_examples", []))}
 
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>

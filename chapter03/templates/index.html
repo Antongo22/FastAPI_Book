@@ -147,6 +147,8 @@ async def get_post(post_id: int, service: ExternalApiService = Depends(get_exter
         raise map_http_error(error) from error{% endraw %}</code></pre>
                 </article>
 
+                
+
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
                     <p>Здесь приложение само становится клиентом другого API. Пользователь обращается к нам, а мы внутри делаем запрос на JSONPlaceholder.</p>

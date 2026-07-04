@@ -381,6 +381,14 @@ def test_chapter09_expands_websocket_code_and_socket_tester_instructions():
     assert "выберите режим <code>WebSocket</code>" in answers
     assert "Как подключиться к проекту ученика" in answers
     assert '@app.websocket("/ws/")' in code_tab
+    assert "JS-клиент для проверки WebSocket" in code_tab
+    assert "new WebSocket(\"ws://localhost:7001/ws\")" in code_tab
+    assert "window.lesson09Socket = ws" in code_tab
+    assert "JS-клиент для вашего проекта на 7001" in text
+    assert "window.lesson09Socket = ws" in text
+    assert "lesson09Socket.send(\"/who\")" in text
+    assert "JS-код для проверки ответа с /who" in answers
+    assert "JS-код для проверки broadcast в двух вкладках" in answers
 
 
 def test_chapter03_task_uses_real_public_external_api():
@@ -556,6 +564,11 @@ def test_chapter10_explains_socketio_connection_fields_for_port_7001():
     assert "{\"room\":\"python\"}" in answers
     assert "leave_room" in answers
     assert "Как проверить каждое Socket.IO событие" in answers
+    assert "JS-код для проверки ответа с leave_room" in answers
+    assert "lesson10AnswerSocket" in answers
+    assert "socket.emit(\"leave_room\"" in answers
+    assert "JS-код для проверки базовых событий" in answers
+    assert "lesson10Socket" in answers
     assert "direct_message" in answers
     assert "SID_ВТОРОЙ_ВКЛАДКИ" in answers
     assert "event routing" in text
@@ -569,6 +582,22 @@ def test_chapter10_explains_socketio_connection_fields_for_port_7001():
     assert "async def chat_message(sid, data)" in code_tab
     assert "await sio.emit(\"chat_message\", payload, room=room)" in code_tab
     assert "async def leave_room" not in code_tab
+    assert "JS-клиент для Socket.IO" in code_tab
+    assert "io(\"http://localhost:7001\"" in code_tab
+    assert "window.lesson10Socket = socket" in code_tab
+    assert "JS-проверка direct_message" in code_tab
+
+
+def test_chapter10_request_examples_include_socketio_javascript_client():
+    response = TestClient(chapter10_app).get("/")
+    assert response.status_code == 200
+    text = unescape(response.text)
+
+    assert "Проверить все базовые события через JS" in text
+    assert "https://cdn.socket.io/4.7.5/socket.io.min.js" in text
+    assert "socket.onAny((event, payload)" in text
+    assert "window.lesson10Socket = socket" in text
+    assert "Проверить direct_message через две вкладки" in text
 
 
 def test_chapter10_socket_tester_page_renders_defaults():

@@ -212,6 +212,8 @@ async def protected(user: dict = Depends(get_current_user)):
     return {&quot;message&quot;: &quot;Это защищенный endpoint&quot;, &quot;username&quot;: user[&quot;username&quot;], &quot;role&quot;: user[&quot;role&quot;]}{% endraw %}</code></pre>
                 </article>
 
+                
+
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
                     <p>Сначала пользователь создаётся через регистрацию. Сервер сохраняет не пароль, а password hash.</p>

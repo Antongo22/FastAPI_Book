@@ -159,6 +159,8 @@ async def connect(sid, environ, auth):
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path=&quot;socket.io&quot;){% endraw %}</code></pre>
                 </article>
 
+                
+
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
                     <p>Socket.IO-подключение тоже нужно защищать. Иначе любой клиент сможет отправлять события в чат.</p>

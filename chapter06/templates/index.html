@@ -258,6 +258,8 @@ async def create_product(request: ProductCreate, db: AsyncSession = Depends(get_
     return product{% endraw %}</code></pre>
                 </article>
 
+                
+
                 <article class="info-box">
                     <h2>Если совсем по-простому</h2>
                     <p>База данных хранит данные дольше, чем живёт один запрос. SQLModel помогает работать с таблицами как с Python-классами.</p>
